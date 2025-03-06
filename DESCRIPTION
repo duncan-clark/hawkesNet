@@ -1,0 +1,10 @@
+Package: hawkesGrowthNet
+Title: Simulate and fit maximulikelihood for hawkesian network growth models
+Version: 0.0
+Authors@R: 
+    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
+Description: Simulate and fit maximum likelihood for hawkesian network growth models
+License: `use_mit_license()`
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
