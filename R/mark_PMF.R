@@ -139,6 +139,8 @@ PMF_mark_BA <- function(time,
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
 #' @param formula_RHS PARAM_DESCRIPTION
 #' @param grad PARAM_DESCRIPTION, Default: FALSE
+#' @param truncation if truncation = 1, only consider edges from new nodes to old nodes,
+#' truncation = k considers edges from k time steps before the new nodes to the old nodes:
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples
@@ -159,35 +161,57 @@ PMF_mark_CS <- function(time,
                         mark_filtration,
                         mark = NULL,
                         generate_mark = FALSE,
+                        generate_density = TRUE,
                         new_edge_hash = NULL,
                         formula_RHS,
-                        grad = FALSE
+                        grad = FALSE,
+                        truncation = 1
 ){
-  if(length(mark_filtration$times) !=0){
-    times <- mark_filtration$times
-    last_net <- mark_filtration$marks[[length(mark_filtration$marks)]]
-    new_nodes <- 1
+  # if we are not starting from nothing:
+  last_net <- filtration_to_net(mark_filtration,time,equals = FALSE)
+  # set equal to last net - then add things
+  new_net <- last_net
+  if(is.null(mark)){
+    mark <- filtration_to_net(mark_filtration,time,equals = TRUE)
+  }
+  if(last_net %n% 'n' != 0){
+    new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
-    new_net <- last_net
-    add.vertices(new_net,nv=new_nodes)
+    network::add.vertices(new_net,new_nodes-old_nodes)
+    set.vertex.attribute(new_net,"time",c(last_net %v% 'time',rep(time,new_nodes)))
   }else{
-    times  <- c()
     last_net <- NULL
     new_net <- network::network(matrix(1),directed = F)
     set.vertex.attribute(new_net,"time",time)
     old_nodes <- 0
     new_nodes <- 1
   }
+  # get the possible edges for the given truncation:
+  # if no nodes have been added then :
+  poss_tails <- (old_nodes - truncation) : (new_nodes)
+  poss_tails <- poss_tails[poss_tails>0]
+  poss_heads <- (new_nodes - truncation-1):new_nodes
+  poss_heads <- poss_heads[poss_heads>0]
+  poss_edges <- expand.grid(poss_tails,poss_heads)
+  poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
+  tails <- poss_edges[,1]
+  heads <- poss_edges[,2]
 
-  # get the possible edges
-  tails <- rep((old_nodes+1):(old_nodes + new_nodes),times = old_nodes)
-  heads <- rep(1:old_nodes,each = new_nodes)
-  keep <- tails != heads
-  heads <- heads[keep]
-  tails <- tails[keep]
-
-  # get the edge probabilities
+  # only consider edges that were not already in the old network
   if(!is.null(last_net)){
+    in_old_net <- sapply(1:length(heads),function(i){
+      length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+    })
+    tails <- tails[!in_old_net]
+    heads <- heads[!in_old_net]
+  }
+
+
+
+  # =============
+  # mark density
+  # =============
+  if(!is.null(last_net) & generate_density){
     if(last_net %n% 'n' > 2){
       # if new net has less than 4 nodes add some:
       if(new_net %n% 'n' < 4){
@@ -196,29 +220,31 @@ PMF_mark_CS <- function(time,
       }else{
         old_new_net <- new_net
       }
-      model <- ernm(as.formula(paste("new_net ~ ",formula_RHS)),
-                    tapered = FALSE,
-                    maxIter = 3,
-                    mcmcBurnIn = 100,
-                    mcmcInterval = 10,
-                    mcmcSampleSize = 100,
-                    verbose = 0)
-      model <- model$m$sampler$getModel()
-      model$setNetwork(ernm::as.BinaryNet(new_net))
+
+      if(max(tails)>new_net %n% 'n'){
+        stop("accidently adding a edge into the network that doesn't have that node yet")
+      }
+      model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
+      # model$setNetwork(ernm::as.BinaryNet(new_net))
+      new_net <- old_new_net
+      model$calculate()
+      stat <- model$statistics()
       change_stats <- lapply(1:length(tails),FUN=function(i){
-        #reset:
-        model$calculate()
-        stat <- model$statistics()
-        # update
+        # update - note no need to update just need to take away  old stat
+        old_stat <- model$statistics()
         model$dyadUpdate(tails[i],heads[i])
         new_stat <- model$statistics()
-        return(new_stat - stat)
+        return(new_stat - old_stat)
       })
-      new_net <- old_new_net
       # logistic regression on change stats:
       probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
-      times <- last_net %v% 'time'
-      probs <- probs*exp(-params$beta_edges*(time - times))
+      node_times <- new_net %v% 'time'
+      diffs <- sapply(1:length(heads),function(i){
+        node_times[tails[i]] - node_times[heads[i]]
+      })
+      factor <- (params$eta + (1-params$eta))*exp(-params$beta_edges*(diffs))
+      probs <- probs * factor
+
     }else{
       times <- last_net %v% 'time'
       probs <- c(1)
@@ -242,7 +268,7 @@ PMF_mark_CS <- function(time,
       mark_grad <- 0
       decay_grad <- 0
     }else{
-      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark]))
+      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark])) + log(dpois(new_nodes-old_nodes,params$node_lambda))
       mark_density <- exp(log_mark_density)
 
       if(grad){
@@ -288,28 +314,100 @@ PMF_mark_CS <- function(time,
     log_mark_density <- 0
   }
 
-  if(generate_mark & !is.null(probs)){
+  # =============
+  # generate mark
+  # =============
+  if(generate_mark){
     # use function sample a new mark
-    if(!is.null(last_net)){
+    # since we have poisson number of nodes added  we need to redo the probabilities
+    if(!is.null(last_net) && (last_net %n% 'n') > 2){
       mark_sample <- last_net
+      old_nodes <- last_net %n% 'n'
+      new_nodes <- rpois(1,params$node_lambda)
       mark_sample <- network::add.vertices(mark_sample,new_nodes)
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
+      new_nodes <- mark_sample %n% 'n'
+
+      # get new poss edges
+      poss_tails <- (old_nodes - truncation) : (new_nodes)
+      poss_tails <- poss_tails[poss_tails>0]
+      poss_heads <- (new_nodes - truncation-1):new_nodes
+      poss_heads <- poss_heads[poss_heads>0]
+      poss_edges <- expand.grid(poss_tails,poss_heads)
+      poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
+      tails <- poss_edges[,1]
+      heads <- poss_edges[,2]
+
+      # only consider edges that are not in the old net
+      if(!is.null(last_net)){
+        in_old_net <- sapply(1:length(heads),function(i){
+          length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+        })
+        tails <- tails[!in_old_net]
+        heads <- heads[!in_old_net]
+      }
+
+      # get the probs:
+      if(mark_sample %n% 'n' < 4){
+        old_new_net <- mark_sample
+        mark_sample <- network::add.vertices(mark_sample,4 - (mark_sample %n% 'n'))
+      }else{
+        old_new_net <- mark_sample
+      }
+      model <- createCppModel(as.formula(paste("mark_sample ~ ",formula_RHS)))
+      # model$setNetwork(ernm::as.BinaryNet(new_net))
+      model$calculate()
+      change_stats <- lapply(1:length(tails),FUN=function(i){
+        # update - note no need to update just need to take away  old stat
+        old_stat <- model$statistics()
+        model$dyadUpdate(tails[i],heads[i])
+        new_stat <- model$statistics()
+        return(new_stat - old_stat)
+      })
+      # reset to when we did not add more edges
+      mark_sample <- old_new_net
+      # logistic regression on change stats:
+      if(length(change_stats) == 0){
+      stop("these parameters result ixn full networks - you probalby don't want this")
+      }
+      probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
+      node_times <- mark_sample %v% 'time'
+      diffs <- sapply(1:length(tails),function(i){
+        node_times[tails[i]] - node_times[heads[i]]
+      })
+      factor <- (params$eta + (1-params$eta))*exp(-params$beta_edges*(diffs))
+      probs <- factor * probs
+
+      add <- runif(length(probs)) < probs
+      add.edges(mark_sample,
+                heads[add],
+                tails[add]
+      )
+      set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
+      mark_sample_density = prod(probs[add])*prod(1-probs[!add])*dpois(new_nodes-old_nodes,params$node_lambda)
+      log_mark_sample_density <- sum(log(probs[add])) +
+                                 sum(log(1-probs[!add])) +
+                                 log(dpois(new_nodes-old_nodes,params$node_lambda))
+      }else{
+        if(is.null(last_net)){
+          mark_sample <- network::network(matrix(1),directed = F)
+          set.vertex.attribute(mark_sample,"time",time)
+        }else{
+          mark_sample <- last_net
+        }
+        times <- mark_sample %v% 'time'
+        mark_sample <- network::add.vertices(mark_sample,1)
+        set.vertex.attribute(mark_sample,
+                             "time",
+                             c(times,time))
+        mark_sample_density <- 1
+        log_mark_sample_density <- 0
+      }
     }else{
-      mark_sample <- network::network(matrix(1),directed = F)
-      set.vertex.attribute(mark_sample,"time",rep(time,new_nodes))
+      mark_sample <- new_net
+      mark_sample_density <- 1
+      log_mark_sample_density <- 0
     }
-    add <- runif(length(probs)) < probs
-    add.edges(mark_sample,
-              heads[add],
-              tails[add]
-    )
-    mark_sample_density = prod(probs[add])*prod(1-probs[!add])
-    log_mark_sample_density <- sum(log(probs[add])) + sum(log(1-probs[!add]))
-  }else{
-    mark_sample <- new_net
-    mark_sample_density <- 1
-    log_mark_sample_density <- 0
-  }
 
   return(list(
     # density of provided marks

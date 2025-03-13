@@ -34,7 +34,11 @@ cond_intensity <- function(new_net,
                   new_edge_hash = new_edge_hash,
                   ...
   )
-  diffs  <- t - mark_filtration$times
+  times <- get_times(mark_filtration)
+  times <- times$times
+  times <- times[times<t]
+  diffs  <- t - times
+
   decays <- exp(-params$beta_overall*diffs)
   result <- tmp$mark_density * (params$mu + params$K*sum(decays))
 
@@ -92,7 +96,7 @@ sim_hawkesGrowthNet <- function(params,
 
 
 ){
-
+  t1 <- proc.time()
   # simulate the background points (can only simulate their times right now)
   mu <- params$mu
   theta <- params$theta
@@ -106,7 +110,6 @@ sim_hawkesGrowthNet <- function(params,
   events = list()
   events$n = 0
   events$t = c()
-  events$mark <- list()
   events$mark_density <- c()
 
   accept_probs <- c()
@@ -121,21 +124,21 @@ sim_hawkesGrowthNet <- function(params,
   list_index <- 1
   tot <- 0
   tot_attempt <- 0
-  current_net <- NULL
+  current_net <- network::network(matrix(1),directed = F)
+  delete.vertices(current_net,1)
 
   while (nrow(event_queue) > 0) {
     t <- proc.time()
-    current_event <- event_queue[1, ]
-    event_queue <- event_queue[-1, ]  # Remove the processed event
+    current_event <- event_queue[1, ,drop = FALSE]
+    event_queue <- event_queue[-1, ,drop = FALSE]  # Remove the processed event
 
-    if(is.null(current_net)){
+    if(is.null(current_net %v% 'n')){
       mark_sample <- PMF_mark(time = current_event$time,
                               params = params,
-                              mark_filtration = list(times = events$t,
-                                                     marks = events$mark),
+                              mark_filtration = current_net,
                               mark = NULL,
                               generate_mark = TRUE,
-                              new_edge_hash = TRUE,
+                              new_edge_hash = NULL,
                               ...)
       net <- mark_sample$mark_sample
       accept <- 1
@@ -144,22 +147,18 @@ sim_hawkesGrowthNet <- function(params,
       # get the mark samples
       mark_sample <- PMF_mark(time = current_event$time,
                               params = params,
-                              mark_filtration = list(times = events$t,
-                                                     marks = events$mark),
+                              mark_filtration = current_net,
                               mark = NULL,
                               generate_mark = TRUE,
-                              new_edge_hash = TRUE,
+                              generate_density = FALSE,
+                              new_edge_hash = NULL,
                               ...)
       net <- mark_sample$mark_sample
       new_nodes <- (net %n% 'n') - (current_net %n% 'n')
-      if(hashed_edges){
+      if(hashed_edges && length(mark_sample$mel)!=0){
         # hash the network edge list for fast lookup:
-        edges <- as.data.frame(network::as.edgelist(net))
-        # print(paste0("new edge has has ",dim(edges)[1]," rows"))
-        names(edges) <- c("from", "to")
-        edge_hash <- hash()
-        # Vectorized construction of keys
-        keys_vec <- paste(edges$from, edges$to, sep = "-")
+        edges <- network::as.edgelist(net)
+        keys_vec <- paste(edges[,1], edges[,2], sep = "-")
         edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
       }else{
         edge_hash <- NULL
@@ -167,8 +166,7 @@ sim_hawkesGrowthNet <- function(params,
       if(joint_accept){
         intensity <- cond_intensity(new_net = net,
                                     t = current_event$time,
-                                    mark_filtration = list(times = events$t,
-                                                           marks = events$mark),
+                                    mark_filtration = current_net,
                                     PMF_mark = PMF_mark,
                                     params = params,
                                     new_edge_hash = edge_hash,
@@ -179,8 +177,7 @@ sim_hawkesGrowthNet <- function(params,
           imp_sample <- sapply(1:n_mark_sample,function(i){
             mark_sample <- PMF_mark(time = current_event$time,
                                     params = params,
-                                    mark_filtration = list(times = events$t,
-                                                           marks = events$mark),
+                                    mark_filtration = current_net,
                                     mark = NULL,
                                     generate_mark = TRUE,
                                     new_edge_hash = TRUE,
@@ -190,20 +187,15 @@ sim_hawkesGrowthNet <- function(params,
             new_nodes <- (net %n% 'n') - (current_net %n% 'n')
             if(hashed_edges){
               # hash the network edge list for fast lookup:
-              edges <- as.data.frame(network::as.edgelist(net))
-              #print(paste0("new edge has has ",dim(edges)[1]," rows"))
-              names(edges) <- c("from", "to")
-              edge_hash <- hash()
-              # Vectorized construction of keys
-              keys_vec <- paste(edges$from, edges$to, sep = "-")
+              edges <- network::as.edgelist(net)
+              keys_vec <- paste(edges[,1], edges[,2], sep = "-")
               edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
             }else{
               edge_hash <- NULL
             }
             intensity <- cond_intensity(new_net = net,
                                         t = current_event$time,
-                                        mark_filtration = list(times = events$t,
-                                                               marks = events$mark),
+                                        mark_filtration = current_net,
                                         PMF_mark = PMF_mark,
                                         params = params,
                                         new_edge_hash = edge_hash,
@@ -215,8 +207,7 @@ sim_hawkesGrowthNet <- function(params,
         }else{
           tmp <- cond_intensity(new_net = net,
                                 t = current_event$time,
-                                mark_filtration = list(times = events$t,
-                                                       marks = events$mark),
+                                mark_filtration = current_net,
                                 PMF_mark = PMF_mark,
                                 params = params,
                                 new_edge_hash = edge_hash,
@@ -230,11 +221,10 @@ sim_hawkesGrowthNet <- function(params,
 
         mark_sample <- PMF_mark(time = current_event$time,
                                 params = params,
-                                mark_filtration = list(times = events$t,
-                                                       marks = events$mark),
+                                mark_filtration = current_net,
                                 mark = NULL,
                                 generate_mark = TRUE,
-                                new_edge_hash = TRUE,
+                                new_edge_hash = NULL,
                                 ...
         )
         net <- mark_sample$mark_sample
@@ -247,8 +237,10 @@ sim_hawkesGrowthNet <- function(params,
     # if we accept the point add it in
     if(verbose){print(paste0("accept prob is: ",accept))}
     if(runif(1) < accept){
+      if(verbose){
+        print('accepted!')
+      }
       current_net <- net
-      events$mark[[length(events$mark)+1]] <-  net
       events$t[length(events$t)+1] <- current_event$time
       if(length(events$t) >2){
         events$mark_density <- c(events$mark_density,mark_sample$mark_density)
@@ -258,7 +250,7 @@ sim_hawkesGrowthNet <- function(params,
       # do nothing since we rejected the point
     }
     if(verbose){
-      print(paste0("time is ",current_event$t, " size of net is ",current_net %n% 'n'))
+      print(paste0("time is ",current_event$t, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
       print(paste0("time is ",current_event$t, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
     }
     # Concatenate new events to event_queue only if we have only one event left to go
@@ -267,6 +259,8 @@ sim_hawkesGrowthNet <- function(params,
     new_events_list <- vector("list", length(new_events_list))  # Reset the list
     list_index <- 1
   }
+  t1 <- proc.time() - t1
+  print(paste0("simulation took ",round(t1[3],2)," seconds"))
   return(list(events = events,
               net = current_net,
               accept_probs = accept_probs))
@@ -298,53 +292,46 @@ sim_hawkesGrowthNet <- function(params,
 #' @importFrom hash hash
 loglik_hawkesGrowthNet = function(params,
                                   time_window,
-                                  events,
+                                  mark_filtration,
                                   PMF_mark,
-                                  use_hashing = TRUE,
+                                  edge_hash_list = NULL,
+                                  verbose = FALSE,
                                   ...
 ){
   t<-proc.time()
   # don't allow negative parameters in first 4
-  if(any(sapply(params[1:4],function(x){x<0}))){
+  if(any(sapply(params[1:6],function(x){x<0}))){
     return(list(loglik = -(10**(100)),
                 grads = rep(0,length(params)))
     )
   }
+  times <- get_times(mark_filtration)
+  times <- times$times
 
   tval <- time_window[2]-time_window[1]
-  max_t <- max(events$t)
-  if(tval < max(events$t) - min(events$t)){
+  max_t <- max(times)
+  if(tval < max(times) - min(times)){
     stop("realization has points outside time window")
   }
-  mark_filtration <- events$mark
-  times <- events$t
 
   # do the sum of the intensities:
   intens_sum <- 0
   intens_list <- list()
-  for(i in 1:length(mark_filtration)){
-
-    if(i==1){
-      hist <- NULL
+  for(i in 1:length(times)){
+    if(is.null(edge_hash_list) | i==1){
       edge_hash <- NULL
     }else{
-      hist <- mark_filtration[1:(i-1)]
-      new_nodes <- (mark_filtration[[i]] %n% 'n') - (mark_filtration[[i-1]] %n% 'n')
-      # hash the network edge list for fast lookup:
-      edges <- as.data.frame(network::as.edgelist(mark_filtration[[i]]))
-      names(edges) <- c("from", "to")
-      edge_hash <- hash()
-      # Vectorized construction of keys
-      keys_vec <- paste(edges$from, edges$to, sep = "-")
-      edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
+      edge_hash <- edge_hash_list[[i]]
     }
-    if(!use_hashing){
-      edge_hash <- NULL
-    }
-    intensity <- cond_intensity(new_net = events$mark[[i]],
-                                t = events$t[[i]],
-                                mark_filtration = list(times = events$t[1:(i-1)],
-                                                       marks = events$mark[1:(i-1)]),
+
+    # need to do this on the fly otherwise too storage intensive
+    #print(i)
+    new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
+    current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+
+    intensity <- cond_intensity(new_net = current_net,
+                                t = times[i],
+                                mark_filtration = current_net,
                                 PMF_mark = PMF_mark,
                                 params = params,
                                 new_edge_hash = edge_hash,
@@ -352,24 +339,34 @@ loglik_hawkesGrowthNet = function(params,
     intens_list[[i]] <- intensity
   }
   tmp <- sapply(intens_list,function(x){x$result})
-  # set values that are 0 to the minimum to avoid log issues:
-  tmp[tmp==0] <- min(tmp[tmp!=0])
+
+  # print("params are :")
+  # print(params)
+  # print(tmp)
+  if(any(is.na(tmp))){
+    browser()
+  }
+
+  if(sum(tmp==0)!=0){
+    return(list(loglik = -10**(20),
+                grads = NULL))
+  }
   intens_sum <- sum(log(tmp))
 
   # Integral due to kernel being density:
+
+
   max_t <- max(times)
   pieces <- sapply(times,function(x){
     (1-exp(-params$beta_overall*(tval-x)))
   })
   integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
   loglik <- intens_sum - integral
-  # print(params)
   # print(paste0("integral is ",integral))
   # print(paste0("intens_sum is ",intens_sum))
   # print(paste0("trigger part of integral is  ",(1/params$beta_overall)*params$K*sum(pieces)))
   # print(paste0("result is :",loglik))
   # print(paste0("this iteration of loglik took ", round((proc.time()-t)[3],2)," seconds"))
-
 
   # calcualte the gradients:
 
@@ -399,6 +396,10 @@ loglik_hawkesGrowthNet = function(params,
 
   # TODO fix the mark grad issues with simplification
 
+  t<-proc.time() - t
+  if(verbose){
+    print(paste0("this iteration of loglik took ", round(t[3],2)," seconds"))
+  }
 
   return(list(loglik = loglik,
               grads = grads))
@@ -425,19 +426,23 @@ loglik_hawkesGrowthNet = function(params,
 #' @export
 fit_hawkesGrowthNet <- function(params_init,
                                 time_window,
-                                events,
+                                mark_filtration,
                                 PMF_mark,
                                 trace = 0,
                                 maxit,
                                 ...){
-
   optim_func <- function(params,...){
-    #params <- setNames(as.list(params), names(params_init))
     param_vec <- params
     params <- relist(params, skeleton = params_init)
+
+    if(params$K>1){
+      return(list(value = -10**(20),
+                  grad = NULL))
+    }
+
     result <- loglik_hawkesGrowthNet(params = params,
                                      time_window = time_window,
-                                     events = events,
+                                     mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
                                      ...)
 
@@ -499,5 +504,30 @@ fit_hawkesGrowthNet <- function(params_init,
   return(fit)
 }
 
+
+# compensators for hawkesGrowthNet:
+
+compensators_hawkesGrowthNet <- function(params,
+                                         time_window,
+                                         mark_filtration){
+  times <- get_times(mark_filtration)
+  times <- times$times
+
+  tval <- time_window[2]-time_window[1]
+  max_t <- max(times)
+  if(tval < max(times) - min(times)){
+    stop("realization has points outside time window")
+  }
+  # Integral due to kernel being density:
+  pieces <- sapply(times,function(x){
+    (1-exp(-params$beta_overall*(tval-x)))
+  })
+  incremental <- sapply(1:length(times),function(i){
+    integral <- params$mu * times[i] + (1/params$beta_overall)*params$K*sum(pieces[1:i])
+    integral <- params$mu * times[i] + params$K*sum(pieces[1:i])
+    return(integral)
+  })
+  return(incremental)
+}
 
 

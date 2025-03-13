@@ -7,9 +7,10 @@
 loglik_hawkesGrowthNet(
   params,
   time_window,
-  events,
+  mark_filtration,
   PMF_mark,
-  use_hashing = TRUE,
+  edge_hash_list = NULL,
+  verbose = FALSE,
   ...
 )
 }
@@ -18,13 +19,13 @@ loglik_hawkesGrowthNet(
 
 \item{time_window}{PARAM_DESCRIPTION}
 
-\item{events}{PARAM_DESCRIPTION}
-
 \item{PMF_mark}{PARAM_DESCRIPTION}
 
-\item{use_hashing}{PARAM_DESCRIPTION, Default: TRUE}
-
 \item{...}{PARAM_DESCRIPTION}
+
+\item{events}{PARAM_DESCRIPTION}
+
+\item{use_hashing}{PARAM_DESCRIPTION, Default: TRUE}
 }
 \value{
 OUTPUT_DESCRIPTION

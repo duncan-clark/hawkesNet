@@ -242,6 +242,7 @@ compensator_temporal_hawkes <- function(params,
       (x >= y)*(1 - exp(-beta * (x - y)))
     }
   )
+  t_comps[is.na(t_comps)] <- 0
   pieces <- rowSums(t_comps)
   incremental <- realiz$t * intlam + K * pieces
   return(incremental)
@@ -271,6 +272,8 @@ ks_test_pval_temporal <- function(realiz,
                                               windowT = windowT)
   compensator_incs <- diff(compensators)
   test_dist <- 1 - exp(-compensator_incs)
+  hist(test_dist)
   test <- ks.test(test_dist,"punif")
+  print(test$p.value)
   return(test$p.value)
 }

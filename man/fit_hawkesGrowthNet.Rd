@@ -7,7 +7,7 @@
 fit_hawkesGrowthNet(
   params_init,
   time_window,
-  events,
+  mark_filtration,
   PMF_mark,
   trace = 0,
   maxit,
@@ -19,8 +19,6 @@ fit_hawkesGrowthNet(
 
 \item{time_window}{PARAM_DESCRIPTION}
 
-\item{events}{PARAM_DESCRIPTION}
-
 \item{PMF_mark}{PARAM_DESCRIPTION}
 
 \item{trace}{PARAM_DESCRIPTION, Default: 0}
@@ -28,6 +26,8 @@ fit_hawkesGrowthNet(
 \item{maxit}{PARAM_DESCRIPTION}
 
 \item{...}{PARAM_DESCRIPTION}
+
+\item{events}{PARAM_DESCRIPTION}
 }
 \value{
 OUTPUT_DESCRIPTION

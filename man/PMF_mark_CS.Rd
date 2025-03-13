@@ -10,9 +10,11 @@ PMF_mark_CS(
   mark_filtration,
   mark = NULL,
   generate_mark = FALSE,
+  generate_density = TRUE,
   new_edge_hash = NULL,
   formula_RHS,
-  grad = FALSE
+  grad = FALSE,
+  truncation = 1
 )
 }
 \arguments{
@@ -31,6 +33,9 @@ PMF_mark_CS(
 \item{formula_RHS}{PARAM_DESCRIPTION}
 
 \item{grad}{PARAM_DESCRIPTION, Default: FALSE}
+
+\item{truncation}{if truncation = 1, only consider edges from new nodes to old nodes,
+truncation = k considers edges from k time steps before the new nodes to the old nodes:}
 }
 \value{
 OUTPUT_DESCRIPTION

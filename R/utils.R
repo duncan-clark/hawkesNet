@@ -129,3 +129,55 @@ events_to_net <- function(events_list,
   set.network.attribute(net,'n',max(c(events_list$i,events_list$j)))
   return(net)
 }
+
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param net PARAM_DESCRIPTION
+#' @param t PARAM_DESCRIPTION
+#' @param equals PARAM_DESCRIPTION, Default: FALSE
+#' @return OUTPUT_DESCRIPTION
+#' @details DETAILS
+#' @examples
+#' \dontrun{
+#' if(interactive()){
+#'  #EXAMPLE1
+#'  }
+#' }
+#' @rdname filtration_to_net
+#' @export
+filtration_to_net <- function(net,
+                              t,
+                              equals = FALSE){
+  if(equals){
+    delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
+    delete.edges(net, which(get.edge.attribute(net,"time")>t))
+  }else{
+    delete.vertices(net,which(get.vertex.attribute(net,"time")>=t))
+    delete.edges(net, which(get.edge.attribute(net,"time")>=t))
+  }
+
+  return(net)
+}
+
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param net PARAM_DESCRIPTION
+#' @return OUTPUT_DESCRIPTION
+#' @details DETAILS
+#' @examples
+#' \dontrun{
+#' if(interactive()){
+#'  #EXAMPLE1
+#'  }
+#' }
+#' @rdname get_times
+#' @export
+get_times <- function(net){
+  node_times <- get.vertex.attribute(net,"time")
+  edge_times <- get.edge.attribute(net,"time")
+  return(list(node_times = node_times,
+              edge_times = edge_times,
+              times = sort(unique(c(node_times,edge_times)))
+  ))
+}
+
