@@ -17,21 +17,21 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME = 10
+TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
-               beta_edges = 0.1,
+               beta_edges = 0.5,
                node_lambda = 1,
-               eta = 0.1,
-               CS_params = c(-5,0.5,0.2,-0.1)
-)
+               eta = 0.01,
+               CS_params = c(-5,1.0,-0.5,0.1)
+               )
 TRUNCATION  = 200
 INVESTIGATE = FALSE
 SIMULATE = TRUE
 PAPER_OUTPUT = FALSE
 
-N_SIMS = 14
+N_SIMS = 21
 N_CORES <- detectCores() - 1
 
 SEED <- 01267
@@ -68,6 +68,7 @@ make_cluster <- function(N_CORES){
 
 if(SIMULATE){
   # make the cluster:
+  t <- proc.time()
   cl <- make_cluster(N_CORES)
   set.seed(SEED)
 
@@ -90,7 +91,7 @@ if(SIMULATE){
                       K = 0.1,
                       beta_edges = 0.1,
                       node_lambda = 1,
-                      eta = 0.1,
+                      eta = 0.01,
                       CS_params = c(-10,0,0,0)
   )
   clusterExport(cl, c("params_init"))
@@ -104,7 +105,7 @@ if(SIMULATE){
         formula_RHS = "edges + triangles + star(c(2,3))",
         grad = FALSE,
         trace = 0,
-        maxit = 100,
+        maxit = 300,
         truncation = TRUNCATION
       )
     }, error = function(e) {
@@ -131,6 +132,8 @@ if(SIMULATE){
                temp_hawkes_fits = temp_hawkes_fits),
           file = "results_CS.RDS")
   stopCluster(cl)
+  print("Simulating and fitting took:")
+  print((t - proc.time())[3])
 }
 
 if(PAPER_OUTPUT){
@@ -183,6 +186,10 @@ if(PAPER_OUTPUT){
   # ==========================
   # get mean and sd of parameters from fits:
   keep <- which(sapply(fits,length)!=0)
+  paste0("keeping ",length(keep), " of ", N_SIMS," fits")
+  sapply(fits,function(x){x$convergence==1})
+  # check if any converged:
+
   estims <- do.call(rbind,lapply(fits[keep],function(x){
     return(as.data.frame(t(x$par),names = names(x$par)))
   }))
@@ -204,9 +211,8 @@ if(PAPER_OUTPUT){
                                  time_window = c(0,TIME)
     )
   })
-  marked_p_vals <- mapply(sims,lapply(1:length(sims),function(x){params}),FUN = function(x,y){
+  marked_p_vals <- mapply(sims[keep],lapply(1:length(fits[keep]),function(x){fits[keep][[x]]$par}),FUN = function(x,y){
     times <- get_times(x$net)$times
-    y = params
     ks_test_pval_temporal(realiz = data.frame(t = times,
                                               n = rep(length(times),length(times))),
                           windowT = c(0,TIME),
@@ -225,24 +231,22 @@ if(PAPER_OUTPUT){
 
   # need to investigate this! - expect higher pvals for true model
   # LOOK INTO PARAMETIZATION OF K !
-
-
   mean(marked_p_vals)
   mean(temp_p_vals)
 }
 
 if(INVESTIGATE){
-results <- sim_hawkesGrowthNet(params =  params,
-                               time_window = c(0,TIME),
-                               PMF_mark = PMF_mark_CS,
-                               cond_intensity = cond_intensity,
-                               hashed_edges = T,
-                               verbose = T,
-                               mu_multiplier = 3,
-                               joint_accept = F,
-                               truncation = TRUNCATION,
-                               formula_RHS = "edges  + triangles() + star(c(2,3))"
-                               )
+  results <- sim_hawkesGrowthNet(params =  params,
+                                 time_window = c(0,TIME),
+                                 PMF_mark = PMF_mark_CS,
+                                 cond_intensity = cond_intensity,
+                                 hashed_edges = T,
+                                 verbose = T,
+                                 mu_multiplier = 3,
+                                 joint_accept = F,
+                                 truncation = TRUNCATION,
+                                 formula_RHS = "edges  + triangles() + star(c(2,3))"
+                                 )
 
 # ==================================
 # Verify Simulation is reasonable
@@ -257,7 +261,7 @@ plot(results$accept_probs)
 # Should be "spikey" due to hawkesian arrival times
 times <- results$net %v% 'time'
 plot(results$net,
-     vertex.cex = times/10,
+     vertex.cex = times/5,
      main = '')
 
 # Set up an empty plot with appropriate x-limits and no y-axis ticks
@@ -416,7 +420,7 @@ fit <- fit_hawkesGrowthNet(params_init = tmp,
                            grad = F,
                            trace = 1,
                            truncation = TRUNCATION,
-                           maxit = 100)
+                           maxit = 10)
 data.frame(fit = fit$par,
       true = unlist(params),
       init = unlist(tmp)

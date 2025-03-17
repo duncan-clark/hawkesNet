@@ -501,7 +501,35 @@ fit_hawkesGrowthNet <- function(params_init,
                               maxit=maxit),
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
-  return(fit)
+  
+  # Numerically estimate Hessian at optimal params
+  # THIS IS GONNA TKE FOREVER - NEED TO CODE UP GRADIENT!
+  # hessian_estimate <- numDeriv::hessian(
+  #   func = function(p) {
+  #     cat(sprintf("Parameters: %s\n",paste(round(p, 4), collapse = ", ")))
+  #     p <- relist(p, skeleton = params_init)
+  #     result <- -loglik_hawkesGrowthNet(params = p,
+  #                                       time_window = time_window,
+  #                                       mark_filtration = mark_filtration,
+  #                                       PMF_mark = PMF_mark,
+  #                                       ...)$loglik
+  #     cat(sprintf("  --> loglik: %f\n", -result))
+  #     
+  #     
+  #     return(result)
+  #   },
+  #   x = fit$par
+  # )
+  # 
+  # # Fisher information approximation is the negative Hessian at the optimum
+  # fisher_info <- hessian_estimate
+  # vcov_matrix <- solve(fisher_info)
+  
+  hessian_estimate <- NULL
+  
+  return(list(fit=fit,
+              fisher_info=hessian_estimate,
+              vcov_matrix=vcov_matrix))
 }
 
 
