@@ -97,7 +97,7 @@ if(SIMULATE){
         PMF_mark = PMF_mark_BA,
         grad = FALSE,
         trace = 0,
-        maxit = 300
+        maxit = 1000
       )
     }, error = function(e) {
       message("Error in fit_hawkesGrowthNet: ", e$message)

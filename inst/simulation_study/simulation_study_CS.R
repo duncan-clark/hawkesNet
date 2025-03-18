@@ -106,7 +106,7 @@ if(SIMULATE){
         formula_RHS = "edges + triangles + star(c(2,3))",
         grad = FALSE,
         trace = 0,
-        maxit = 300,
+        maxit =1000,
         truncation = TRUNCATION
       )
     }, error = function(e) {
