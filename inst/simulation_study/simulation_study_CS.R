@@ -33,6 +33,7 @@ PAPER_OUTPUT = FALSE
 
 N_SIMS = 100
 N_CORES <- detectCores() - 1
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
 
 SEED <- 01267
 
