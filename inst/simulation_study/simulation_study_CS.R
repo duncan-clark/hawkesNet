@@ -31,7 +31,7 @@ INVESTIGATE = FALSE
 SIMULATE = TRUE
 PAPER_OUTPUT = FALSE
 
-N_SIMS = 21
+N_SIMS = 100
 N_CORES <- detectCores() - 1
 
 SEED <- 01267
@@ -434,4 +434,4 @@ length(results$events$t)
 ergm_1 <- ergm(results$net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))
 summary(ergm_1)
 
-
+}

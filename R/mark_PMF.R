@@ -25,105 +25,151 @@ PMF_mark_BA <- function(time,
                         mark_filtration,
                         mark = NULL,
                         generate_mark = FALSE,
-                        new_edge_hash = NULL
-){
-  if(length(mark_filtration$times) !=0){
-    times <- mark_filtration$times
-    last_net <- mark_filtration$marks[[length(mark_filtration$marks)]]
-    new_nodes <- 1
+                        generate_density = TRUE,
+                        grad = FALSE,
+                        new_edge_hash = NULL){
+  
+  if(is.null(mark)){
+    mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+  }
+  last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
+  new_net <- last_net
+  
+  if(last_net %n% 'n' != 0){
+    new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
-    new_net <- last_net
-    current_times <- get.vertex.attribute(new_net,"time")
-    add.vertices(new_net,nv=new_nodes)
-    set.vertex.attribute(new_net,"time",c(current_times,time))
-  }else{
-    times  <- c()
+    network::add.vertices(new_net, nv = new_nodes)
+    set.vertex.attribute(new_net, "time", c(get.vertex.attribute(last_net, "time"), rep(time, new_nodes)))
+  } else {
     last_net <- NULL
-    new_net <- network::network(matrix(1),directed = F)
-    set.vertex.attribute(new_net,"time",time)
+    new_net <- network(matrix(0, 1, 1), directed = FALSE)
+    set.vertex.attribute(new_net, "time", time)
     old_nodes <- 0
     new_nodes <- 1
   }
-
-  # get the possible edges
-  tails <- rep((old_nodes+1):(old_nodes + new_nodes),times = old_nodes)
-  heads <- rep(1:old_nodes,each = new_nodes)
-  keep <- tails != heads
-  heads <- heads[keep]
-  tails <- tails[keep]
-
-  # get the edge probabilities
+  
+  # get the possible edges for the given truncation:
+  # if no nodes have been added then :
+  poss_tails <- ((old_nodes+1) : new_nodes)
+  poss_tails <- poss_tails[poss_tails>0]
+  poss_heads <- 1:old_nodes
+  poss_heads <- poss_heads[poss_heads>0]
+  poss_edges <- expand.grid(poss_tails,poss_heads)
+  poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
+  tails <- poss_edges[,1]
+  heads <- poss_edges[,2]
+  
+  # only consider edges that were not already in the old network
   if(!is.null(last_net)){
-    degs <- c(degree(last_net,gmode = 'graph'),rep(0,new_nodes))
-    times <- c(last_net %v% 'time',rep(time,new_nodes))
-    if(length(degs) != length(times)){
-      stop("length of degrees and times do not match")
-    }
-    degs <- degs*exp(-params$beta_BA_edges*(time - times))
+    in_old_net <- sapply(1:length(heads),function(i){
+      length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+    })
+    tails <- tails[!in_old_net]
+    heads <- heads[!in_old_net]
+  }
+  
+  if(!is.null(last_net) && (last_net %n% 'n' > 2)){
+    times <- get.vertex.attribute(last_net, "time")
+    degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
     total_deg <- sum(degs)
+    
     if(total_deg == 0){
-      probs <- rep(1,length(heads))
-      in_mark <- rep(TRUE,length(heads))
-    }else{
+      probs <- rep(1, length(heads))
+    } else {
       probs <- degs[heads] / total_deg
     }
-  }else{
-    probs <- NULL
+  } else {
+    probs <- rep(1, length(heads))
   }
-
-  if(!is.null(mark) & !is.null(probs)){
+  
+  if(!is.null(mark) && length(probs) !=0 && (last_net %n% 'n' > 2)){
     if(is.null(new_edge_hash)){
       in_mark <- sapply(1:length(heads),function(i){
-        length(get.edgeIDs(mark, heads[i],tails[i])) !=0
+        length(get.edgeIDs(mark, heads[i], tails[i])) != 0
       })
-    }else{
-      in_mark <- has_edge(heads,tails,new_edge_hash)
+    } else {
+      in_mark <- has_edge(heads, tails, new_edge_hash)
     }
-
-    if(length(probs)==1){
-      log_mark_density <- 0
-      mark_density <-1
-    }else{
-      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark]))
-      mark_density <- exp(log_mark_density)
-    }
-  }else{
-    mark_density <- 1
-    mark_density_normalized <- NULL
+    
+    log_mark_density <- sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark]))
+    mark_density <- exp(log_mark_density)
+  } else {
     log_mark_density <- 0
+    mark_density <- 1
   }
-
-  if(generate_mark & !is.null(probs)){
-    # use function sample a new mark
-    if(!is.null(last_net)){
+  
+  if(generate_mark){
+    if(!is.null(last_net) && (last_net %n% 'n') > 2){
       mark_sample <- last_net
+      old_nodes <- last_net %n% 'n'
+      new_nodes <- 1
       mark_sample <- network::add.vertices(mark_sample,new_nodes)
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
+      new_nodes <- mark_sample %n% 'n'
+      
+      poss_tails <- (old_nodes+1) : (new_nodes)
+      poss_tails <- poss_tails[poss_tails>0]
+      poss_heads <- 1:old_nodes
+      poss_heads <- poss_heads[poss_heads>0]
+      poss_edges <- expand.grid(poss_tails,poss_heads)
+      poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
+      tails <- poss_edges[,1]
+      heads <- poss_edges[,2]
+      
+      # only consider edges that are not in the old net
+      if(!is.null(last_net)){
+        in_old_net <- sapply(1:length(heads),function(i){
+          length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+        })
+        tails <- tails[!in_old_net]
+        heads <- heads[!in_old_net]
+      }
+      
+      degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
+      total_deg <- sum(degs)
+      
+      if(total_deg == 0){
+        probs <- rep(1, length(heads))
+      } else {
+        probs <- degs[heads] / total_deg
+      }
+      
+      if(any(is.na(probs))){
+        browser()
+      }
+      
+      add <- runif(length(probs)) < probs
+      network::add.edges(mark_sample, heads[add], tails[add])
+      
+      log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
+      mark_sample_density <- exp(log_mark_sample_density)
     }else{
-      mark_sample <- network::network(matrix(1),directed = F)
-      set.vertex.attribute(mark_sample,"time",rep(time,new_nodes))
+      if(is.null(last_net)){
+        mark_sample <- network::network(matrix(1),directed = F)
+        set.vertex.attribute(mark_sample,"time",time)
+      }else{
+        mark_sample <- last_net
+      }
+      times <- mark_sample %v% 'time'
+      mark_sample <- network::add.vertices(mark_sample,1)
+      set.vertex.attribute(mark_sample,
+                           "time",
+                           c(times,time))
+      mark_sample_density <- 1
+      log_mark_sample_density <- 0
     }
-    add <- runif(length(probs)) < probs
-    add.edges(mark_sample,
-              heads[add],
-              tails[add]
-    )
-    mark_sample_density = prod(probs[add])*prod(1-probs[!add])
-    log_mark_sample_density <- sum(log(probs[add])) + sum(log(1-probs[!add]))
-  }else{
+  } else {
     mark_sample <- new_net
-    mark_sample_density <- 1
     log_mark_sample_density <- 0
+    mark_sample_density <- 1
   }
-
+  
   return(list(
-    # density of provided marks
     mark_density = mark_density,
     log_mark_density = log_mark_density,
     edge_probs = probs,
-    # mark_sample
     mark_sample = mark_sample,
-    mark_sample_density = mark_sample_density,
+    mark_sample_density = exp(log_mark_sample_density),
     log_mark_sample_density = log_mark_sample_density
   ))
 }

@@ -44,7 +44,7 @@ cond_intensity <- function(new_net,
 
   return(list(result = result,
               lambda = params$mu,
-              kernel_sum = sum(params$K * decays),
+              kernel_sum = params$K*sum(decays),
               decays = decays,
               diffs = diffs,
               last_edge_probs = tmp$edge_probs,
@@ -213,9 +213,9 @@ sim_hawkesGrowthNet <- function(params,
                                 new_edge_hash = edge_hash,
                                 ...
           )
-          # print(paste0("intensity is ",tmp$result))
-          # print(paste0("lambda is ",tmp$lambda))
-          # print(paste0("kernel sum is ",tmp$kernel_sum))
+          print(paste0("intensity is ",tmp$result))
+          print(paste0("lambda is ",tmp$lambda))
+          print(paste0("kernel sum is ",tmp$kernel_sum))
           intensity <- tmp$lambda + tmp$kernel_sum
         }
 
@@ -296,11 +296,12 @@ loglik_hawkesGrowthNet = function(params,
                                   PMF_mark,
                                   edge_hash_list = NULL,
                                   verbose = FALSE,
+                                  do_grad = FALSE,
                                   ...
 ){
   t<-proc.time()
-  # don't allow negative parameters in first 4
-  if(any(sapply(params[1:6],function(x){x<0}))){
+  # don't allow negative parameters in first 6
+  if(any(sapply(params[1:min(length(params),6)],function(x){x<0}))){
     return(list(loglik = -(10**(100)),
                 grads = rep(0,length(params)))
     )
@@ -373,26 +374,29 @@ loglik_hawkesGrowthNet = function(params,
   kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
   decays <- lapply(intens_list,function(x){x$decays})
   diffs <- lapply(intens_list,function(x){x$diffs})
-
+  
   grads <- list()
-  # hawkes_mu
-  grads$mu <- sum(1/(params$mu + params$K*kernel_sum)) - tval
-  # hawkes K
-  grads$K <-  sum(kernel_sum/(params$mu + params$K*kernel_sum)) -  (1/params$beta_overall)*sum(pieces)
-  # hawkes beta
-  grads$beta_overall <- sum(sapply(1:length(decays),function(i){
-    (params$K * sum(-diffs[[i]]*decays[[i]])) / (params$mu + kernel_sum[i])
-  })) +
-    (-params$K)/(params$beta_overall**2) * ( length(kernel_sum) + sum((tval - times - 1/(params$beta_overall^2))*exp(-params$beta_overall*(tval-times))))
+  if(do_grad){
+    # hawkes_mu
+    grads$mu <- sum(1/(params$mu + params$K*kernel_sum)) - tval
+    # hawkes K
+    grads$K <-  sum(kernel_sum/(params$mu + params$K*kernel_sum)) -  (1/params$beta_overall)*sum(pieces)
+    # hawkes beta
+    grads$beta_overall <- sum(sapply(1:length(decays),function(i){
+      (params$K * sum(-diffs[[i]]*decays[[i]])) / (params$mu + kernel_sum[i])
+    })) +
+      (-params$K)/(params$beta_overall**2) * ( length(kernel_sum) + sum((tval - times - 1/(params$beta_overall^2))*exp(-params$beta_overall*(tval-times))))
+    
+    # hawkes edge decay from mark generator:
+    decay_grads <- sapply(intens_list,function(x){x$decay_grad})
+    grads$beta_edges <- sum(decay_grads)
+    
+    # hawkes theta_params (from mark generator)
+    # get the mark PMF grads:
+    mark_grads <- lapply(intens_list,function(x){x$mark_grad})
+    grads$CS_params <- colSums(do.call(rbind,mark_grads))
+  }
 
-  # hawkes edge decay from mark generator:
-  decay_grads <- sapply(intens_list,function(x){x$decay_grad})
-  grads$beta_edges <- sum(decay_grads)
-
-  # hawkes theta_params (from mark generator)
-  # get the mark PMF grads:
-  mark_grads <- lapply(intens_list,function(x){x$mark_grad})
-  grads$CS_params <- colSums(do.call(rbind,mark_grads))
 
   # TODO fix the mark grad issues with simplification
 
@@ -526,6 +530,7 @@ fit_hawkesGrowthNet <- function(params_init,
   # vcov_matrix <- solve(fisher_info)
   
   hessian_estimate <- NULL
+  vcov_matrix <- NULL
   
   return(list(fit=fit,
               fisher_info=hessian_estimate,
