@@ -12,4 +12,7 @@ Depends:
     R (>= 3.5.0)
 Imports:
     Rcpp,
-    ernm
+    ernm,
+    sna,
+    network,
+    data.table
