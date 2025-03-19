@@ -318,15 +318,19 @@ loglik_hawkesGrowthNet = function(params,
   # do the sum of the intensities:
   intens_sum <- 0
   intens_list <- list()
+  pb <- txtProgressBar(min = 0, max = length(times), style = 3)
   for(i in 1:length(times)){
     if(is.null(edge_hash_list) | i==1){
       edge_hash <- NULL
     }else{
       edge_hash <- edge_hash_list[[i]]
     }
-
+    if(verbose){
+      if(i %% 10 == 0) setTxtProgressBar(pb, i)
+    }
+    
     # need to do this on the fly otherwise too storage intensive
-    #print(i)
+    # print(i)
     new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
     current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
 

@@ -48,9 +48,22 @@ params_init <- list(mu = length(get_times(net)$times)/max(get_times(net)$times),
                    eta = 0.1,
                    CS_params = c(-10,0,0,0)
 )
+
+init_lik <- loglik_hawkesGrowthNet(params = params_init,
+                      time_window = c(0,max(edges$time)),
+                      mark_filtration = filtration_to_net(net,10) ,
+                      PMF_mark = PMF_mark_CS,
+                      formula_RHS = "edges + triangles + star(c(2,3))",
+                      truncation = 200,
+                      verbose = TRUE
+                      )
+init_lik$loglik
+
+trunc_net <- filtration_to_net(net,10)
+
 fit <- fit_hawkesGrowthNet(params_init = params_init,
-                           time_window = c(0,max(edges$time)),
-                           mark_filtration = net,
+                           time_window = c(0,max(get_times(trunc_net)$times)),
+                           mark_filtration = trunc_net,
                            PMF_mark = PMF_mark_CS,
                            formula_RHS = "edges + triangles + star(c(2,3))",
                            truncation = 200,
