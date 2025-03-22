@@ -17,7 +17,7 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 10
+TIME <- 20
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
@@ -27,12 +27,12 @@ params <- list(mu = 10,
                CS_params = c(-5,1.0,-0.5,0.1)
                )
 TRUNCATION  = 200
-INVESTIGATE = FALSE
-SIMULATE = TRUE
+INVESTIGATE = TRUE
+SIMULATE = FALSE
 PAPER_OUTPUT = FALSE
+DEBUG = FALSE
 
 N_SIMS = 100
-N_CORES <- detectCores() - 1
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
 
 SEED <- 01267
@@ -237,17 +237,20 @@ if(PAPER_OUTPUT){
 }
 
 if(INVESTIGATE){
+  t <- proc.time()
   results <- sim_hawkesGrowthNet(params =  params,
                                  time_window = c(0,TIME),
                                  PMF_mark = PMF_mark_CS,
                                  cond_intensity = cond_intensity,
                                  hashed_edges = T,
-                                 verbose = T,
+                                 verbose = F,
                                  mu_multiplier = 3,
                                  joint_accept = F,
                                  truncation = TRUNCATION,
                                  formula_RHS = "edges  + triangles() + star(c(2,3))"
                                  )
+  print("Simulation took:")
+  print(proc.time()-t)
 
 # ==================================
 # Verify Simulation is reasonable
@@ -288,7 +291,7 @@ print(esps)
 plot(esps)
 
 # start at mu over time
-tmp <- list(mu = 10,
+param_init <- list(mu = 10,
                beta_overall = 0.1,
                K = 0.1,
                beta_edges = 0.1,
@@ -301,6 +304,11 @@ tmp <- list(mu = 10,
 # Plot single varialbe logliklihoood functions - for debugging
 # ============================================================
 
+if(DEBUG){
+  
+  
+
+
 # K
 l_k <- sapply(seq(0,1,length.out=10),function(x){
   print(x)
@@ -312,7 +320,7 @@ l_k <- sapply(seq(0,1,length.out=10),function(x){
                          truncation = TRUNCATION,
                          PMF_mark = PMF_mark_CS,
                          formula_RHS = "edges  + triangles +  star(c(2,3))",
-                         verbose = TRUE
+                         verbose = F
   )$loglik
 })
 plot(y = l_k,x = seq(0,1,length.out = 10))
@@ -328,7 +336,7 @@ l_b <- sapply(seq(0,10,length.out =20),function(x){
                          truncation = TRUNCATION,
                          PMF_mark = PMF_mark_CS,
                          formula_RHS = "edges  + triangles +  star(c(2,3))",
-                         verbose = TRUE
+                         verbose = F
   )$loglik
 })
 plot(y = l_b,x = seq(0,10,length.out = 20))
@@ -344,7 +352,7 @@ l_e <- sapply(seq(0,2,length.out =40),function(x){
                          truncation = TRUNCATION,
                          PMF_mark = PMF_mark_CS,
                          formula_RHS = "edges  + triangles +  star(c(2,3))",
-                         verbose = TRUE
+                         verbose = F
   )$loglik
 })
 plot(y = l_e,x = seq(0,2,length.out = 40))
@@ -362,14 +370,13 @@ for (i in seq_along(K_values)) {
     tmp$K <- K_values[i]
     tmp$beta_overall <- beta_values[j]
 
-    loglik_matrix[i, j] <- loglik_hawkesGrowthNet(
-      params = tmp,
-      time_window = c(0, TIME),
-      events = results$events,
-      PMF_mark = PMF_mark_CS,
-      use_hashing = TRUE,
-      formula_RHS = "edges + star(c(2))"
-    )$loglik
+    loglik_matrix[i, j] <-   loglik_hawkesGrowthNet(params = tmp,
+                                                    time_window = c(0,TIME),
+                                                    mark_filtration = results$net,
+                                                    truncation = TRUNCATION,
+                                                    PMF_mark = PMF_mark_CS,
+                                                    formula_RHS = "edges  + triangles +  star(c(2,3))",
+                                                    verbose = F)$loglik
   }
 }
 # Plot using persp (Base R 3D Plot)
@@ -380,26 +387,12 @@ persp(K_values, beta_values, loglik_matrix,
       main = "Log-Likelihood Surface")
 
 # I think there are large regions where the likelihood is very flat:
-
+}
 # ======================================================
 # Fit the model
 # =====================================================
 
-Rprof("myprofile.out")
 t <-proc.time()
-# edge_hash_list <- lapply(1:length(results$events$mark),function(i){
-#   if(i==1){
-#     hist <- NULL
-#     edge_hash <- NULL
-#     return(edge_hash)
-#   }
-#   new_nodes <- (results$events$mark[[i]] %n% 'n') - (results$events$mark[[i-1]] %n% 'n')
-#   # hash the network edge list for fast lookup:
-#   edges <- network::as.edgelist(results$events$mark[[i]])
-#   keys_vec <- paste(edges[,1], edges[,2], sep = "-")
-#   edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
-#   return(edge_hash)
-# })
 l <- loglik_hawkesGrowthNet(params = params,
                        time_window = c(0,TIME),
                        mark_filtration = results$net,
@@ -407,13 +400,14 @@ l <- loglik_hawkesGrowthNet(params = params,
                        edge_hash_list = NULL,
                        truncation = TRUNCATION,
                        formula_RHS = "edges  + triangles + star(c(2,3))",
-                       verbose = TRUE
+                       verbose = FALSE
 )
 l$loglik
+print("1 iteration of log likelihoods took:")
 print(proc.time()-t)
-Rprof(NULL)
 
-fit <- fit_hawkesGrowthNet(params_init = tmp,
+t <-proc.time()
+fit <- fit_hawkesGrowthNet(params_init = params_init,
                            time_window = c(0,TIME),
                            mark_filtration = results$net,
                            PMF_mark = PMF_mark_CS,
@@ -421,18 +415,21 @@ fit <- fit_hawkesGrowthNet(params_init = tmp,
                            grad = F,
                            trace = 1,
                            truncation = TRUNCATION,
-                           maxit = 10)
-data.frame(fit = fit$par,
+                           maxit = 100,
+                           verbose = FALSE
+                           )
+print("results summary")
+data.frame(fit = fit$fit$par,
       true = unlist(params),
-      init = unlist(tmp)
+      init = unlist(params_init)
 )
+print("model fit took:")
+print(proc.time()-t)
 
-
-fit$value
-length(results$events$t)
 
 # Fit ERGM to latest network
 ergm_1 <- ergm(results$net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))
+print("ergm summary")
 summary(ergm_1)
 
 }

@@ -213,9 +213,6 @@ sim_hawkesGrowthNet <- function(params,
                                 new_edge_hash = edge_hash,
                                 ...
           )
-          print(paste0("intensity is ",tmp$result))
-          print(paste0("lambda is ",tmp$lambda))
-          print(paste0("kernel sum is ",tmp$kernel_sum))
           intensity <- tmp$lambda + tmp$kernel_sum
         }
 

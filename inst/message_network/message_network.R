@@ -59,7 +59,9 @@ init_lik <- loglik_hawkesGrowthNet(params = params_init,
                       )
 init_lik$loglik
 
-trunc_net <- filtration_to_net(net,10)
+trunc_net <- filtration_to_net(net,7)
+summary(trunc_net,print.adj = F)
+plot(trunc_net)
 
 fit <- fit_hawkesGrowthNet(params_init = params_init,
                            time_window = c(0,max(get_times(trunc_net)$times)),
@@ -71,8 +73,6 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            trace = 1,
                            maxit = 100)
 fit$par
-rbind(fit$par,
+cbind(fit$fit$par,
       unlist(params_init)
       )
-# can do this:
-hessian_matrix <- hessian(neg_loglik, optim_res$par)
