@@ -11,6 +11,7 @@ loglik_hawkesGrowthNet(
   PMF_mark,
   edge_hash_list = NULL,
   verbose = FALSE,
+  do_grad = FALSE,
   ...
 )
 }

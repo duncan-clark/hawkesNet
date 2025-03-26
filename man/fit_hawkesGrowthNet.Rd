@@ -11,6 +11,7 @@ fit_hawkesGrowthNet(
   PMF_mark,
   trace = 0,
   maxit,
+  get_hessian = FALSE,
   ...
 )
 }

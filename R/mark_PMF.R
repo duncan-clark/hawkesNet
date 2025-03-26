@@ -27,7 +27,8 @@ PMF_mark_BA <- function(time,
                         generate_mark = FALSE,
                         generate_density = TRUE,
                         grad = FALSE,
-                        new_edge_hash = NULL){
+                        new_edge_hash = NULL,
+                        truncation = NULL){
   
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
@@ -288,7 +289,8 @@ PMF_mark_CS <- function(time,
       diffs <- sapply(1:length(heads),function(i){
         node_times[tails[i]] - node_times[heads[i]]
       })
-      factor <- (params$eta + (1-params$eta))*exp(-params$beta_edges*(diffs))
+      #factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
+      factor <- exp(-params$beta_edges*(diffs))
       probs <- probs * factor
 
     }else{
@@ -421,7 +423,8 @@ PMF_mark_CS <- function(time,
       diffs <- sapply(1:length(tails),function(i){
         node_times[tails[i]] - node_times[heads[i]]
       })
-      factor <- (params$eta + (1-params$eta))*exp(-params$beta_edges*(diffs))
+      # factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
+      factor <- exp(-params$beta_edges*(diffs))
       probs <- factor * probs
 
       add <- runif(length(probs)) < probs

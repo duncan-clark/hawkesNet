@@ -17,13 +17,12 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 20
+TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
                beta_edges = 0.5,
                node_lambda = 1,
-               eta = 0.01,
                CS_params = c(-5,1.0,-0.5,0.1)
                )
 TRUNCATION  = 200
@@ -92,7 +91,6 @@ if(SIMULATE){
                       K = 0.1,
                       beta_edges = 0.1,
                       node_lambda = 1,
-                      eta = 0.01,
                       CS_params = c(-10,0,0,0)
   )
   clusterExport(cl, c("params_init"))
@@ -107,7 +105,8 @@ if(SIMULATE){
         grad = FALSE,
         trace = 0,
         maxit =1000,
-        truncation = TRUNCATION
+        truncation = TRUNCATION,
+        get_hessian = TRUE
       )
     }, error = function(e) {
       message("Error in fit_hawkesGrowthNet: ", e$message)
@@ -243,7 +242,7 @@ if(INVESTIGATE){
                                  PMF_mark = PMF_mark_CS,
                                  cond_intensity = cond_intensity,
                                  hashed_edges = T,
-                                 verbose = F,
+                                 verbose = T,
                                  mu_multiplier = 3,
                                  joint_accept = F,
                                  truncation = TRUNCATION,
@@ -252,60 +251,44 @@ if(INVESTIGATE){
   print("Simulation took:")
   print(proc.time()-t)
 
-# ==================================
-# Verify Simulation is reasonable
-# ==================================
-
-# check accept probabilites:
-length(results$accept_probs)
-summary(results$accept_probs)
-length(results$events$t)
-plot(results$accept_probs)
-
-# Should be "spikey" due to hawkesian arrival times
-times <- results$net %v% 'time'
-plot(results$net,
-     vertex.cex = times/5,
-     main = '')
-
-# Set up an empty plot with appropriate x-limits and no y-axis ticks
-# plot the times on a number line
-plot(c(0,TIME), c(-1, 1), type = "n", yaxt = "n",
-     xlab = "Value", ylab = "", main = "Vector on a Number Line")
-abline(h = 0, col = "gray", lwd = 2)
-points(results$events$t, rep(0, length(results$events$t)), pch = 19, col = "blue", cex = 1.5)
-
-
-# ==================================
-# Plot degrees and ESP distributions
-# ==================================
-degs <- ernm::calculateStatistics(results$net ~ degree(0:15,"in"))
-print(degs)
-plot(degs, col = 'red')
-
-plot(y=degs[2:10]/(results$net %n% 'n'),x=2:10,col = 'red')
-points((2:10)**-3,x = 2:10,col = 'blue')
-
-esps <- ernm::calculateStatistics(results$net ~ esp(0:10))
-print(esps)
-plot(esps)
-
-# start at mu over time
-param_init <- list(mu = 10,
-               beta_overall = 0.1,
-               K = 0.1,
-               beta_edges = 0.1,
-               node_lambda = 1,
-               eta = 0.1,
-               CS_params = c(-10,0,0,0)
-)
-
-# ============================================================
-# Plot single varialbe logliklihoood functions - for debugging
-# ============================================================
-
 if(DEBUG){
+  # ==================================
+  # Verify Simulation is reasonable
+  # ==================================
   
+  # check accept probabilites:
+  length(results$accept_probs)
+  summary(results$accept_probs)
+  length(results$events$t)
+  plot(results$accept_probs)
+  
+  # Should be "spikey" due to hawkesian arrival times
+  times <- results$net %v% 'time'
+  plot(results$net,
+       vertex.cex = times/5,
+       main = '')
+  
+  # Set up an empty plot with appropriate x-limits and no y-axis ticks
+  # plot the times on a number line
+  plot(c(0,TIME), c(-1, 1), type = "n", yaxt = "n",
+       xlab = "Value", ylab = "", main = "Vector on a Number Line")
+  abline(h = 0, col = "gray", lwd = 2)
+  points(results$events$t, rep(0, length(results$events$t)), pch = 19, col = "blue", cex = 1.5)
+  
+  
+  # ==================================
+  # Plot degrees and ESP distributions
+  # ==================================
+  degs <- ernm::calculateStatistics(results$net ~ degree(0:15,"in"))
+  print(degs)
+  plot(degs, col = 'red')
+  
+  plot(y=degs[2:10]/(results$net %n% 'n'),x=2:10,col = 'red')
+  points((2:10)**-3,x = 2:10,col = 'blue')
+  
+  esps <- ernm::calculateStatistics(results$net ~ esp(0:10))
+  print(esps)
+  plot(esps)
   
 
 
@@ -388,11 +371,21 @@ persp(K_values, beta_values, loglik_matrix,
 
 # I think there are large regions where the likelihood is very flat:
 }
+
 # ======================================================
 # Fit the model
 # =====================================================
 
-t <-proc.time()
+# start at mu over time
+params_init <- list(mu = 10,
+                   beta_overall = 0.1,
+                   K = 0.1,
+                   beta_edges = 0.1,
+                   node_lambda = 1,
+                   CS_params = c(-10,0,0,0)
+)
+
+t <- proc.time()
 l <- loglik_hawkesGrowthNet(params = params,
                        time_window = c(0,TIME),
                        mark_filtration = results$net,
@@ -406,7 +399,7 @@ l$loglik
 print("1 iteration of log likelihoods took:")
 print(proc.time()-t)
 
-t <-proc.time()
+t <- proc.time()
 fit <- fit_hawkesGrowthNet(params_init = params_init,
                            time_window = c(0,TIME),
                            mark_filtration = results$net,
@@ -415,8 +408,9 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            grad = F,
                            trace = 1,
                            truncation = TRUNCATION,
-                           maxit = 100,
-                           verbose = FALSE
+                           maxit = 1000,
+                           verbose = TRUE,
+                           get_hessian = TRUE
                            )
 print("results summary")
 data.frame(fit = fit$fit$par,
@@ -426,10 +420,55 @@ data.frame(fit = fit$fit$par,
 print("model fit took:")
 print(proc.time()-t)
 
+info <- fit$fit$hessian
+std_err <- sqrt(diag(solve(-info)))
+std_err
+print("results summary")
+data.frame(fit = fit$fit$par,
+           sd = std_err,
+           true = unlist(params),
+           init = unlist(params_init)
+)
+
 
 # Fit ERGM to latest network
 ergm_1 <- ergm(results$net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))
 print("ergm summary")
 summary(ergm_1)
+
+# temporal hawkes Fit:
+times <- get_times(results$net)$times
+plot(c(0,TIME), c(-1, 1), type = "n", yaxt = "n",
+     xlab = "Value", ylab = "", main = "Vector on a Number Line")
+abline(h = 0, col = "gray", lwd = 2)
+points(times, rep(0, length(times)), pch = 19, col = "blue", cex = 1.5)
+
+# temporal hawkes fit suggests its not hawkesian ! yes !
+fit_temp <- fit_temporal_hawkes(params_init = list(mu = 0.1,
+                                              beta = 1,
+                                              K = 0.1),
+                           realiz = data.frame(t = times,
+                                               n=length(times)),
+                           windowT = c(0,TIME),
+                           trace = 0,
+                           maxit = 1000
+                           )
+fit$par
+data.frame(fitted = fit$par,
+           se = diag(solve(-fit$hessian))
+           )
+
+# goodness of fit:
+# suggests that data could have come from this hawkes process
+KS_test_temp <- ks_test_pval_temporal(realiz = data.frame(t = times,
+                                          n = rep(length(times),length(times))),
+                      windowT = c(0,TIME),
+                      hawkes_par = fit$par
+                      )
+
+KS_test_net <- ks_test_pval_hawkesGrowthNet(params = params,
+                                            mark_filtration = results$net,
+                                            time_window = c(0,TIME))
+
 
 }

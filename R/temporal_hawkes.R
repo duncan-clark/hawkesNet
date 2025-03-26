@@ -156,7 +156,6 @@ loglik_temporal_hawk = function(params,
   if(loglik == -Inf){
     return(-999999)
   }
-  print(loglik)
   return(loglik)
 }
 
@@ -198,6 +197,7 @@ fit_temporal_hawkes <- function(params_init,
                realiz = realiz,
                windowT = windowT,
                dists = dists,
+               hessian = T,
                ...)
   return(fit)
 }

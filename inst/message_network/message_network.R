@@ -45,7 +45,6 @@ params_init <- list(mu = length(get_times(net)$times)/max(get_times(net)$times),
                    K = 0.1,
                    beta_edges = 0.1,
                    node_lambda = 1,
-                   eta = 0.1,
                    CS_params = c(-10,0,0,0)
 )
 
@@ -76,3 +75,8 @@ fit$par
 cbind(fit$fit$par,
       unlist(params_init)
       )
+
+# interpretation of parameters:
+
+
+

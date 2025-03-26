@@ -297,8 +297,8 @@ loglik_hawkesGrowthNet = function(params,
                                   ...
 ){
   t<-proc.time()
-  # don't allow negative parameters in first 6
-  if(any(sapply(params[1:min(length(params),6)],function(x){x<0}))){
+  # don't allow negative parameters in first 5
+  if(any(sapply(params[1:min(length(params),5)],function(x){x<0}))){
     return(list(loglik = -(10**(100)),
                 grads = rep(0,length(params)))
     )
@@ -435,6 +435,7 @@ fit_hawkesGrowthNet <- function(params_init,
                                 PMF_mark,
                                 trace = 0,
                                 maxit,
+                                get_hessian = FALSE,
                                 ...){
   optim_func <- function(params,...){
     param_vec <- params
@@ -496,14 +497,15 @@ fit_hawkesGrowthNet <- function(params_init,
   t<-proc.time()
   fit <- optim(par = unlist(params_init),
                fn = fn_wrapper,
-               gr = gr_wrapper,
-               #gr = NULL,
+               # gr = gr_wrapper,
+               gr = NULL,
                # method = 'BFGS',
                # method = 'CG',
                method = "Nelder-Mead",
                control = list(fnscale = -1,
                               trace=trace,
                               maxit=maxit),
+               hessian = get_hessian,
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
   
@@ -530,17 +532,19 @@ fit_hawkesGrowthNet <- function(params_init,
   # fisher_info <- hessian_estimate
   # vcov_matrix <- solve(fisher_info)
   
-  hessian_estimate <- NULL
-  vcov_matrix <- NULL
+
   
-  return(list(fit=fit,
-              fisher_info=hessian_estimate,
-              vcov_matrix=vcov_matrix))
+  return(list(fit=fit))
 }
 
 
 # compensators for hawkesGrowthNet:
-
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param params PARAM_DESCRIPTION
+#' @param time_window PARAM_DESCRIPTION
+#' @param mark_filtration PARAM_DESCRIPTION
+#' @export
 compensators_hawkesGrowthNet <- function(params,
                                          time_window,
                                          mark_filtration){
@@ -562,6 +566,27 @@ compensators_hawkesGrowthNet <- function(params,
     return(integral)
   })
   return(incremental)
+}
+
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param params PARAM_DESCRIPTION
+#' @param time_window PARAM_DESCRIPTION
+#' @param mark_filtration PARAM_DESCRIPTION
+#' @export
+ks_test_pval_hawkesGrowthNet <- function(params,
+                                         time_window,
+                                         mark_filtration){
+  compensators <- compensators_hawkesGrowthNet(params = unlist(params),
+                                               time_window = time_window,
+                                               mark_filtration = mark_filtration
+                                               )
+  compensator_incs <- diff(compensators)
+  test_dist <- 1 - exp(-compensator_incs)
+  test <- ks.test(test_dist,"punif")
+  hist(test_dist)
+  print(test$p.value)
+  return(test$p.value)
 }
 
 
