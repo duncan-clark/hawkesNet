@@ -259,7 +259,7 @@ if(INVESTIGATE){
     # Should be "spikey" due to hawkesian arrival times
     times <- results$net %v% 'time'
     plot(results$net,
-         vertex.cex = times/5,
+         vertex.cex = times/10,
          main = '')
     
     # Set up an empty plot with appropriate x-limits and no y-axis ticks

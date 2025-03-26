@@ -106,7 +106,7 @@ if(SIMULATE){
         trace = 0,
         maxit =1000,
         truncation = TRUNCATION,
-        get_hessian = TRUE
+        get_hessian =TRUE
       )
     }, error = function(e) {
       message("Error in fit_hawkesGrowthNet: ", e$message)
