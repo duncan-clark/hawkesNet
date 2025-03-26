@@ -432,7 +432,11 @@ data.frame(fit = fit$fit$par,
 
 
 # Fit ERGM to latest network
-ergm_1 <- ergm(results$net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))
+net <- results$net
+# add the edge cov to be diff in time of nodes:
+times <- get_times(net)$node_times
+diff_mat <- outer(times, times, FUN = function(a, b) abs(a - b))
+ergm_1 <- ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T) + edgecov(diff_mat))
 print("ergm summary")
 summary(ergm_1)
 
