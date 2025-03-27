@@ -53,15 +53,27 @@ init_lik <- loglik_hawkesGrowthNet(params = params_init,
                       mark_filtration = filtration_to_net(net,10) ,
                       PMF_mark = PMF_mark_CS,
                       formula_RHS = "edges + triangles + star(c(2,3))",
-                      truncation = 200,
+                      truncation = 10,
                       verbose = TRUE
                       )
 init_lik$loglik
 
+# investigate truncating the network:
 trunc_net <- filtration_to_net(net,7)
 summary(trunc_net,print.adj = F)
+plot(net)
 plot(trunc_net)
 
+init_lik <- loglik_hawkesGrowthNet(params = params_init,
+                                   time_window = c(0,max(edges$time)),
+                                   mark_filtration = trunc_net,
+                                   PMF_mark = PMF_mark_CS,
+                                   formula_RHS = "edges + triangles + star(c(2,3))",
+                                   truncation = 100,
+                                   verbose = TRUE)
+init_lik$loglik
+
+# profile:
 fit <- fit_hawkesGrowthNet(params_init = params_init,
                            time_window = c(0,max(get_times(trunc_net)$times)),
                            mark_filtration = trunc_net,
@@ -70,13 +82,38 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            truncation = 200,
                            grad = FALSE,
                            trace = 1,
-                           maxit = 100)
-fit$par
-cbind(fit$fit$par,
-      unlist(params_init)
-      )
+                           verbose = TRUE,
+                           get_hessian = T,
+                           maxit = 1000)
 
-# interpretation of parameters:
+info <- fit$fit$hessian
+std_err <- sqrt(diag(solve(-info)))
+std_err
+print("results summary")
+data.frame(fit = fit$fit$par,
+           sd = std_err,
+           init = unlist(params_init)
+           )
+
+# investigate sinular hessian:
+m <- info
+qr_m <- qr(m, LAPACK = TRUE)  
+qr_m$rank
+qr_m$pivo
+
+# looks like the arrival times are NOT hawkesian..... 
+times <- get_times(trunc_net)$times
+times <- get_times(net)$times
+temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
+                                                  beta = 1,
+                                                  K = 0.1),
+                               realiz = data.frame(t = times,
+                                                   n = length(times)),
+                               windowT = c(0,max(times)),
+                               trace = 1,
+                               maxit = 100
+                               )
+temp_fit$par
 
 
 

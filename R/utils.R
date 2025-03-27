@@ -149,11 +149,11 @@ filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
   if(equals){
-    delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
     delete.edges(net, which(get.edge.attribute(net,"time")>t))
+    delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
   }else{
-    delete.vertices(net,which(get.vertex.attribute(net,"time")>=t))
     delete.edges(net, which(get.edge.attribute(net,"time")>=t))
+    delete.vertices(net,which(get.vertex.attribute(net,"time")>=t))
   }
 
   return(net)

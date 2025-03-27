@@ -10,7 +10,7 @@ library(doParallel)
 library(R.utils)
 library(ernm)
 library(network)
-library(ndtv)
+library(sna)
 library(hash)
 library(hawkesGrowthNet)
 
@@ -51,7 +51,7 @@ make_cluster <- function(N_CORES){
     library(R.utils)
     library(ernm)
     library(network)
-    library(ndtv)
+    library(sna)
     library(hash)
     library(hawkesGrowthNet)
   })
@@ -70,19 +70,35 @@ if(SIMULATE){
   cl <- make_cluster(N_CORES)
   set.seed(SEED)
   
+  # Ensure the cluster will be stopped no matter what.
+  on.exit({
+    if (!is.null(cl)) {
+      stopCluster(cl)
+    }
+  }, add = TRUE)
+  
   sims <- parLapply(cl=cl,1:N_SIMS,function(x){
-    results <- sim_hawkesGrowthNet(params =  params,
-                                   time_window = c(0,TIME),
-                                   PMF_mark = PMF_mark_BA,
-                                   cond_intensity = cond_intensity,
-                                   hashed_edges = T,
-                                   verbose = F,
-                                   mu_multiplier = 3,
-                                   joint_accept = F,
-                                   truncation = TRUNCATION
-                                   )
+    results <- tryCatch({
+      sim_hawkesGrowthNet(params =  params,
+                          time_window = c(0,TIME),
+                          PMF_mark = PMF_mark_BA,
+                          cond_intensity = cond_intensity,
+                          hashed_edges = T,
+                          verbose = F,
+                          mu_multiplier = 3,
+                          joint_accept = F,
+                          truncation = TRUNCATION)},
+      error = function(e) {
+      # Already inside parallel worker; just return NULL or partial data
+      message("Error in sim_hawkesGrowthNet: ", e$message)
+      return(NULL)
+    })
     return(results)
   })
+  
+  # only keep non null sims:
+  sims <- sims[sapply(sims,length)!=0]
+  
   fits <- NULL
   params_init <- list(mu = 10,
                       beta_overall = 0.1,
@@ -104,8 +120,9 @@ if(SIMULATE){
         get_hessian = TRUE
       )
     }, error = function(e) {
+      # Already inside parallel worker; just return NULL or partial data
       message("Error in fit_hawkesGrowthNet: ", e$message)
-      return(NULL)  # Return NULL or an alternative default if an error occurs
+      return(NULL)
     })
     return(fit)
   })
