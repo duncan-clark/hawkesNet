@@ -155,6 +155,9 @@ filtration_to_net <- function(net,
     delete.edges(net, which(get.edge.attribute(net,"time")>=t))
     delete.vertices(net,which(get.vertex.attribute(net,"time")>=t))
   }
+  
+  # no need for vertex names
+  delete.vertex.attribute(net,'vertex.names')
 
   return(net)
 }

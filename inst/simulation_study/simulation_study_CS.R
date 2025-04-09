@@ -25,13 +25,13 @@ params <- list(mu = 10,
                node_lambda = 1,
                CS_params = c(-5,1.0,-0.5,0.1)
                )
-TRUNCATION  = 200
-INVESTIGATE = TRUE
-SIMULATE = FALSE
+TRUNCATION  = 50
+INVESTIGATE = F
+SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
 
-N_SIMS = 100
+N_SIMS <- 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
 
 SEED <- 01267
@@ -98,6 +98,8 @@ if(SIMULATE){
     })
     return(results)
   })
+  print("Simulation took:")
+  print(proc.time()-t)
   
   # only keep non null sims:
   sims <- sims[sapply(sims,length)!=0]
@@ -105,12 +107,13 @@ if(SIMULATE){
   fits <- NULL
   params_init <- list(mu = 10,
                       beta_overall = 0.1,
-                      K = 0.1,
+                      K = 0.5,
                       beta_edges = 0.1,
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
   clusterExport(cl, c("params_init"))
+  t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
       fit_hawkesGrowthNet(
@@ -121,7 +124,7 @@ if(SIMULATE){
         formula_RHS = "edges + triangles + star(c(2,3))",
         grad = FALSE,
         trace = 0,
-        maxit =1000,
+        maxit = 1000,
         truncation = TRUNCATION,
         get_hessian =TRUE
       )
@@ -132,6 +135,8 @@ if(SIMULATE){
     })
     return(fit)
   })
+  print("Fitting took:")
+  print(proc.time()-t1)
   # Save the fits and final network for analysis:
   temp_hawkes_fits <- lapply(sims,function(x){
     fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
@@ -397,7 +402,7 @@ persp(K_values, beta_values, loglik_matrix,
 # start at mu over time
 params_init <- list(mu = 10,
                    beta_overall = 0.1,
-                   K = 0.1,
+                   K = 0.5,
                    beta_edges = 0.1,
                    node_lambda = 1,
                    CS_params = c(-10,0,0,0)
@@ -417,6 +422,7 @@ l$loglik
 print("1 iteration of log likelihoods took:")
 print(proc.time()-t)
 
+sink("tmp.txt")
 t <- proc.time()
 fit <- fit_hawkesGrowthNet(params_init = params_init,
                            time_window = c(0,TIME),
@@ -437,6 +443,7 @@ data.frame(fit = fit$fit$par,
 )
 print("model fit took:")
 print(proc.time()-t)
+sink()
 
 info <- fit$fit$hessian
 std_err <- sqrt(diag(solve(-info)))

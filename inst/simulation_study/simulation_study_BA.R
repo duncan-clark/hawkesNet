@@ -24,8 +24,8 @@ params <- list(mu = 10,
                beta_edges = 0.5
 )
 TRUNCATION  = 200
-INVESTIGATE = TRUE
-SIMULATE = FALSE
+INVESTIGATE = F
+SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
 

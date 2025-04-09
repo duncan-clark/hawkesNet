@@ -153,9 +153,7 @@ PMF_mark_BA <- function(time,
       }
       times <- mark_sample %v% 'time'
       mark_sample <- network::add.vertices(mark_sample,1)
-      set.vertex.attribute(mark_sample,
-                           "time",
-                           c(times,time))
+      set.vertex.attribute(mark_sample,"time",c(times,time))
       mark_sample_density <- 1
       log_mark_sample_density <- 0
     }
@@ -229,6 +227,7 @@ PMF_mark_CS <- function(time,
   }else{
     last_net <- NULL
     new_net <- network::network(matrix(1),directed = F)
+    delete.vertex.attribute(new_net,'na')
     set.vertex.attribute(new_net,"time",time)
     old_nodes <- 0
     new_nodes <- 1
@@ -253,8 +252,6 @@ PMF_mark_CS <- function(time,
     heads <- heads[!in_old_net]
   }
 
-
-
   # =============
   # mark density
   # =============
@@ -271,11 +268,32 @@ PMF_mark_CS <- function(time,
       if(max(tails)>new_net %n% 'n'){
         stop("accidently adding a edge into the network that doesn't have that node yet")
       }
+      # print("Max tail")
+      # print(max(tails))
+      # print("max head")
+      # print(max(heads))
+      # print("new network")
+      # print(summary(new_net,print.adj = F))
+      # print("vertex names")
+      # print(new_net %v% 'vertex.names')
+      # print(as.factor(new_net %v% 'vertex.names'))
+      # print(summary(new_net %v% 'time'))
+      # print(summary(new_net %e% 'time'))
+      # print("making model")
+      
+      # delete NAs to prevent C++ using them
+      delete.vertex.attribute(new_net,'na')
       model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
+      # print("model made")
       # model$setNetwork(ernm::as.BinaryNet(new_net))
       new_net <- old_new_net
       model$calculate()
       stat <- model$statistics()
+      # print("Model statistics")
+      # print(stat)
+      # print("old new network - used in change stats")
+      # print(summary(old_new_net,print.adj = F))
+      # print("doing change stats")
       change_stats <- lapply(1:length(tails),FUN=function(i){
         # update - note no need to update just need to take away  old stat
         old_stat <- model$statistics()
@@ -283,6 +301,7 @@ PMF_mark_CS <- function(time,
         new_stat <- model$statistics()
         return(new_stat - old_stat)
       })
+      # print("done with change stats")
       # logistic regression on change stats:
       probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
       node_times <- new_net %v% 'time'
@@ -372,6 +391,7 @@ PMF_mark_CS <- function(time,
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
       new_nodes <- rpois(1,params$node_lambda)
+      #browser()
       mark_sample <- network::add.vertices(mark_sample,new_nodes)
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
       new_nodes <- mark_sample %n% 'n'
@@ -402,6 +422,7 @@ PMF_mark_CS <- function(time,
       }else{
         old_new_net <- mark_sample
       }
+      delete.vertex.attribute(mark_sample,'na')
       model <- createCppModel(as.formula(paste("mark_sample ~ ",formula_RHS)))
       # model$setNetwork(ernm::as.BinaryNet(new_net))
       model$calculate()
