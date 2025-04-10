@@ -30,7 +30,7 @@ PAPER_OUTPUT = FALSE
 DEBUG = FALSE
 
 N_SIMS = 100
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
 
@@ -142,7 +142,7 @@ if(SIMULATE){
   saveRDS(list(sims=sims,
                fits = fits,
                temp_hawkes_fits = temp_hawkes_fits),
-          file = "results_CS.RDS")
+          file = "results_BA.RDS")
   stopCluster(cl)
   print("Simulating and fitting took:")
   print((t - proc.time())[3])
@@ -407,7 +407,7 @@ if(INVESTIGATE){
                              time_window = c(0,TIME),
                              mark_filtration = results$net,
                              PMF_mark = PMF_mark_BA,
-                             grad = F,
+                             grad = T,
                              trace = 1,
                              truncation = TRUNCATION,
                              maxit = 1000,
