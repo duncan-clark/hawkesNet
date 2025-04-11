@@ -28,6 +28,7 @@ INVESTIGATE = F
 SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
+MAX_ITER = 5000
 
 N_SIMS = 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
@@ -58,7 +59,8 @@ make_cluster <- function(N_CORES){
   clusterExport(cl, c("params",
                       "TIME",
                       "TRUNCATION",
-                      "SEED"
+                      "SEED",
+                      "MAX_ITER",
   ))
   return(cl)
 }
@@ -115,7 +117,7 @@ if(SIMULATE){
         PMF_mark = PMF_mark_BA,
         grad = FALSE,
         trace = 0,
-        maxit =1000,
+        maxit =MAX_ITER,
         truncation = TRUNCATION,
         get_hessian = TRUE
       )
@@ -149,6 +151,11 @@ if(SIMULATE){
 }
 
 if(PAPER_OUTPUT){
+  
+  load("results_BA.RDS")
+  sims <- results_CS$sims
+  fits <- results_CS$fits
+  temp_hawkes_fits <- results_CS$temp_hawkes_fits
   
   # ==========================
   # Network Descriptive Stats
@@ -203,7 +210,7 @@ if(PAPER_OUTPUT){
   # check if any converged:
   
   estims <- do.call(rbind,lapply(fits[keep],function(x){
-    return(as.data.frame(t(x$par),names = names(x$par)))
+    return(as.data.frame(t(x$fit$par),names = names(x$fit$par)))
   }))
   
   results <- data.frame(mean = colMeans(estims),
@@ -223,7 +230,7 @@ if(PAPER_OUTPUT){
                                  time_window = c(0,TIME)
     )
   })
-  marked_p_vals <- mapply(sims[keep],lapply(1:length(fits[keep]),function(x){fits[keep][[x]]$par}),FUN = function(x,y){
+  marked_p_vals <- mapply(sims[keep],lapply(1:length(fits[keep]),function(x){fits[keep][[x]]$fit$par}),FUN = function(x,y){
     times <- get_times(x$net)$times
     ks_test_pval_temporal(realiz = data.frame(t = times,
                                               n = rep(length(times),length(times))),

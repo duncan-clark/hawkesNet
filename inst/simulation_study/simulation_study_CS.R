@@ -30,6 +30,7 @@ INVESTIGATE = F
 SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
+MAX_ITER = 1000
 
 N_SIMS <- 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
@@ -60,7 +61,8 @@ make_cluster <- function(N_CORES){
   clusterExport(cl, c("params",
                       "TIME",
                       "TRUNCATION",
-                      "SEED"
+                      "SEED",
+                      "MAX_ITER"
                       ))
   return(cl)
 }
@@ -124,7 +126,7 @@ if(SIMULATE){
         formula_RHS = "edges + triangles + star(c(2,3))",
         grad = FALSE,
         trace = 0,
-        maxit = 1000,
+        maxit = MAX_ITER,
         truncation = TRUNCATION,
         get_hessian =TRUE
       )
@@ -160,6 +162,11 @@ if(SIMULATE){
 }
 
 if(PAPER_OUTPUT){
+  
+  load("results_CS.RDS")
+  sims <- results_CS$sims
+  fits <- results_CS$fits
+  temp_hawkes_fits <- results_CS$temp_hawkes_fits
 
   # ==========================
   # Network Descriptive Stats
@@ -210,11 +217,11 @@ if(PAPER_OUTPUT){
   # get mean and sd of parameters from fits:
   keep <- which(sapply(fits,length)!=0)
   paste0("keeping ",length(keep), " of ", N_SIMS," fits")
-  sapply(fits,function(x){x$convergence==1})
+  sapply(fits,function(x){x$fit$convergence==1})
   # check if any converged:
 
   estims <- do.call(rbind,lapply(fits[keep],function(x){
-    return(as.data.frame(t(x$par),names = names(x$par)))
+    return(as.data.frame(t(x$fit$par),names = names(x$fit$par)))
   }))
 
   results <- data.frame(mean = colMeans(estims),
