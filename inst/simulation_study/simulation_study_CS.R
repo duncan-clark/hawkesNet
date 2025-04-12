@@ -55,7 +55,7 @@ make_cluster <- function(N_CORES){
     library(ernm)
     library(network)
     library(sna)
-    library(hash)
+    library(hash)ls -al
     library(hawkesGrowthNet)
   })
   clusterExport(cl, c("params",

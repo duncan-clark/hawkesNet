@@ -315,22 +315,46 @@ loglik_hawkesGrowthNet = function(params,
   # do the sum of the intensities:
   intens_sum <- 0
   intens_list <- list()
-  pb <- txtProgressBar(min = 0, max = length(times), style = 3)
-  for(i in 1:length(times)){
+  #pb <- txtProgressBar(min = 0, max = length(times), style = 3)
+  # for(i in 1:length(times)){
+  #   if(is.null(edge_hash_list) | i==1){
+  #     edge_hash <- NULL
+  #   }else{
+  #     edge_hash <- edge_hash_list[[i]]
+  #   }
+  #   if(verbose){
+  #     if(i %% 10 == 0) setTxtProgressBar(pb, i)
+  #   }
+  #   
+  #   # need to do this on the fly otherwise too storage intensive
+  #   # print(i)
+  #   new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
+  #   current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+  # 
+  #   intensity <- cond_intensity(new_net = current_net,
+  #                               t = times[i],
+  #                               mark_filtration = current_net,
+  #                               PMF_mark = PMF_mark,
+  #                               params = params,
+  #                               new_edge_hash = edge_hash,
+  #                               ...)
+  #   intens_list[[i]] <- intensity
+  # }
+  
+  # if parallelize do that here with PSOCK for simplicity:
+  # if ... has a cores arg:
+  intens_func <- function(i){
     if(is.null(edge_hash_list) | i==1){
       edge_hash <- NULL
     }else{
       edge_hash <- edge_hash_list[[i]]
-    }
-    if(verbose){
-      if(i %% 10 == 0) setTxtProgressBar(pb, i)
     }
     
     # need to do this on the fly otherwise too storage intensive
     # print(i)
     new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
     current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
-
+    
     intensity <- cond_intensity(new_net = current_net,
                                 t = times[i],
                                 mark_filtration = current_net,
@@ -338,8 +362,20 @@ loglik_hawkesGrowthNet = function(params,
                                 params = params,
                                 new_edge_hash = edge_hash,
                                 ...)
-    intens_list[[i]] <- intensity
+    return(intensity)
   }
+  
+  if("cores" %in% names(list(...))){
+    cores <- list(...)$cores
+    # print error is OS is not unix:
+    cl <- makeForkCluster(cores)
+    #debug(intens_func)
+    intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
+    stopCluster(cl)
+  }else{
+    intens_list <- lapply(1:length(times),intens_func)
+  }
+  
   tmp <- sapply(intens_list,function(x){x$result})
 
   # print("params are :")

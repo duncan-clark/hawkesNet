@@ -28,7 +28,8 @@ PMF_mark_BA <- function(time,
                         generate_density = TRUE,
                         grad = FALSE,
                         new_edge_hash = NULL,
-                        truncation = NULL){
+                        truncation = NULL,
+                        ...){
   
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
@@ -210,7 +211,8 @@ PMF_mark_CS <- function(time,
                         new_edge_hash = NULL,
                         formula_RHS,
                         grad = FALSE,
-                        truncation = 1
+                        truncation = 1,
+                        ...
 ){
   # if we are not starting from nothing:
   last_net <- filtration_to_net(mark_filtration,time,equals = FALSE)

@@ -60,7 +60,7 @@ make_cluster <- function(N_CORES){
                       "TIME",
                       "TRUNCATION",
                       "SEED",
-                      "MAX_ITER",
+                      "MAX_ITER"
   ))
   return(cl)
 }
