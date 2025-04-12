@@ -11,7 +11,7 @@ N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 # read data in:
 # data collected from : https://snap.stanford.edu/data/CollegeMsg.html
-dat <- read.table('data/CollegeMsg.txt')
+dat <- read.table('hawkesGrowthNet/data/CollegeMsg.txt')
 names(dat) <- c('from', 'to', 'time')
 # convert to days:
 dat$time <- (dat$time - min(dat$tim))/(24*60*60)
