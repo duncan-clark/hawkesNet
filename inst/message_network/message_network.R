@@ -3,8 +3,8 @@ library(network)
 library(sna)
 library(ernm)
 library(dplyr)
-library(ergm)
 library(parallel)
+# library(ergm)
 
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
@@ -154,14 +154,15 @@ temp_fits <- lapply(list(net_7,net_14,net_21),function(net){
 )
 
 # fit an ergm to the networks
-ergm_fits <- lapply(list(net_7,net_14,net_21),function(net){
-  ergm_fit <- tryCatch({ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))},
-                       error = function(e) {
-                         message("Error in ergm fit: ", e)
-                         return(NA)
-                       })
-  return(ergm_fit)
-})
+# ergm_fits <- lapply(list(net_7,net_14,net_21),function(net){
+#   ergm_fit <- tryCatch({ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T))},
+#                        error = function(e) {
+#                          message("Error in ergm fit: ", e)
+#                          return(NA)
+#                        })
+#   return(ergm_fit)
+# })
+ergm_fits <- NULL
 
 # Save all the results from the fitting:
 saveRDS(list(fits=fits,
