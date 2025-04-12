@@ -52,7 +52,7 @@ make_cluster <- function(N_CORES){
     library(parallel)
     library(doParallel)
     library(R.utils)
-    library(ernm
+    library(ernm)
     library(network)
     library(sna)
     library(hash)
