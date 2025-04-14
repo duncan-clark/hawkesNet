@@ -105,8 +105,10 @@ delete.vertices(net_7,isolates(net_7))
 delete.vertices(net_14,isolates(net_14))
 delete.vertices(net_21,isolates(net_21))
 
+# net_list <- list(net_7,net_14,net_21)
+net_list <- list(net_7,net_14)
 
-fits <- lapply(list(net_7,net_14,net_21),function(net){
+fits <- lapply(net_list,function(net){
   fit <- fit_hawkesGrowthNet(params_init = params_init,
                              time_window = c(0,max(get_times(net)$times)),
                              mark_filtration = net,
@@ -138,7 +140,7 @@ fits <- lapply(list(net_7,net_14,net_21),function(net){
 # qr_m$rank
 # qr_m$pivo
 
-temp_fits <- lapply(list(net_7,net_14,net_21),function(net){
+temp_fits <- lapply(net_list,function(net){
   times <- get_times(net)$times
   temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
                                                      beta = 1,
