@@ -620,8 +620,8 @@ ks_test_pval_hawkesGrowthNet <- function(params,
   compensator_incs <- diff(compensators)
   test_dist <- 1 - exp(-compensator_incs)
   test <- ks.test(test_dist,"punif")
-  hist(test_dist)
-  print(test$p.value)
+  # hist(test_dist)
+  # print(test$p.value)
   return(test$p.value)
 }
 

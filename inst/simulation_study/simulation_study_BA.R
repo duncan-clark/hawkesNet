@@ -143,7 +143,10 @@ if(SIMULATE){
   })
   saveRDS(list(sims=sims,
                fits = fits,
-               temp_hawkes_fits = temp_hawkes_fits),
+               temp_hawkes_fits = temp_hawkes_fits,
+               params = params,
+               params_init = params_init
+               ),
           file = "results_BA.RDS")
   stopCluster(cl)
   print("Simulating and fitting took:")

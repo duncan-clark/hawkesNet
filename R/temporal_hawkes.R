@@ -272,8 +272,8 @@ ks_test_pval_temporal <- function(realiz,
                                               windowT = windowT)
   compensator_incs <- diff(compensators)
   test_dist <- 1 - exp(-compensator_incs)
-  hist(test_dist)
+  # hist(test_dist)
+  # print(test$p.value)
   test <- ks.test(test_dist,"punif")
-  print(test$p.value)
   return(test$p.value)
 }

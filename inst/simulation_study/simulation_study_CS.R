@@ -30,7 +30,7 @@ INVESTIGATE = F
 SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
-MAX_ITER = 1000
+MAX_ITER = 2000
 
 N_SIMS <- 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
@@ -154,7 +154,9 @@ if(SIMULATE){
   })
   saveRDS(list(sims=sims,
                fits = fits,
-               temp_hawkes_fits = temp_hawkes_fits),
+               temp_hawkes_fits = temp_hawkes_fits,
+               params = params,
+               params_init = params_init),
           file = "results_CS.RDS")
   stopCluster(cl)
   print("Simulating and fitting took:")
