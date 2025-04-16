@@ -277,3 +277,85 @@ ks_test_pval_temporal <- function(realiz,
   test <- ks.test(test_dist,"punif")
   return(test$p.value)
 }
+
+#' @title Simulate a univariate Hawkes process (branching structure)
+#'
+#' @description
+#' Generate event times from a Hawkes process with exponential triggering kernel
+#' using a branching (cluster) representation:
+#' - \eqn{\mu} controls the background (immigrant) events.
+#' - \eqn{K} is the mean number of offspring per event.
+#' - \eqn{\beta} is the exponential decay rate for child arrival times after the parent.
+#'
+#' @param mu Numeric > 0. Background rate.
+#' @param K Numeric >= 0. Mean number of children per event (branching ratio). 
+#'          Typically K < 1 for a subcritical process.
+#' @param beta Numeric > 0. Decay rate of the exponential triggering kernel.
+#' @param T Numeric > 0. Maximum time horizon. Events are restricted to [0, T].
+#' @param seed Optional. Set an integer random seed for reproducibility. Default: \code{NULL}.
+#'
+#' @return A numeric vector of sorted event times within [0, T].
+#'
+#' @details
+#' **Algorithm**:
+#' 1. Draw background events (immigrants) from a Poisson(\eqn{\mu \times T}) process 
+#'    and place them uniformly in [0, T].
+#' 2. For each event at time \eqn{t_p}, draw \eqn{N_p \sim \mathrm{Poisson}(K)} children.
+#'    Each child's time is \eqn{t_c = t_p + \Delta}, where \eqn{\Delta \sim \mathrm{Exp}(\beta)}.
+#'    Keep only those \eqn{t_c \le T}.
+#' 3. Each child then serves as a parent to further offspring, recursively, until no new events fall in [0,T].
+#'
+#' This method gives the same distribution as a Hawkes process with intensity
+#' \eqn{\lambda(t) = \mu + \sum_{t_i < t} K \beta e^{-\beta (t - t_i)}}, but may be faster
+#' if you only need the final set of event times (particularly for subcritical K).
+#'
+#' @examples
+#' \dontrun{
+#' set.seed(123)
+#' times <- simulate_hawkes_branching(mu = 0.2, K = 0.5, beta = 1, T = 10)
+#' print(times)
+#' }
+#'
+#' @export
+simulate_hawkes_branching <- function(mu, K, beta, T, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  stopifnot(mu > 0, beta > 0, K >= 0, T > 0)
+  
+  # 1) Generate background (immigrant) events in [0, T]
+  #    N0 ~ Poisson(mu * T), times ~ Uniform(0, T)
+  N0 <- rpois(1, lambda = mu * T)
+  if (N0 > 0) {
+    bg_times <- sort(runif(N0, min = 0, max = T))
+  } else {
+    bg_times <- numeric(0)
+  }
+  
+  # We'll store all events in a growing list (start with background).
+  # BFS approach: each event can spawn child events.
+  events <- bg_times
+  i <- 1   # index of "parent" event we're branching from
+  
+  while (i <= length(events)) {
+    parent_time <- events[i]
+    # 2) Number of children from this parent ~ Poisson(K)
+    num_children <- rpois(1, K)
+    if (num_children > 0) {
+      # 3) Offspring arrival times are Exp(beta) after parent_time
+      offsets <- rexp(num_children, rate = beta)
+      child_times <- parent_time + offsets
+      # Keep only those children that occur before T
+      child_times <- child_times[child_times <= T]
+      
+      if (length(child_times) > 0) {
+        # Append new children to the event list (unordered for now)
+        events <- c(events, child_times)
+      }
+    }
+    i <- i + 1
+  }
+  
+  # Sort all event times for a canonical representation
+  events <- sort(events)
+  return(events)
+}
+

@@ -17,13 +17,14 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 10
+TIME <- 5
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
                beta_edges = 0.5,
                node_lambda = 1,
-               CS_params = c(-5,1.0,-0.5,0.1)
+               #CS_params = c(-5,1.0,-0.5,0.1)
+               CS_params = c(-6,0.5,0.3,-0.1)
                )
 TRUNCATION  = 50
 INVESTIGATE = F
@@ -282,6 +283,9 @@ if(INVESTIGATE){
                                  )
   print("Simulation took:")
   print(proc.time()-t)
+  
+  ernm::calculateStatistics(results$net ~ degree(0:15))
+  ernm::calculateStatistics(results$net ~ esp(0:15))
 
 if(DEBUG){
   # ==================================

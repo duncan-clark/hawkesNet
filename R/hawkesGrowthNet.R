@@ -375,7 +375,6 @@ loglik_hawkesGrowthNet = function(params,
   }else{
     intens_list <- lapply(1:length(times),intens_func)
   }
-  
   tmp <- sapply(intens_list,function(x){x$result})
 
   # print("params are :")

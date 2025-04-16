@@ -310,6 +310,7 @@ PMF_mark_CS <- function(time,
       diffs <- sapply(1:length(heads),function(i){
         node_times[tails[i]] - node_times[heads[i]]
       })
+      diffs <- time - node_times[heads]
       #factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
       factor <- exp(-params$beta_edges*(diffs))
       probs <- probs * factor

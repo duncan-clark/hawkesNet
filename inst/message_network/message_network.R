@@ -8,7 +8,6 @@ library(parallel)
 
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
-
 # read data in:
 # data collected from : https://snap.stanford.edu/data/CollegeMsg.html
 dat <- read.table('hawkesGrowthNet/data/CollegeMsg.txt')
@@ -169,7 +168,9 @@ ergm_fits <- NULL
 # Save all the results from the fitting:
 saveRDS(list(fits=fits,
              temp_fits = temp_fits,
-             ergm_fits = ergm_fits),
+             ergm_fits = ergm_fits,
+             net_list = net_list
+             ),
         file = "message_network_results.rds"
         )
 
