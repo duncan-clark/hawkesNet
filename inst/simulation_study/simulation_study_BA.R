@@ -17,18 +17,18 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 20
+TIME <- 100
 params <- list(mu = 10,
-               beta_overall = 1.0,
+               beta_overall = 2,
                K = 0.5,
                beta_edges = 0.5
 )
-TRUNCATION  = 200
+TRUNCATION  = 1000
 INVESTIGATE = F
 SIMULATE = T
 PAPER_OUTPUT = FALSE
 DEBUG = FALSE
-MAX_ITER = 5000
+MAX_ITER = 2000
 
 N_SIMS = 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
@@ -286,7 +286,7 @@ if(INVESTIGATE){
     # Should be "spikey" due to hawkesian arrival times
     times <- results$net %v% 'time'
     plot(results$net,
-         vertex.cex = times/10,
+         vertex.cex = times/TIME,
          main = '')
     
     # Set up an empty plot with appropriate x-limits and no y-axis ticks

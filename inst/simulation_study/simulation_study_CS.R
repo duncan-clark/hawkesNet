@@ -17,7 +17,7 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 5
+TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
@@ -67,7 +67,6 @@ make_cluster <- function(N_CORES){
                       ))
   return(cl)
 }
-
 
 if(SIMULATE){
   # make the cluster:
@@ -301,7 +300,7 @@ if(DEBUG){
   # Should be "spikey" due to hawkesian arrival times
   times <- results$net %v% 'time'
   plot(results$net,
-       vertex.cex = times/5,
+       vertex.cex = times/TIME,
        main = '')
   
   # Set up an empty plot with appropriate x-limits and no y-axis ticks
