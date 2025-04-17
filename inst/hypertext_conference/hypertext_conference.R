@@ -125,7 +125,7 @@ process_dat <- function(dat,title = NULL,windowT = NULL){
               fit_temp = fit_temp))
 }
 
-dat <- read.table('data/ht09_contact_list.dat')
+dat <- read.table('hawkesGrowthNet/data/ht09_contact_list.dat')
 dat <- data.frame(
   from = dat$V2,
   to = dat$V3,
