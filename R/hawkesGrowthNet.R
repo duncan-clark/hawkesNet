@@ -366,11 +366,12 @@ loglik_hawkesGrowthNet = function(params,
   }
   
   if("cores" %in% names(list(...))){
+    if(verbose){
+      print(paste0("using ",list(...)$cores," cores on ",length(times), " objects"))
+    }
     cores <- list(...)$cores
-    # print error is OS is not unix:
     cl <- makeForkCluster(cores)
-    #debug(intens_func)
-    intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
+    intens_list <- parLapplyLB(cl,X=1:length(times),fun = function(x){intens_func(x)})
     stopCluster(cl)
   }else{
     intens_list <- lapply(1:length(times),intens_func)
