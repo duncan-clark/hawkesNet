@@ -211,11 +211,12 @@ temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
 )
 
 # fit an ergm to the networks
-times <- get_times(net)$node_times
-diff_mat <- outer(times, times, FUN = function(a, b) abs(a - b))
-ergm_fit <- ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T) + edgecov(diff_mat))
-print("ergm summary")
-summary(ergm_fit)
+# times <- get_times(net)$node_times
+# diff_mat <- outer(times, times, FUN = function(a, b) abs(a - b))
+# ergm_fit <- ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T) + edgecov(diff_mat))
+# print("ergm summary")
+# summary(ergm_fit)
+ergm_fit <- NULL
 
 # Save all the results from the fitting:
 saveRDS(list(fit=fit,
