@@ -315,53 +315,20 @@ loglik_hawkesGrowthNet = function(params,
   # do the sum of the intensities:
   intens_sum <- 0
   intens_list <- list()
-  #pb <- txtProgressBar(min = 0, max = length(times), style = 3)
-  # for(i in 1:length(times)){
-  #   if(is.null(edge_hash_list) | i==1){
-  #     edge_hash <- NULL
-  #   }else{
-  #     edge_hash <- edge_hash_list[[i]]
-  #   }
-  #   if(verbose){
-  #     if(i %% 10 == 0) setTxtProgressBar(pb, i)
-  #   }
-  #   
-  #   # need to do this on the fly otherwise too storage intensive
-  #   # print(i)
-  #   new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
-  #   current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
-  # 
-  #   intensity <- cond_intensity(new_net = current_net,
-  #                               t = times[i],
-  #                               mark_filtration = current_net,
-  #                               PMF_mark = PMF_mark,
-  #                               params = params,
-  #                               new_edge_hash = edge_hash,
-  #                               ...)
-  #   intens_list[[i]] <- intensity
-  # }
   
   # if parallelize do that here with PSOCK for simplicity:
-  # if ... has a cores arg:
   intens_func <- function(i){
-    if(is.null(edge_hash_list) | i==1){
-      edge_hash <- NULL
-    }else{
-      edge_hash <- edge_hash_list[[i]]
-    }
     # need to do this on the fly otherwise too storage intensive
     current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
     
-    t <- proc.time()[3]
     intensity <- cond_intensity(new_net = current_net,
                                 t = times[i],
                                 mark_filtration = current_net,
                                 PMF_mark = PMF_mark,
                                 params = params,
-                                new_edge_hash = edge_hash,
                                 ...)
-    intensity$t <- proc.time()[3] - t
-    return(intensity)
+    return(intensity$result)
+    #return(intensity)
   }
   
   if("cores" %in% names(list(...))){
@@ -369,17 +336,18 @@ loglik_hawkesGrowthNet = function(params,
       print(paste0("using ",list(...)$cores," cores on ",length(times), " objects"))
     }
     cores <- list(...)$cores
-    cl <- makeForkCluster(cores)
-    intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
-    stopCluster(cl)
+    #cl <- makeForkCluster(cores)
+    t <- proc.time()
+    # intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
+    intens_list <- parallel::mclapply(seq_along(times), intens_func, mc.cores = cores,mc.preschedule=FALSE)
+    print(paste0("intens list ", round((proc.time()-t)[3],2)," seconds"))
+    #stopCluster(cl)
   }else{
     intens_list <- lapply(1:length(times),intens_func)
   }
-  tmp <- sapply(intens_list,function(x){x$result})
-
-  # print("params are :")
-  # print(params)
-  # print(tmp)
+  # tmp <- sapply(intens_list,function(x){x$result})
+  tmp <- unlist(intens_list)
+  
   if(any(is.na(tmp))){
     browser()
   }
@@ -407,9 +375,9 @@ loglik_hawkesGrowthNet = function(params,
 
   # calcualte the gradients:
 
-  kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
-  decays <- lapply(intens_list,function(x){x$decays})
-  diffs <- lapply(intens_list,function(x){x$diffs})
+  # kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
+  # decays <- lapply(intens_list,function(x){x$decays})
+  # diffs <- lapply(intens_list,function(x){x$diffs})
   
   grads <- list()
   if(do_grad){
@@ -469,6 +437,7 @@ fit_hawkesGrowthNet <- function(params_init,
                                 mark_filtration,
                                 PMF_mark,
                                 trace = 0,
+                                reltol = 1e-8,
                                 maxit,
                                 get_hessian = FALSE,
                                 ...){
@@ -539,7 +508,9 @@ fit_hawkesGrowthNet <- function(params_init,
                method = "Nelder-Mead",
                control = list(fnscale = -1,
                               trace=trace,
-                              maxit=maxit),
+                              maxit=maxit,
+                              reltol = reltol,
+                              abstol = NULL),
                hessian = get_hessian,
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
