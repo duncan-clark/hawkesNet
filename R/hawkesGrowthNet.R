@@ -349,12 +349,10 @@ loglik_hawkesGrowthNet = function(params,
     }else{
       edge_hash <- edge_hash_list[[i]]
     }
-    
     # need to do this on the fly otherwise too storage intensive
-    # print(i)
-    new_net <- filtration_to_net(mark_filtration,times[i],equal = FALSE)
     current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
     
+    t <- proc.time()[3]
     intensity <- cond_intensity(new_net = current_net,
                                 t = times[i],
                                 mark_filtration = current_net,
@@ -362,6 +360,7 @@ loglik_hawkesGrowthNet = function(params,
                                 params = params,
                                 new_edge_hash = edge_hash,
                                 ...)
+    intensity$t <- proc.time()[3] - t
     return(intensity)
   }
   
@@ -370,25 +369,8 @@ loglik_hawkesGrowthNet = function(params,
       print(paste0("using ",list(...)$cores," cores on ",length(times), " objects"))
     }
     cores <- list(...)$cores
-    #tmp <- proc.time()
     cl <- makeForkCluster(cores)
-    #print(paste0('making cluster took ', round((proc.time()-tmp)[3],2)," seconds"))
-    # parallel::clusterExport(cl, varlist = c("mark_filtration", "params", "PMF_mark", "cond_intensity", "filtration_to_net"), envir = environment())
-    # chunk it out (manual load balancing)
-    # core_to_use <- rep(1:cores, length.out = length(times))
-    # chunks <- lapply(1:cores,function(x){times[core_to_use==x]})
-    # intens_list <- parLapply(cl,X=chunks,fun = function(x){
-    #   lapply(x,intens_func)
-    # })
-    # # order doesnt matter 
-    # intens_list <- do.call(c,intens_list)
-    #tmp <- proc.time()
     intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
-    # intens_list <- parLapplyLB(cl,
-    #                            X=(1:length(times))[order(times, decreasing = TRUE)],
-    #                            fun = function(x){intens_func(x)}
-    #                            )
-    #print(paste0('parLapply took ', round((proc.time()-tmp)[3],2)," seconds"))
     stopCluster(cl)
   }else{
     intens_list <- lapply(1:length(times),intens_func)
