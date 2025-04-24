@@ -9,8 +9,18 @@ library(parallel)
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 MAX_ITER <- 2000
 
+# function to plot pp on line:
+pp_line_plot <- function(t,title= NULL){
+  plot(c(min(t),max(t)), c(-1, 1), type = "n", yaxt = "n",
+       xlab = "Value", ylab = "", main = paste0("Vector on a Number Line: ",title))
+  abline(h = 0, col = "gray", lwd = 2)
+  points(t, rep(0, length(t)), pch = 19, col = "blue", cex = 1.5)
+}
+
 # explorator function for processing data from socioNet
-process_dat <- function(dat,title = NULL,windowT = NULL){
+process_dat <- function(dat,
+                        title = NULL,
+                        windowT = NULL){
   # make one directional
   swap <- dat$from > dat$to
   dat[swap, c("from", "to")] <- dat[swap, c("to", "from")]
@@ -21,7 +31,12 @@ process_dat <- function(dat,title = NULL,windowT = NULL){
   }else{
     t <- dat$time
   }
+  # make between 0 and 1
+  print(paste0("raw tiems summary"))
+  print(summary(t))
   t <- (t - min(t))/(max(t))
+  print(paste0("scaled times summary"))
+  print(summary(t))
   print(paste0("raw times are length ",length(dat$time)))
   fit_pure_temp <- fit_temporal_hawkes(params_init = list(mu = 0.1,
                                                           beta = 0,
@@ -53,6 +68,12 @@ process_dat <- function(dat,title = NULL,windowT = NULL){
   edges$time <- (edges$time - min(edges$time))
   edges$time <- edges$time / max(edges$time)
   
+  # restric to window:
+  if(is.null(windowT)){
+    windowT <- c(0,1)
+  }
+  edges <- edges[edges$time > windowT[1] & edges$time < windowT[2],]
+  
   # get node arrival times:
   from_times <- edges %>%
     group_by(from) %>%
@@ -76,8 +97,6 @@ process_dat <- function(dat,title = NULL,windowT = NULL){
                           to = times$from_id[match(edges$to, times$from)],
                           time = edges$time
   )
-  tmp_edges
-  
   # convert to events and mark filtration:
   net <- as.network(tmp_edges %>% select(from,to) %>% as.matrix(), matrix.type = "edgelist",directed =F)
   set.edge.attribute(net, "time", edges$time)
@@ -87,13 +106,6 @@ process_dat <- function(dat,title = NULL,windowT = NULL){
   # plot times:
   t <- get_times(net)$times
   print(paste0("network times are length ",length(t)))
-  
-  
-  # check if hawkesian
-  if(is.null(windowT)){
-    windowT <- c(0,1)
-  }
-  t <- t[t > windowT[1] & t < windowT[2]]
   
   plot(c(min(t),max(t)), c(-1, 1), type = "n", yaxt = "n",
        xlab = "Value", ylab = "", main = paste0("Vector on a Number Line: ",title))
@@ -133,18 +145,30 @@ dat <- data.frame(
 )
 # make not simple
 dat$time <- dat$time + rnorm(nrow(dat),0,0.001)
+pp_line_plot(dat$time)
 # first day only 
 dat <- dat[dat$time < (3600*24)/20,]
-hist(dat$time,breaks = 100)
+pp_line_plot(dat$time)
 # remove part - presumabley after conference where there are few interactions
 dat <- dat[dat$time < 2200,]
-hist(dat$time,breaks = 100)
-dat_clean <- process_dat(dat,title = 'hypertext 2009 conference',windowT = c(0,1))
-net <- dat_clean$net
-# chhck the network times :
-hist(dat_clean$times$time,breaks = 100)
-# looks good!
+pp_line_plot(dat$time)
+# use the window since isolated points can make the hawkes optimization fail
+dat_clean <- process_dat(dat,
+                         title = 'hypertext 2009 conference',
+                         windowT = c(0.05,1))
+# net times 
+pp_line_plot(get_times(dat_clean$net)$times)
+# edge times:
+pp_line_plot(dat_clean$edges$time)
+# node times:
+pp_line_plot(dat_clean$times$time)
+# all times:
+pp_line_plot(c(dat_clean$edges$time,dat_clean$times$time))
 
+
+net <- dat_clean$net
+# check network times
+hist(dat_clean$times$time,breaks = 100)
 TRUNCATION <- net %n% 'n'
 
 # fit the model to the network:
@@ -164,7 +188,7 @@ if(FALSE){
                                      formula_RHS = "edges + triangles + star(c(2,3))",
                                      truncation = TRUNCATION,
                                      verbose = TRUE,
-                                     cores = N_CORES
+                                     cores = 7
                                      )
   init_lik$loglik
 }

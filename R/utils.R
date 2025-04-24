@@ -184,3 +184,11 @@ get_times <- function(net){
   ))
 }
 
+# function to plot pp on line:
+pp_line_plot <- function(t,title=NULL){
+  plot(c(min(t),max(t)), c(-1, 1), type = "n", yaxt = "n",
+     xlab = "Value", ylab = "", main = paste0("Vector on a Number Line: ",title))
+abline(h = 0, col = "gray", lwd = 2)
+points(t, rep(0, length(t)), pch = 19, col = "blue", cex = 1.5)
+}
+
