@@ -180,6 +180,14 @@ params_init <- list(mu = length(get_times(net)$times)/max(get_times(net)$times),
                    CS_params = c(-10,0,0,0)
 )
 
+params_init <- list(mu = 1000,
+                   beta_overall = 50,
+                   K = 0.9,
+                   beta_edges = 0.1,
+                   node_lambda = 0.1,
+                   CS_params = c(-8,0,0,0)
+)
+
 if(FALSE){
   init_lik <- loglik_hawkesGrowthNet(params = params_init,
                                      time_window = c(0,1),
@@ -188,6 +196,7 @@ if(FALSE){
                                      formula_RHS = "edges + triangles + star(c(2,3))",
                                      truncation = TRUNCATION,
                                      verbose = TRUE,
+                                     mark_decay ='activity',
                                      cores = 7
                                      )
   init_lik$loglik
@@ -199,6 +208,7 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            PMF_mark = PMF_mark_CS,
                            formula_RHS = "edges + triangles + star(c(2,3))",
                            truncation = TRUNCATION,
+                           mark_decay ='activity',
                            grad = FALSE,
                            trace = 1,
                            reltol = 1e-6,

@@ -212,6 +212,7 @@ PMF_mark_CS <- function(time,
                         formula_RHS,
                         grad = FALSE,
                         truncation = 1,
+                        mark_decay = 'node_entrance',
                         ...
 ){
   # if we are not starting from nothing:
@@ -306,10 +307,13 @@ PMF_mark_CS <- function(time,
       # print("done with change stats")
       # logistic regression on change stats:
       probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
-      node_times <- new_net %v% 'time'
-      diffs <- sapply(1:length(heads),function(i){
-        node_times[tails[i]] - node_times[heads[i]]
-      })
+      # use either node times or last node activity:
+      if(mark_decay == 'activity'){
+        node_times <- get_latest_times(new_net)
+      }
+      if(mark_decay == 'node_entranace'){
+        node_times <- new_net %v% 'time'
+      }
       diffs <- time - node_times[heads]
       #factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
       factor <- exp(-params$beta_edges*(diffs))
@@ -443,7 +447,12 @@ PMF_mark_CS <- function(time,
       stop("these parameters result ixn full networks - you probalby don't want this")
       }
       probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
-      node_times <- mark_sample %v% 'time'
+      if(mark_decay == 'activity'){
+        node_times <- get_latest_times(mark_sample)
+      }
+      if(mark_decay == 'node_entranace'){
+        node_times <- mark_sample %v% 'time'
+      }
       diffs <- sapply(1:length(tails),function(i){
         node_times[tails[i]] - node_times[heads[i]]
       })

@@ -192,3 +192,29 @@ abline(h = 0, col = "gray", lwd = 2)
 points(t, rep(0, length(t)), pch = 19, col = "blue", cex = 1.5)
 }
 
+# helper function to get latest edge each node is involved with:
+get_latest_times <- function(nw){
+  el    <- as.matrix.network.edgelist(nw, names = FALSE)
+  times <- get.edge.attribute(nw, "time")
+  
+  latest_edge <- sapply(seq_len(network.size(nw)), function(v) {
+    inc <- which(el[,1] == v | el[,2] == v)
+    if (length(inc) == 0) return(NA_integer_)       # no edges for this node
+    inc[which.max(times[inc])]                       # index of max-time edge
+  })
+  
+  latest_times <-         el    <- as.matrix.network.edgelist(nw, names = FALSE)
+  times <- get.edge.attribute(nw, "time")
+  
+  latest_edge <- sapply(seq_len(network.size(nw)), function(v) {
+    inc <- which(el[,1] == v | el[,2] == v)
+    if (length(inc) == 0) return(NA_integer_)       # no edges for this node
+    inc[which.max(times[inc])]                       # index of max-time edge
+  })
+  
+  latest_times <- times[latest_edge]
+  node_times <- get_times(nw)
+  latest_times[which(is.na(latest_times))] <- node_times$node_times[which(is.na(latest_times))]
+  
+  return(latest_times)
+}
