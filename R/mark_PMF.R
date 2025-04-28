@@ -222,6 +222,17 @@ PMF_mark_CS <- function(time,
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration,time,equals = TRUE)
   }
+  # warning if the new net is the same as old net - no mark density:
+  # don't think we need this ! 
+  # times1 <- get_times(last_net)$times
+  # times2 <- get_times(mark)$times
+  # if(length(times1) == length(times2)){
+  #   if(all(times1 == times2)){
+  #     print(time)
+  #     warning("The mark and the last network exactly the same")
+  #   }
+  # }
+  
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'

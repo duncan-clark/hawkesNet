@@ -148,17 +148,17 @@ events_to_net <- function(events_list,
 filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
-  if(equals){
-    delete.edges(net, which(get.edge.attribute(net,"time")>t))
-    delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
-  }else{
-    delete.edges(net, which(get.edge.attribute(net,"time")>=t))
-    delete.vertices(net,which(get.vertex.attribute(net,"time")>=t))
+  # make sure to leave one less edge that if equals
+  delete.edges(net, which(get.edge.attribute(net,"time")>t))
+  delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
+  if(!equals){
+    e_times <- get.edge.attribute(net,"time")
+    n_times <- get.vertex.attribute(net,"time")
+    delete.edges(net,which.max(e_times))
+    delete.vertices(net,which.max(n_times))
   }
-  
   # no need for vertex names
   delete.vertex.attribute(net,'vertex.names')
-
   return(net)
 }
 

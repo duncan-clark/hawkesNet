@@ -20,7 +20,10 @@ pp_line_plot <- function(t,title= NULL){
 # explorator function for processing data from socioNet
 process_dat <- function(dat,
                         title = NULL,
-                        windowT = NULL){
+                        windowT = NULL,
+                        head_drop = 0,
+                        tail_drop = 0
+                        ){
   # make one directional
   swap <- dat$from > dat$to
   dat[swap, c("from", "to")] <- dat[swap, c("to", "from")]
@@ -68,11 +71,11 @@ process_dat <- function(dat,
   edges$time <- (edges$time - min(edges$time))
   edges$time <- edges$time / max(edges$time)
   
-  # restric to window:
+  # restrict to window:
   if(is.null(windowT)){
     windowT <- c(0,1)
   }
-  edges <- edges[edges$time > windowT[1] & edges$time < windowT[2],]
+  edges <- edges[edges$time >= windowT[1] & edges$time <= windowT[2],]
   
   # get node arrival times:
   from_times <- edges %>%
@@ -98,9 +101,14 @@ process_dat <- function(dat,
                           time = edges$time
   )
   # convert to events and mark filtration:
+  tmp_edges <- tmp_edges[(head_drop+1):nrow(tmp_edges)-tail_drop,]
+  # rescale:
+  tmp_edges <- tmp_edges %>%
+    mutate(time = (time - min(time)) / (max(time) - min(time)))
+  
   net <- as.network(tmp_edges %>% select(from,to) %>% as.matrix(), matrix.type = "edgelist",directed =F)
-  set.edge.attribute(net, "time", edges$time)
-  set.vertex.attribute(net, "time", times$time)
+  set.edge.attribute(net, "time", tmp_edges$time)
+  set.vertex.attribute(net, "time", tmp_edges$time)
   
   
   # plot times:
@@ -132,43 +140,49 @@ process_dat <- function(dat,
   
   
   return(list(net = net,
-              times = times,
-              edges = edges,
+              times = get_times(net)$times,
+              edges = tmp_edges,
               fit_temp = fit_temp))
 }
 
-dat <- read.table('hawkesGrowthNet/data/ht09_contact_list.dat')
-dat <- data.frame(
-  from = dat$V2,
-  to = dat$V3,
-  time = dat$V1/20
+net_dat <- read.table('hawkesGrowthNet/data/ht09_contact_list.dat')
+net_dat <- data.frame(
+  from = net_dat$V2,
+  to = net_dat$V3,
+  time = net_dat$V1/20
 )
 # make not simple
-dat$time <- dat$time + rnorm(nrow(dat),0,0.001)
-pp_line_plot(dat$time)
+net_dat$time <- net_dat$time + rnorm(nrow(net_dat),0,0.001)
+pp_line_plot(net_dat$time)
 # first day only 
-dat <- dat[dat$time < (3600*24)/20,]
-pp_line_plot(dat$time)
+net_dat <- net_dat[net_dat$time < (3600*24)/20,]
+pp_line_plot(net_dat$time)
 # remove part - presumabley after conference where there are few interactions
-dat <- dat[dat$time < 2200,]
-pp_line_plot(dat$time)
+net_dat <- net_dat[net_dat$time < 2200,]
+pp_line_plot(net_dat$time)
 # use the window since isolated points can make the hawkes optimization fail
-dat_clean <- process_dat(dat,
+# drop first 2 and last isolated point:
+dat_clean <- process_dat(net_dat,
                          title = 'hypertext 2009 conference',
-                         windowT = c(0.05,1))
+                         windowT = c(0,1),
+                         head_drop = 3,
+                         tail_drop = 1
+                         )
+# drop the first two and last isolated points:
+dat_clean$times
 # net times 
 pp_line_plot(get_times(dat_clean$net)$times)
 # edge times:
 pp_line_plot(dat_clean$edges$time)
 # node times:
-pp_line_plot(dat_clean$times$time)
+pp_line_plot(dat_clean$times)
 # all times:
-pp_line_plot(c(dat_clean$edges$time,dat_clean$times$time))
+pp_line_plot(c(dat_clean$edges$time,dat_clean$times))
 
 
 net <- dat_clean$net
 # check network times
-hist(dat_clean$times$time,breaks = 100)
+hist(dat_clean$times,breaks = 100)
 TRUNCATION <- net %n% 'n'
 
 # fit the model to the network:
@@ -216,7 +230,7 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            get_hessian = T,
                            maxit = MAX_ITER,
                            cores = N_CORES
-)
+                           )
 fit
 
 # info <- fit$fit$hessian
