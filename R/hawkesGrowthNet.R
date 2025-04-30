@@ -445,11 +445,12 @@ fit_hawkesGrowthNet <- function(params_init,
   optim_func <- function(params,...){
     param_vec <- params
     params <- relist(params, skeleton = params_init)
-
-    if(params$K>1){
-      return(list(value = -10**(20),
-                  grad = NULL))
-    }
+    
+    # Don't think K always needs to be less than 1 ? 
+    # if(params$K>1){
+    #   return(list(value = -10**(20),
+    #               grad = NULL))
+    # }
 
     result <- loglik_hawkesGrowthNet(params = params,
                                      time_window = time_window,
