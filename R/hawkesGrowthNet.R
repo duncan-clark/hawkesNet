@@ -126,7 +126,6 @@ sim_hawkesGrowthNet <- function(params,
   tot_attempt <- 0
   current_net <- network::network(matrix(1),directed = F)
   delete.vertices(current_net,1)
-
   while (nrow(event_queue) > 0) {
     t <- proc.time()
     current_event <- event_queue[1, ,drop = FALSE]
@@ -145,6 +144,7 @@ sim_hawkesGrowthNet <- function(params,
     }
     else{
       # get the mark samples
+      # debug(PMF_mark)
       mark_sample <- PMF_mark(time = current_event$time,
                               params = params,
                               mark_filtration = current_net,
@@ -155,7 +155,7 @@ sim_hawkesGrowthNet <- function(params,
                               ...)
       net <- mark_sample$mark_sample
       new_nodes <- (net %n% 'n') - (current_net %n% 'n')
-      if(hashed_edges && length(mark_sample$mel)!=0){
+      if(hashed_edges && length(net$mel)!=0){
         # hash the network edge list for fast lookup:
         edges <- network::as.edgelist(net)
         keys_vec <- paste(edges[,1], edges[,2], sep = "-")
@@ -211,6 +211,7 @@ sim_hawkesGrowthNet <- function(params,
                                 PMF_mark = PMF_mark,
                                 params = params,
                                 new_edge_hash = edge_hash,
+                                model = mark_sample$model,
                                 ...
           )
           intensity <- tmp$lambda + tmp$kernel_sum

@@ -186,20 +186,12 @@ hist(dat_clean$times,breaks = 100)
 TRUNCATION <- net %n% 'n'
 
 # fit the model to the network:
-params_init <- list(mu = length(get_times(net)$times)/max(get_times(net)$times),
-                   beta_overall = 0.1,
-                   K = 0.1,
-                   beta_edges = 0.1,
-                   node_lambda = 1,
-                   CS_params = c(-10,0,0,0)
-)
-
-params_init <- list(mu = 1000,
+params_init <- list(mu = 100,
                    beta_overall = 50,
                    K = 0.9,
                    beta_edges = 0.1,
-                   node_lambda = 0.1,
-                   CS_params = c(-8,0,0,0)
+                   node_lambda = (net%n% 'n')/length(get_times(net)$times),
+                   CS_params = c(0,0,0,0)
 )
 
 if(FALSE){
@@ -233,21 +225,6 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            )
 fit
 
-# info <- fit$fit$hessian
-# std_err <- sqrt(diag(solve(-info)))
-# std_err
-# print("results summary")
-# data.frame(fit = fit$fit$par,
-#            sd = std_err,
-#            init = unlist(params_init)
-#            )
-# 
-# # investigate singular hessian:
-# m <- info
-# qr_m <- qr(m, LAPACK = TRUE)  
-# qr_m$rank
-# qr_m$pivo
-
 times <- get_times(net)$times
 temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
                                                    beta = 1,
@@ -259,13 +236,34 @@ temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
                                 maxit = 1000
 )
 
-# fit an ergm to the networks
-# times <- get_times(net)$node_times
-# diff_mat <- outer(times, times, FUN = function(a, b) abs(a - b))
-# ergm_fit <- ergm(net ~ edges + gwesp(0.5,fixed = T) + gwdegree(0.5,fixed =T) + edgecov(diff_mat))
-# print("ergm summary")
-# summary(ergm_fit)
 ergm_fit <- NULL
+
+# in case doesn't work befreo 
+saveRDS(list(fit=fit,
+             temp_fit = temp_fit,
+             ergm_fit = ergm_fit,
+             net = net
+),
+file = "hypertext_conference_results.rds"
+)
+
+net_list <- parLapply(1:100,
+                      cl=cl,
+                      function(x){
+                        sim_hawkesGrowthNet(params = fit$fit$par,
+                                            time_window = c(0,1),
+                                            PMF_mark = PMF_mark_CS,
+                                            cond_intensity = cond_intensity,
+                                            hashed_edges = T,
+                                            verbose = F,
+                                            mu_multiplier = 2,
+                                            joint_accept = F,
+                                            truncation = results$net %n% 'n',
+                                            formula_RHS = "edges + triangles + star(c(2,3))",
+                                            mark_decay = 'activity'
+                                            )
+                      }
+)
 
 # Save all the results from the fitting:
 saveRDS(list(fit=fit,

@@ -14,7 +14,9 @@ PMF_mark_CS(
   new_edge_hash = NULL,
   formula_RHS,
   grad = FALSE,
-  truncation = 1
+  truncation = 1,
+  mark_decay = "node_entrance",
+  ...
 )
 }
 \arguments{

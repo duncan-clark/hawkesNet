@@ -282,42 +282,17 @@ PMF_mark_CS <- function(time,
       if(max(tails)>new_net %n% 'n'){
         stop("accidently adding a edge into the network that doesn't have that node yet")
       }
-      # print("Max tail")
-      # print(max(tails))
-      # print("max head")
-      # print(max(heads))
-      # print("new network")
-      # print(summary(new_net,print.adj = F))
-      # print("vertex names")
-      # print(new_net %v% 'vertex.names')
-      # print(as.factor(new_net %v% 'vertex.names'))
-      # print(summary(new_net %v% 'time'))
-      # print(summary(new_net %e% 'time'))
-      # print("making model")
       
       # delete NAs to prevent C++ using them
       delete.vertex.attribute(new_net,'na')
       model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
-      # print("model made")
-      # model$setNetwork(ernm::as.BinaryNet(new_net))
       new_net <- old_new_net
       model$calculate()
       stat <- model$statistics()
-      # print("Model statistics")
-      # print(stat)
-      # print("old new network - used in change stats")
-      # print(summary(old_new_net,print.adj = F))
-      # print("doing change stats")
-      change_stats <- lapply(1:length(tails),FUN=function(i){
-        # update - note no need to update just need to take away  old stat
-        old_stat <- model$statistics()
-        model$dyadUpdate(tails[i],heads[i])
-        new_stat <- model$statistics()
-        return(new_stat - old_stat)
+      change_stats <- model$computeChangeStats(tails, heads)
+      probs <- apply(change_stats, 1, function(c){
+        1/(1+exp(-sum(c*params$CS_params)))
       })
-      # print("done with change stats")
-      # logistic regression on change stats:
-      probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
       # use either node times or last node activity:
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
@@ -403,21 +378,31 @@ PMF_mark_CS <- function(time,
   # generate mark
   # =============
   if(generate_mark){
+    # use latest mark as baseline:
+    last_net <- mark
     # use function sample a new mark
     # since we have poisson number of nodes added  we need to redo the probabilities
-    if(!is.null(last_net) && (last_net %n% 'n') > 2){
+    if(!is.null(last_net) && (last_net %n% 'n') >= 1){
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
-      new_nodes <- rpois(1,params$node_lambda)
-      #browser()
+      
+      if(mark_sample %n% 'n' < 4){
+        old_new_net <- mark_sample
+        new_nodes <- 4 - (mark_sample %n% 'n')
+      }else{
+        new_nodes <- rpois(1,params$node_lambda)
+      }
       mark_sample <- network::add.vertices(mark_sample,new_nodes)
+      # if(mark_sample %n% 'n' > 4){
+      #   browser()
+      # }
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
-      new_nodes <- mark_sample %n% 'n'
-
+      new_size <- mark_sample %n% 'n'
+      
       # get new poss edges
-      poss_tails <- (old_nodes - truncation) : (new_nodes)
+      poss_tails <- (old_nodes - truncation) : (new_size)
       poss_tails <- poss_tails[poss_tails>0]
-      poss_heads <- (new_nodes - truncation-1):new_nodes
+      poss_heads <- (new_size - truncation-1):new_size
       poss_heads <- poss_heads[poss_heads>0]
       poss_edges <- expand.grid(poss_tails,poss_heads)
       poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
@@ -433,31 +418,23 @@ PMF_mark_CS <- function(time,
         heads <- heads[!in_old_net]
       }
 
-      # get the probs:
-      if(mark_sample %n% 'n' < 4){
-        old_new_net <- mark_sample
-        mark_sample <- network::add.vertices(mark_sample,4 - (mark_sample %n% 'n'))
-      }else{
-        old_new_net <- mark_sample
-      }
+
       delete.vertex.attribute(mark_sample,'na')
       model <- createCppModel(as.formula(paste("mark_sample ~ ",formula_RHS)))
-      # model$setNetwork(ernm::as.BinaryNet(new_net))
       model$calculate()
-      change_stats <- lapply(1:length(tails),FUN=function(i){
-        # update - note no need to update just need to take away  old stat
-        old_stat <- model$statistics()
-        model$dyadUpdate(tails[i],heads[i])
-        new_stat <- model$statistics()
-        return(new_stat - old_stat)
+      
+      change_stats <- model$computeChangeStats(tails, heads)
+      probs <- apply(change_stats, 1, function(c){
+        1/(1+exp(-sum(c*params$CS_params)))
       })
+      
       # reset to when we did not add more edges
-      mark_sample <- old_new_net
+      #mark_sample <- old_new_net
       # logistic regression on change stats:
       if(length(change_stats) == 0){
       stop("these parameters result ixn full networks - you probalby don't want this")
       }
-      probs <- 1/(1+exp(-sapply(change_stats,function(c){sum(c*params$CS_params)})))
+
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
       }
@@ -512,6 +489,8 @@ PMF_mark_CS <- function(time,
     # mark_sample
     mark_sample = mark_sample,
     mark_sample_density = mark_sample_density,
-    log_mark_sample_density = log_mark_sample_density
+    log_mark_sample_density = log_mark_sample_density,
+    # cpp_model
+    model = model
   ))
 }

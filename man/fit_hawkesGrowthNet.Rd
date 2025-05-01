@@ -10,6 +10,8 @@ fit_hawkesGrowthNet(
   mark_filtration,
   PMF_mark,
   trace = 0,
+  REPORT = 10,
+  reltol = 1e-08,
   maxit,
   get_hessian = FALSE,
   ...

@@ -199,20 +199,23 @@ get_latest_times <- function(nw){
   
   latest_edge <- sapply(seq_len(network.size(nw)), function(v) {
     inc <- which(el[,1] == v | el[,2] == v)
-    if (length(inc) == 0) return(NA_integer_)       # no edges for this node
+    if (length(inc) == 0) return(NA)       # no edges for this node
     inc[which.max(times[inc])]                       # index of max-time edge
   })
   
-  latest_times <-         el    <- as.matrix.network.edgelist(nw, names = FALSE)
+  latest_times <- el    <- as.matrix.network.edgelist(nw, names = FALSE)
   times <- get.edge.attribute(nw, "time")
   
   latest_edge <- sapply(seq_len(network.size(nw)), function(v) {
     inc <- which(el[,1] == v | el[,2] == v)
-    if (length(inc) == 0) return(NA_integer_)       # no edges for this node
-    inc[which.max(times[inc])]                       # index of max-time edge
+    if (length(inc) == 0) return(NA)
+    inc[which.max(times[inc])]
   })
   
   latest_times <- times[latest_edge]
+  if(is.null(latest_times)) {
+    latest_times <- rep(NA, network.size(nw))
+  }
   node_times <- get_times(nw)
   latest_times[which(is.na(latest_times))] <- node_times$node_times[which(is.na(latest_times))]
   

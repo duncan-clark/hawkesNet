@@ -13,7 +13,8 @@ PMF_mark_BA(
   generate_density = TRUE,
   grad = FALSE,
   new_edge_hash = NULL,
-  truncation = NULL
+  truncation = NULL,
+  ...
 )
 }
 \arguments{
