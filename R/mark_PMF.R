@@ -301,7 +301,6 @@ PMF_mark_CS <- function(time,
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
-      #factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
       factor <- exp(-params$beta_edges*(diffs))
       probs <- probs * factor
 

@@ -191,7 +191,7 @@ params_init <- list(mu = 100,
                    K = 0.9,
                    beta_edges = 0.1,
                    node_lambda = (net%n% 'n')/length(get_times(net)$times),
-                   CS_params = c(0,0,0,0)
+                   CS_params = c(-10,0,0,0)
 )
 
 if(FALSE){
@@ -202,8 +202,7 @@ if(FALSE){
                                      formula_RHS = "edges + triangles + star(c(2,3))",
                                      truncation = TRUNCATION,
                                      verbose = TRUE,
-                                     mark_decay ='activity',
-                                     cores = 7
+                                     mark_decay ='activity'
                                      )
   init_lik$loglik
 }

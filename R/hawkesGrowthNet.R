@@ -354,6 +354,7 @@ loglik_hawkesGrowthNet = function(params,
   }
 
   if(sum(tmp==0)!=0){
+    browser()
     return(list(loglik = -10**(20),
                 grads = NULL))
   }
