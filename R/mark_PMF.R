@@ -488,8 +488,6 @@ PMF_mark_CS <- function(time,
     # mark_sample
     mark_sample = mark_sample,
     mark_sample_density = mark_sample_density,
-    log_mark_sample_density = log_mark_sample_density,
-    # cpp_model
-    model = model
+    log_mark_sample_density = log_mark_sample_density
   ))
 }
