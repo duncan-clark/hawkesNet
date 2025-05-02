@@ -212,15 +212,16 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            mark_filtration = net,
                            PMF_mark = PMF_mark_CS,
                            formula_RHS = "edges + triangles + star(c(2,3))",
-                           truncation = TRUNCATION,
+                           #truncation = TRUNCATION,
+                           truncation = 20,
                            mark_decay ='activity',
                            grad = FALSE,
                            trace = 1,
                            reltol = 1e-6,
-                           verbose = TRUE,
+                           verbose = FALSE,
                            get_hessian = T,
-                           maxit = MAX_ITER,
-                           cores = N_CORES
+                           maxit = MAX_ITER#,
+                           # cores = N_CORES
                            )
 fit
 

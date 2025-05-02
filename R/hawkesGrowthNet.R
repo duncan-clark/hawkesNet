@@ -354,9 +354,8 @@ loglik_hawkesGrowthNet = function(params,
   }
 
   if(sum(tmp==0)!=0){
-    browser()
-    return(list(loglik = -10**(20),
-                grads = NULL))
+    warning("some of the intens lists have zero")
+    tmp[tmp==0] <- min(tmp[tmp>0])/2
   }
   intens_sum <- sum(log(tmp))
 
