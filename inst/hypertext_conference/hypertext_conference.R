@@ -201,8 +201,9 @@ if(FALSE){
                                      PMF_mark = PMF_mark_CS,
                                      formula_RHS = "edges + triangles + star(c(2,3))",
                                      truncation = TRUNCATION,
-                                     verbose = TRUE,
-                                     mark_decay ='activity'
+                                     verbose = T,
+                                     mark_decay ='activity',
+                                     cores = 7
                                      )
   init_lik$loglik
 }
@@ -220,8 +221,8 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            reltol = 1e-6,
                            verbose = FALSE,
                            get_hessian = T,
-                           maxit = MAX_ITER#,
-                           # cores = N_CORES
+                           maxit = MAX_ITER,
+                           cores = N_CORES
                            )
 fit
 
@@ -247,10 +248,11 @@ saveRDS(list(fit=fit,
 file = "hypertext_conference_results.rds"
 )
 
+cl <- makeForkCluster(N_CORES)
 net_list <- parLapply(1:100,
                       cl=cl,
                       function(x){
-                        sim_hawkesGrowthNet(params = fit$fit$par,
+                        sim_hawkesGrowthNet(params = relist(fit$fit$par, skeleton = params_init),
                                             time_window = c(0,1),
                                             PMF_mark = PMF_mark_CS,
                                             cond_intensity = cond_intensity,
@@ -264,6 +266,7 @@ net_list <- parLapply(1:100,
                                             )
                       }
 )
+stopCluster(cl)
 
 # Save all the results from the fitting:
 saveRDS(list(fit=fit,

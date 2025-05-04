@@ -213,6 +213,7 @@ PMF_mark_CS <- function(time,
                         grad = FALSE,
                         truncation = 1,
                         mark_decay = 'node_entrance',
+                        model = NULL,
                         ...
 ){
   # if we are not starting from nothing:
@@ -285,7 +286,11 @@ PMF_mark_CS <- function(time,
       
       # delete NAs to prevent C++ using them
       delete.vertex.attribute(new_net,'na')
-      model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
+      if(is.null(model)){
+        model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
+      }else{
+        model$setNetwork(as.BinaryNet(new_net))
+      }
       new_net <- old_new_net
       model$calculate()
       stat <- model$statistics()
@@ -431,7 +436,7 @@ PMF_mark_CS <- function(time,
       #mark_sample <- old_new_net
       # logistic regression on change stats:
       if(length(change_stats) == 0){
-      stop("these parameters result ixn full networks - you probalby don't want this")
+      stop("these parameters result ixn full networks - you probably don't want this")
       }
 
       if(mark_decay == 'activity'){

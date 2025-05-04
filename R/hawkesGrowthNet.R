@@ -211,7 +211,6 @@ sim_hawkesGrowthNet <- function(params,
                                 PMF_mark = PMF_mark,
                                 params = params,
                                 new_edge_hash = edge_hash,
-                                model = mark_sample$model,
                                 ...
           )
           intensity <- tmp$lambda + tmp$kernel_sum
@@ -321,12 +320,18 @@ loglik_hawkesGrowthNet = function(params,
   intens_func <- function(i){
     # need to do this on the fly otherwise too storage intensive
     current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+    if("formula_RHS" %in% names(list(...))){
+      model = createCppModel(as.formula(paste("current_net ~ ",list(...)$formula_RHS)))
+    }else{
+      model <- NULL
+    }
     
     intensity <- cond_intensity(new_net = current_net,
                                 t = times[i],
                                 mark_filtration = current_net,
                                 PMF_mark = PMF_mark,
                                 params = params,
+                                model = model,
                                 ...)
     return(intensity$result)
     #return(intensity)

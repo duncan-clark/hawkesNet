@@ -148,14 +148,15 @@ events_to_net <- function(events_list,
 filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
-  # make sure to leave one less edge that if equals
+  # make sure to leave one less edge or vertex that if equals
   delete.edges(net, which(get.edge.attribute(net,"time")>t))
   delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
   if(!equals){
     e_times <- get.edge.attribute(net,"time")
     n_times <- get.vertex.attribute(net,"time")
-    delete.edges(net,which.max(e_times))
-    delete.vertices(net,which.max(n_times))
+    t_to_delete <- max(c(e_times, n_times))
+    delete.edges(net,which(e_times == t_to_delete))
+    delete.vertices(net,which(n_times == t_to_delete))
   }
   # no need for vertex names
   delete.vertex.attribute(net,'vertex.names')
@@ -200,7 +201,7 @@ get_latest_times <- function(nw){
   latest_edge <- sapply(seq_len(network.size(nw)), function(v) {
     inc <- which(el[,1] == v | el[,2] == v)
     if (length(inc) == 0) return(NA)       # no edges for this node
-    inc[which.max(times[inc])]                       # index of max-time edge
+    inc[which.max(times[inc])]              # index of max-time edge
   })
   
   latest_times <- el    <- as.matrix.network.edgelist(nw, names = FALSE)
