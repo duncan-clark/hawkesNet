@@ -187,10 +187,10 @@ TRUNCATION <- net %n% 'n'
 
 # fit the model to the network:
 params_init <- list(mu = 100,
-                   beta_overall = 50,
+                   beta_overall = 0.1,
                    K = 0.9,
                    beta_edges = 0.1,
-                   node_lambda = 1.0,
+                   node_lambda = 0.1,
                    CS_params = c(-10,0,0,0)
 )
 
@@ -220,8 +220,7 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            mark_filtration = net,
                            PMF_mark = PMF_mark_CS,
                            formula_RHS = "edges + triangles + star(c(2,3))",
-                           #truncation = TRUNCATION,
-                           truncation = 20,
+                           truncation = TRUNCATION,
                            mark_decay ='activity',
                            max_node_time = max(times$node_times),
                            grad = FALSE,
