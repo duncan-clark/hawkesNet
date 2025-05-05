@@ -190,9 +190,15 @@ params_init <- list(mu = 100,
                    beta_overall = 50,
                    K = 0.9,
                    beta_edges = 0.1,
-                   node_lambda = (net%n% 'n')/length(get_times(net)$times),
+                   node_lambda = 1.0,
                    CS_params = c(-10,0,0,0)
 )
+
+# note in this network the nodes do not keep arriving!
+times <- get_times(net)$times
+max(times$node_times)
+max(times$edge_times)
+
 
 if(FALSE){
   init_lik <- loglik_hawkesGrowthNet(params = params_init,
@@ -203,6 +209,7 @@ if(FALSE){
                                      truncation = TRUNCATION,
                                      verbose = T,
                                      mark_decay ='activity',
+                                     max_node_time = max(times$node_times),
                                      cores = 7
                                      )
   init_lik$loglik
@@ -216,6 +223,7 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            #truncation = TRUNCATION,
                            truncation = 20,
                            mark_decay ='activity',
+                           max_node_time = max(times$node_times),
                            grad = FALSE,
                            trace = 1,
                            reltol = 1e-6,

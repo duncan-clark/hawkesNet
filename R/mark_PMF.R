@@ -214,6 +214,7 @@ PMF_mark_CS <- function(time,
                         truncation = 1,
                         mark_decay = 'node_entrance',
                         model = NULL,
+                        max_node_time = NULL,
                         ...
 ){
   # if we are not starting from nothing:
@@ -332,7 +333,12 @@ PMF_mark_CS <- function(time,
       mark_grad <- 0
       decay_grad <- 0
     }else{
-      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark])) + log(dpois(new_nodes-old_nodes,params$node_lambda))
+      if(time >max_node_time){
+        node_dens <- 0
+      }else{
+        node_dens <- log(dpois(new_nodes-old_nodes,params$node_lambda))
+      }
+      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark])) + node_dens
       mark_density <- exp(log_mark_density)
 
       if(grad){
@@ -394,7 +400,11 @@ PMF_mark_CS <- function(time,
         old_new_net <- mark_sample
         new_nodes <- 4 - (mark_sample %n% 'n')
       }else{
-        new_nodes <- rpois(1,params$node_lambda)
+        if(time > max_node_time){
+          new_nodes <- 0
+        }else{
+          new_nodes <- rpois(1,params$node_lambda)
+        }
       }
       mark_sample <- network::add.vertices(mark_sample,new_nodes)
       # if(mark_sample %n% 'n' > 4){

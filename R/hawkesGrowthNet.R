@@ -361,6 +361,7 @@ loglik_hawkesGrowthNet = function(params,
   if(sum(tmp==0)!=0){
     warning("some of the intens lists have zero")
     tmp[tmp==0] <- min(tmp[tmp>0])/2
+    print(summary(tmp))
   }
   intens_sum <- sum(log(tmp))
 
