@@ -195,7 +195,7 @@ params_init <- list(mu = 100,
 )
 
 # note in this network the nodes do not keep arriving!
-times <- get_times(net)$times
+times <- get_times(net)
 max(times$node_times)
 max(times$edge_times)
 
