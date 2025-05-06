@@ -40,7 +40,8 @@ cond_intensity <- function(new_net,
   diffs  <- t - times
 
   decays <- exp(-params$beta_overall*diffs)
-  result <- tmp$mark_density * (params$mu + params$K*sum(decays))
+  log_result <- tmp$log_mark_density + log(params$mu + params$K*sum(decays))
+  result <- exp(log_result)
 
   return(list(result = result,
               lambda = params$mu,

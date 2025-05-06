@@ -190,8 +190,8 @@ params_init <- list(mu = 100,
                    beta_overall = 0.1,
                    K = 0.9,
                    beta_edges = 0.1,
-                   node_lambda = 0.1,
-                   CS_params = c(-10,0,0,0)
+                   node_lambda = 1,
+                   CS_params = c(-5,0,0,0)
 )
 
 # note in this network the nodes do not keep arriving!
