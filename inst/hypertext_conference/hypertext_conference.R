@@ -189,9 +189,9 @@ TRUNCATION <- net %n% 'n'
 # if nodes form in [0,0.1] mu = 100 we expecet 10 events -> need node_lambda = 10
 # but this will never work almost all nodes are added as singletons 
 # need mu ~1000, node_lambda ~ 1
-params_init <- list(mu = 1000,
+params_init <- list(mu = 500,
                    beta_overall = 0.1,
-                   K = 0.9,
+                   K = 1,
                    beta_edges = 0.1,
                    node_lambda = 1,
                    CS_params = c(-5,0,0,0)
@@ -232,7 +232,8 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            verbose = FALSE,
                            get_hessian = T,
                            maxit = MAX_ITER,
-                           cores = N_CORES
+                           cores = N_CORES,
+                           fixed_params = c("K")
                            )
 fit
 

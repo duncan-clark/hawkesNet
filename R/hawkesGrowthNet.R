@@ -449,10 +449,17 @@ fit_hawkesGrowthNet <- function(params_init,
                                 reltol = 1e-8,
                                 maxit,
                                 get_hessian = FALSE,
+                                fixed_params = NULL,
                                 ...){
   optim_func <- function(params,...){
     param_vec <- params
     params <- relist(params, skeleton = params_init)
+    
+    if(!is.null(fixed_params)){
+      for(k in fixed_params){
+        params[[k]] <- params_init[[k]]
+      }
+    }
     
     # Don't think K always needs to be less than 1 ? 
     # if(params$K>1){
