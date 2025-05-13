@@ -196,6 +196,14 @@ params_init <- list(mu = 500,
                    node_lambda = 1,
                    CS_params = c(-5,0,0,0)
 )
+# start close to MLE to speed up
+params_init <- list(mu = 500,
+                    beta_overall = 2,
+                    K = 1,
+                    beta_edges = 30,
+                    node_lambda = 1,
+                    CS_params = c(-5,-0.1,-0.1,0)
+                    )
 
 # note in this network the nodes do not keep arriving!
 times <- get_times(net)
@@ -235,7 +243,6 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            cores = N_CORES,
                            fixed_params = c("K")
                            )
-fit
 
 times <- get_times(net)$times
 temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,

@@ -356,7 +356,7 @@ loglik_hawkesGrowthNet = function(params,
   tmp <- unlist(intens_list)
   
   if(any(is.na(tmp))){
-    browser()
+    tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)])/2
   }
 
   if(sum(tmp==0)!=0){
