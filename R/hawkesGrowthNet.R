@@ -298,8 +298,8 @@ loglik_hawkesGrowthNet = function(params,
                                   ...
 ){
   t<-proc.time()
-  # don't allow negative parameters in first 5
-  if(any(sapply(params[1:min(length(params),5)],function(x){x<0}))){
+  # don't allow negative parameters in first 2
+  if(any(sapply(params[1:min(length(params),2)],function(x){x<0}))){
     return(list(loglik = -(10**(100)),
                 grads = rep(0,length(params)))
     )
@@ -451,7 +451,7 @@ fit_hawkesGrowthNet <- function(params_init,
                                 get_hessian = FALSE,
                                 fixed_params = NULL,
                                 ...){
-  params_init_old
+  params_init_old <- params_init
   if(!is.null(fixed_params)){
     for(k in fixed_params){
       params_init[[k]] <- NULL
