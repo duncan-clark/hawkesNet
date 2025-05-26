@@ -282,7 +282,8 @@ stopCluster(cl)
 saveRDS(list(fit=fit,
              temp_fit = temp_fit,
              ergm_fit = ergm_fit,
-             net = net
+             net = net,
+             net_list
              ),
         file = "hypertext_conference_results.rds"
         )
