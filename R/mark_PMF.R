@@ -6,7 +6,11 @@
 #' @param mark_filtration PARAM_DESCRIPTION
 #' @param mark PARAM_DESCRIPTION, Default: NULL
 #' @param generate_mark PARAM_DESCRIPTION, Default: FALSE
+#' @param generate_density PARAM_DESCRIPTION, Default: TRUE
+#' @param grad PARAM_DESCRIPTION, Default: FALSE
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
+#' @param truncation PARAM_DESCRIPTION, Default: NULL
+#' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples
@@ -19,7 +23,6 @@
 #'  \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
 #' @export
-#' @importFrom network network add.vertices
 PMF_mark_BA <- function(time,
                         params,
                         mark_filtration,
@@ -182,11 +185,16 @@ PMF_mark_BA <- function(time,
 #' @param mark_filtration PARAM_DESCRIPTION
 #' @param mark PARAM_DESCRIPTION, Default: NULL
 #' @param generate_mark PARAM_DESCRIPTION, Default: FALSE
+#' @param generate_density PARAM_DESCRIPTION, Default: TRUE
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
 #' @param formula_RHS PARAM_DESCRIPTION
 #' @param grad PARAM_DESCRIPTION, Default: FALSE
 #' @param truncation if truncation = 1, only consider edges from new nodes to old nodes,
 #' truncation = k considers edges from k time steps before the new nodes to the old nodes:
+#' @param mark_decay PARAM_DESCRIPTION, Default: 'node_entrance'
+#' @param model PARAM_DESCRIPTION, Default: NULL
+#' @param max_node_time PARAM_DESCRIPTION, Default: NULL
+#' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples
@@ -200,8 +208,6 @@ PMF_mark_BA <- function(time,
 #'  \code{\link[ernm]{as.BinaryNet}}
 #' @rdname PMF_mark_CS
 #' @export
-#' @importFrom network network add.vertices
-#' @importFrom ernm as.BinaryNet
 PMF_mark_CS <- function(time,
                         params,
                         mark_filtration,

@@ -91,7 +91,6 @@ has_edge <- function(i, j,edge_hash) {
 #'  \code{\link[network]{network}}, \code{\link[network]{attribute.methods}}, \code{\link[network]{add.vertices}}
 #' @rdname events_to_net
 #' @export
-#' @importFrom network network set.vertex.attribute add.vertices set.edge.attribute
 events_to_net <- function(events_list,
                           net = NULL,
                           directed = F){

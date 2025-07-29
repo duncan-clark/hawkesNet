@@ -20,13 +20,17 @@ loglik_hawkesGrowthNet(
 
 \item{time_window}{PARAM_DESCRIPTION}
 
+\item{mark_filtration}{PARAM_DESCRIPTION}
+
 \item{PMF_mark}{PARAM_DESCRIPTION}
 
+\item{edge_hash_list}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{verbose}{PARAM_DESCRIPTION, Default: FALSE}
+
+\item{do_grad}{PARAM_DESCRIPTION, Default: FALSE}
+
 \item{...}{PARAM_DESCRIPTION}
-
-\item{events}{PARAM_DESCRIPTION}
-
-\item{use_hashing}{PARAM_DESCRIPTION, Default: TRUE}
 }
 \value{
 OUTPUT_DESCRIPTION
