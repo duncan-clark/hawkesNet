@@ -1,5 +1,3 @@
-
-
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
 #' @param params PARAM_DESCRIPTION
@@ -22,7 +20,6 @@
 #'  \code{\link[parallel]{clusterApply}}
 #' @rdname loglik_temporal_hawk
 #' @export
-#' @importFrom parallel clusterExport
 loglik_temporal_hawk = function(params,
                                 realiz,
                                 windowT,
@@ -183,7 +180,7 @@ fit_temporal_hawkes <- function(params_init,
                                 trace = 0,
                                 maxit,
                                 ...){
-  if(class(params_init) == "list"){params_init <- unlist(params_init)}
+  if(inherits(params_init, "list")){params_init <- unlist(params_init)}
   realiz <- realiz[order(realiz$t),]
   time_dist <- outer(realiz$t, realiz$t, "-")
   dists <- list(time_dist = time_dist)
@@ -291,19 +288,19 @@ ks_test_pval_temporal <- function(realiz,
 #' @param K Numeric >= 0. Mean number of children per event (branching ratio). 
 #'          Typically K < 1 for a subcritical process.
 #' @param beta Numeric > 0. Decay rate of the exponential triggering kernel.
-#' @param T Numeric > 0. Maximum time horizon. Events are restricted to [0, T].
+#' @param T Numeric > 0. Maximum time horizon. Events are restricted to  \code{[0, T]}.
 #' @param seed Optional. Set an integer random seed for reproducibility. Default: \code{NULL}.
 #'
-#' @return A numeric vector of sorted event times within [0, T].
+#' @return A numeric vector of sorted event times within \code{[0, T]}.
 #'
 #' @details
 #' **Algorithm**:
 #' 1. Draw background events (immigrants) from a Poisson(\eqn{\mu \times T}) process 
-#'    and place them uniformly in [0, T].
+#'    and place them uniformly in \code{[0, T]}.
 #' 2. For each event at time \eqn{t_p}, draw \eqn{N_p \sim \mathrm{Poisson}(K)} children.
 #'    Each child's time is \eqn{t_c = t_p + \Delta}, where \eqn{\Delta \sim \mathrm{Exp}(\beta)}.
 #'    Keep only those \eqn{t_c \le T}.
-#' 3. Each child then serves as a parent to further offspring, recursively, until no new events fall in [0,T].
+#' 3. Each child then serves as a parent to further offspring, recursively, until no new events fall in \code{[0, T]}.
 #'
 #' This method gives the same distribution as a Hawkes process with intensity
 #' \eqn{\lambda(t) = \mu + \sum_{t_i < t} K \beta e^{-\beta (t - t_i)}}, but may be faster

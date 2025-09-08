@@ -14,6 +14,7 @@ fit_hawkesGrowthNet(
   reltol = 1e-08,
   maxit,
   get_hessian = FALSE,
+  fixed_params = NULL,
   ...
 )
 }
@@ -22,15 +23,23 @@ fit_hawkesGrowthNet(
 
 \item{time_window}{PARAM_DESCRIPTION}
 
+\item{mark_filtration}{PARAM_DESCRIPTION}
+
 \item{PMF_mark}{PARAM_DESCRIPTION}
 
 \item{trace}{PARAM_DESCRIPTION, Default: 0}
 
+\item{REPORT}{PARAM_DESCRIPTION, Default: 10}
+
+\item{reltol}{PARAM_DESCRIPTION, Default: 1e-8}
+
 \item{maxit}{PARAM_DESCRIPTION}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{get_hessian}{PARAM_DESCRIPTION, Default: FALSE}
 
-\item{events}{PARAM_DESCRIPTION}
+\item{fixed_params}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{...}{PARAM_DESCRIPTION}
 }
 \value{
 OUTPUT_DESCRIPTION

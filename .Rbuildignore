@@ -1,2 +1,4 @@
 ^hawkesNet\.Rproj$
 ^\.Rproj\.user$
+^inst/bipartide$
+^.*\/\.#.*$

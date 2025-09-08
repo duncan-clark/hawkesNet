@@ -28,7 +28,15 @@ PMF_mark_BA(
 
 \item{generate_mark}{PARAM_DESCRIPTION, Default: FALSE}
 
+\item{generate_density}{PARAM_DESCRIPTION, Default: TRUE}
+
+\item{grad}{PARAM_DESCRIPTION, Default: FALSE}
+
 \item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{truncation}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{...}{PARAM_DESCRIPTION}
 }
 \value{
 OUTPUT_DESCRIPTION

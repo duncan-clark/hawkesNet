@@ -1,5 +1,3 @@
-
-
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
 #' @param new_net PARAM_DESCRIPTION
@@ -82,8 +80,6 @@ cond_intensity <- function(new_net,
 #'  \code{\link[hash]{hash}}
 #' @rdname sim_hawkesGrowthNet
 #' @export
-#' @importFrom network as.edgelist
-#' @importFrom hash hash
 sim_hawkesGrowthNet <- function(params,
                                 time_window,
                                 PMF_mark, # function that both generates new mark and calculates the density of existing mark
@@ -268,10 +264,10 @@ sim_hawkesGrowthNet <- function(params,
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
 #' @param params PARAM_DESCRIPTION
-#' @param time_window PARAM_DESCRIPTION
-#' @param events PARAM_DESCRIPTION
-#' @param PMF_mark PARAM_DESCRIPTION
-#' @param use_hashing PARAM_DESCRIPTION, Default: TRUE
+#' @inheritParams fit_hawkesGrowthNet
+#' @param edge_hash_list PARAM_DESCRIPTION, Default: NULL
+#' @param verbose PARAM_DESCRIPTION, Default: FALSE
+#' @param do_grad PARAM_DESCRIPTION, Default: FALSE
 #' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
@@ -286,8 +282,6 @@ sim_hawkesGrowthNet <- function(params,
 #'  \code{\link[hash]{hash}}
 #' @rdname loglik_hawkesGrowthNet
 #' @export
-#' @importFrom network as.edgelist
-#' @importFrom hash hash
 loglik_hawkesGrowthNet = function(params,
                                   time_window,
                                   mark_filtration,
@@ -320,7 +314,7 @@ loglik_hawkesGrowthNet = function(params,
   # if parallelize do that here with PSOCK for simplicity:
   intens_func <- function(i){
     # need to do this on the fly otherwise too storage intensive
-    current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+    current_net <- filtration_to_net(mark_filtration,times[i],equals = TRUE)
     if("formula_RHS" %in% names(list(...))){
       model = createCppModel(as.formula(paste("current_net ~ ",list(...)$formula_RHS)))
     }else{
@@ -425,10 +419,14 @@ loglik_hawkesGrowthNet = function(params,
 #' @description FUNCTION_DESCRIPTION
 #' @param params_init PARAM_DESCRIPTION
 #' @param time_window PARAM_DESCRIPTION
-#' @param events PARAM_DESCRIPTION
+#' @param mark_filtration PARAM_DESCRIPTION
 #' @param PMF_mark PARAM_DESCRIPTION
 #' @param trace PARAM_DESCRIPTION, Default: 0
+#' @param REPORT PARAM_DESCRIPTION, Default: 10
+#' @param reltol PARAM_DESCRIPTION, Default: 1e-8
 #' @param maxit PARAM_DESCRIPTION
+#' @param get_hessian PARAM_DESCRIPTION, Default: FALSE
+#' @param fixed_params PARAM_DESCRIPTION, Default: NULL
 #' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS

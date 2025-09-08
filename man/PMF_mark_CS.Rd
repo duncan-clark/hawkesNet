@@ -16,6 +16,8 @@ PMF_mark_CS(
   grad = FALSE,
   truncation = 1,
   mark_decay = "node_entrance",
+  model = NULL,
+  max_node_time = NULL,
   ...
 )
 }
@@ -30,6 +32,8 @@ PMF_mark_CS(
 
 \item{generate_mark}{PARAM_DESCRIPTION, Default: FALSE}
 
+\item{generate_density}{PARAM_DESCRIPTION, Default: TRUE}
+
 \item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
 
 \item{formula_RHS}{PARAM_DESCRIPTION}
@@ -38,6 +42,14 @@ PMF_mark_CS(
 
 \item{truncation}{if truncation = 1, only consider edges from new nodes to old nodes,
 truncation = k considers edges from k time steps before the new nodes to the old nodes:}
+
+\item{mark_decay}{PARAM_DESCRIPTION, Default: 'node_entrance'}
+
+\item{model}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{max_node_time}{PARAM_DESCRIPTION, Default: NULL}
+
+\item{...}{PARAM_DESCRIPTION}
 }
 \value{
 OUTPUT_DESCRIPTION
