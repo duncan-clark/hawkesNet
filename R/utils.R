@@ -169,10 +169,16 @@ bn_ig <- function(net){
 plot_example_sub_component <- function(g, size, idx = 1,
                                        cols = c("#E41A1C", "#377EB8"), ...){
     x <- igraph::components(g)
+    if(!size %in% x$csize){
+        stop(paste("`size` must be one of", paste(names(table(x$csize)), collapse = ", ")))
+    }
+    if(idx > length(which(x$csize == size))){
+        stop(paste("There are only", length(which(x$csize == size)), "components of size", size))
+    }
     comp_id <- which(x$csize == size)[idx]
     nodes <- igraph::V(g)$name[x$membership == comp_id]
     sub_g <- igraph::induced_subgraph(g, vids = nodes)
-    ## col; if type == TRUE then cols[1], so red (cols[1]) is participants
+    ## col; if type == TRUE then cols[1]
     igraph::plot.igraph(sub_g, vertex.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]),
          vertex.frame.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]), ...)
 }
