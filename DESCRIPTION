@@ -16,10 +16,11 @@ Imports:
     ndtv,
     networkDynamic,
     sna,
+    ernm (>= 1.0.3),
     network,
     hash,
     cubature
-Suggests: 
+Suggests:	
     testthat (>= 3.0.0)
 Remotes: github::duncan-clark/ernm@R_change_stats
 Config/testthat/edition: 3

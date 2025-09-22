@@ -13,6 +13,7 @@ test_that("BA PMF", {
                  tolerance = 0.01)
 })
 test_that("CS PMF", {
+    require(ernm)
     data(net, package = "hawkesGrowthNet")
     time <- get_times(net)$times
     params <-  list(mu = length(time)/max(time),
