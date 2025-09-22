@@ -76,7 +76,10 @@ has_edge <- function(i, j,edge_hash) {
 # roxgen documentation
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
-#' @param events_list PARAM_DESCRIPTION
+#' @param events_list A data frame of interactions
+#' between participants,  with elements \code{i} - from node,
+#' \code{j} - to node, &
+#' \code{t} - time of interaction.
 #' @param net PARAM_DESCRIPTION, Default: NULL
 #' @param directed PARAM_DESCRIPTION, Default: F
 #' @return OUTPUT_DESCRIPTION
@@ -93,7 +96,7 @@ has_edge <- function(i, j,edge_hash) {
 #' @export
 events_to_net <- function(events_list,
                           net = NULL,
-                          directed = F){
+                          directed = FALSE){
 
   for(k in 1:length(events_list$i)){
     if(k==1 & is.null(net)){
@@ -127,6 +130,57 @@ events_to_net <- function(events_list,
   }
   set.network.attribute(net,'n',max(c(events_list$i,events_list$j)))
   return(net)
+}
+
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param x A data frame ...
+#' @export
+events_to_bipartite_net <- function(x, pid = "anon_person_id",
+                                    eid = "event_id", time = "diff_date"){
+    participants <- unique(x[[pid]])
+    events <- unique(x[[eid]])
+    all_nodes <- c(events, participants)
+    net <- network::network.initialize(length(all_nodes),
+                                       bipartite = length(events), directed = FALSE,
+                                       multiple = FALSE)
+    network::network.vertex.names(net) <- all_nodes
+    for(i in seq_len(nrow(x))) {
+        tail <- match(x[[eid]][i], all_nodes)     
+        head <- match(x[[pid]][i], all_nodes)
+        if(length(get.edgeIDs(net, tail, head)) == 0) {
+            network::add.edge(net, tail = tail, head = head)
+        }
+    }
+    return(net)
+}
+
+#' Internal function, takes a
+#' bipartite network and makes it into a bipartite igraph
+#' mainly useful for plotting
+bn_ig <- function(net){
+    edges <- network::as.matrix.network.edgelist(net)
+    g <- igraph::graph_from_data_frame(edges, directed = FALSE)
+    igraph::V(g)$type <- ifelse(igraph::V(g)$name %in% unique(edges[,2]), TRUE, FALSE)
+    return(g)
+}
+#' Plot example subcomponents of a bipartite igraph
+#' internal function
+plot_example_sub_component <- function(g, size, idx = 1,
+                                       cols = c("#E41A1C", "#377EB8"), ...){
+    x <- igraph::components(g)
+    if(!size %in% x$csize){
+        stop(paste("`size` must be one of", paste(names(table(x$csize)), collapse = ", ")))
+    }
+    if(idx > length(which(x$csize == size))){
+        stop(paste("There are only", length(which(x$csize == size)), "components of size", size))
+    }
+    comp_id <- which(x$csize == size)[idx]
+    nodes <- igraph::V(g)$name[x$membership == comp_id]
+    sub_g <- igraph::induced_subgraph(g, vids = nodes)
+    ## col; if type == TRUE then cols[1]
+    igraph::plot.igraph(sub_g, vertex.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]),
+         vertex.frame.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]), ...)
 }
 
 #' @title FUNCTION_TITLE
