@@ -1,0 +1,32 @@
+test_that("BA PMF", {
+    data(net, package = "hawkesGrowthNet")
+    time <- get_times(net)$times
+    params <-  list(mu = length(time)/max(time),
+                    beta_overall = 0.1,
+                    K = 0.1,
+                    beta_edges = 0.1,
+                    node_lambda = 1)
+    mark_filtration <-  filtration_to_net(net,10)
+    pmf <- PMF_mark_BA(time[10],  params, mark_filtration)
+    expect_equal(pmf$mark_density,
+                 0.3215021,
+                 tolerance = 0.01)
+})
+test_that("CS PMF", {
+    data(net, package = "hawkesGrowthNet")
+    time <- get_times(net)$times
+    params <-  list(mu = length(time)/max(time),
+                    beta_overall = 0.1,
+                    K = 0.1,
+                    beta_edges = 0.1,
+                    node_lambda = 1,
+                    CS_params =  c(-10,0,0,0))
+    mark_filtration <-  filtration_to_net(net,10)
+    pmf <- PMF_mark_CS(time = time[10],  params = params,
+                       mark_filtration = mark_filtration,
+                       formula_RHS = "edges + triangles + star(c(2,3))",
+                       max_node_time = 1)
+    expect_equal(pmf$mark_density,
+                 0.3678293,
+                 tolerance = 0.01)
+})

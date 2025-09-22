@@ -4,10 +4,13 @@
 \alias{events_to_net}
 \title{FUNCTION_TITLE}
 \usage{
-events_to_net(events_list, net = NULL, directed = F)
+events_to_net(events_list, net = NULL, directed = FALSE)
 }
 \arguments{
-\item{events_list}{PARAM_DESCRIPTION}
+\item{events_list}{A data frame of interactions
+between participants,  with elements \code{i} - from node,
+\code{j} - to node, &
+\code{t} - time of interaction.}
 
 \item{net}{PARAM_DESCRIPTION, Default: NULL}
 
