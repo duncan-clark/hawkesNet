@@ -17,7 +17,7 @@
 #' @param generate_density PARAM_DESCRIPTION, Default: \code{TRUE}.
 #' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code[FALSE}.
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: code{NULL}.
-#' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{NULL}.
+#' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{10}.
 #' @param truncation Default: \code{NULL}.
 #' @return OUTPUT_DESCRIPTION
 #' @details Func
@@ -62,7 +62,7 @@ PMF_mark <- function(time,
                      formula_RHS,
                      mark_decay = 'node_entrance',
                      model = NULL,
-                     max_node_time = NULL,
+                     max_node_time = 10,
                      ...){
     type <- type[1]
     if (!(type %in% c("BA", "CS"))) {
@@ -463,7 +463,7 @@ PMF_mark_CS <- function(time,
             if(mark_decay == 'activity'){
                 node_times <- get_latest_times(mark_sample)
             }
-            if(mark_decay == 'node_entranace'){
+            if(mark_decay == 'node_entrance'){
                 node_times <- mark_sample %v% 'time'
             }
             diffs <- sapply(1:length(tails),function(i){
