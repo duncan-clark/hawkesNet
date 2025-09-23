@@ -67,7 +67,7 @@ make_network_growth_animation <- function(net_list,
 #' @rdname has_edge
 #' @export
 has_edge <- function(i, j,edge_hash) {
-  existing_keys <- keys(edge_hash)
+  existing_keys <- hash::keys(edge_hash)
   keys_to_check <- paste(i, j, sep = "-")
   keys_to_check %in% existing_keys
 }
