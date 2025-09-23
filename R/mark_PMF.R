@@ -1,13 +1,24 @@
-#' @param time PARAM_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
-#' @param mark PARAM_DESCRIPTION, Default: NULL
-#' @param generate_mark PARAM_DESCRIPTION, Default: FALSE
-#' @param generate_density PARAM_DESCRIPTION, Default: TRUE
-#' @param grad PARAM_DESCRIPTION, Default: FALSE
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
-#' @param truncation PARAM_DESCRIPTION, Default: NULL
-#' @param ... PARAM_DESCRIPTION
+#' Mark probability mass function for the network generation process
+#'
+#' Calculate the mark PMF ...
+#'
+#' @references 
+#' 
+#' @param time Numeric, the time at which to evaluate the pmf
+#' @param type Character, one of \code{"BA"} for Barabási–Albert or
+#' \code{"CS"} for CS Hawkes PMF. Default: \code{"BA"}.
+#' @param params A named list of parameter values: for \code{type = "BA"}, numeric values
+#' \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, & \code{node_lambda};
+#' for \code{type = "CS"} additional parameters include \code{CS_params} a vector of coefficients for
+#' \code{formula_RHS}.
+#' @param mark_filtration PARAM_DESCRIPTION.
+#' @param mark PARAM_DESCRIPTION, Default: \code{NULL}.
+#' @param generate_mark Logical, Default: \code{FALSE}.
+#' @param generate_density PARAM_DESCRIPTION, Default: \code{TRUE}.
+#' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code[FALSE}.
+#' @param new_edge_hash PARAM_DESCRIPTION, Default: code{NULL}.
+#' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{NULL}.
+#' @param truncation Default: \code{NULL}.
 #' @return OUTPUT_DESCRIPTION
 #' @details Func
 #' @examples
@@ -21,6 +32,7 @@
 #' mark_filtration <-  filtration_to_net(net,10)
 #' pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 #' ## CS
+#' devtools::install_github("duncan-clark/ernm", ref = "R_change_stats")
 #' require(ernm)
 #' params_cs <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
 #' beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
@@ -31,8 +43,8 @@
 #'  }
 #' }
 #' @seealso
-#' \code{PMF_mark_BA}
-#' \code{PMF_mark_CS}
+#' \code{\link{PMF_mark_BA}}
+#' \code{\link{PMF_mark_CS}}
 #' \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' \code{\link[ernm]{as.BinaryNet}}
 #' @rdname PMF_mark
@@ -59,14 +71,13 @@ PMF_mark <- function(time,
     if(type == "BA"){
         pmf <- PMF_mark_BA(time, params, mark_filtration, mark,
                            generate_mark, generate_density, grad,
-                           new_edge_hash, truncation, ...)
+                           new_edge_hash, truncation,...)
     }else{
         if(type == "CS"){
             pmf <- PMF_mark_CS(time, params, mark_filtration,
                         mark, generate_mark, generate_density,
                         grad,  new_edge_hash, truncation, formula_RHS,
-                        mark_decay, model, max_node_time,
-                        ...)
+                        mark_decay, model, max_node_time,...)
         }
     }
     return(pmf)
@@ -128,8 +139,7 @@ PMF_mark_BA <- function(time,
                         generate_density,
                         grad,
                         new_edge_hash,
-                        truncation,
-                        ...){
+                        truncation, ...){
     ## shared setup
     setup <- mark_setup(mark, mark_filtration, time)
     mark <- setup$mark
@@ -188,7 +198,6 @@ PMF_mark_BA <- function(time,
             poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
             tails <- poss_edges[,1]
             heads <- poss_edges[,2]
-            
             ## only consider edges that are not in the old net
             if(!is.null(last_net)){
                 in_old_net <- sapply(1:length(heads),function(i){
@@ -259,8 +268,7 @@ PMF_mark_CS <- function(time,
                         formula_RHS,
                         mark_decay,
                         model,
-                        max_node_time,
-                        ...){
+                        max_node_time, ...){
  
     ## shared setup
     setup <- mark_setup(mark, mark_filtration, time)
