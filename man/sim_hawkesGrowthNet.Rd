@@ -9,10 +9,10 @@ sim_hawkesGrowthNet(
   time_window,
   PMF_mark,
   cond_intensity,
-  hashed_edges = F,
-  verbose = F,
+  hashed_edges = FALSE,
+  verbose = FALSE,
   mu_multiplier = 10,
-  joint_accept = F,
+  joint_accept = FALSE,
   n_mark_sample = NULL,
   ...
 )
@@ -22,21 +22,21 @@ sim_hawkesGrowthNet(
 
 \item{time_window}{PARAM_DESCRIPTION}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{PMF_mark}{A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.}
 
-\item{cond_intensity}{PARAM_DESCRIPTION}
+\item{cond_intensity}{A function to calcualte condiational_intensity, takes in a kernel_func}
 
-\item{hashed_edges}{PARAM_DESCRIPTION, Default: F}
+\item{hashed_edges}{PARAM_DESCRIPTION, Default: FALSE}
 
-\item{verbose}{PARAM_DESCRIPTION, Default: F}
+\item{verbose}{PARAM_DESCRIPTION, Default: FALSE}
 
 \item{mu_multiplier}{PARAM_DESCRIPTION, Default: 10}
 
-\item{joint_accept}{PARAM_DESCRIPTION, Default: F}
+\item{joint_accept}{PARAM_DESCRIPTION, Default: FALSE}
 
 \item{n_mark_sample}{PARAM_DESCRIPTION, Default: NULL}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{...}{to be past to \link{PMF_mark}}
 }
 \value{
 OUTPUT_DESCRIPTION

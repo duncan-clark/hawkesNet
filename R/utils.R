@@ -135,6 +135,9 @@ events_to_net <- function(events_list,
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
 #' @param x A data frame ...
+#' @param pid Character string
+#' @param eid Character string
+#' @param time Character string
 #' @export
 events_to_bipartite_net <- function(x, pid = "anon_person_id",
                                     eid = "event_id", time = "diff_date"){
@@ -158,6 +161,7 @@ events_to_bipartite_net <- function(x, pid = "anon_person_id",
 #' Internal function, takes a
 #' bipartite network and makes it into a bipartite igraph
 #' mainly useful for plotting
+#' @noRd
 bn_ig <- function(net){
     edges <- network::as.matrix.network.edgelist(net)
     g <- igraph::graph_from_data_frame(edges, directed = FALSE)
@@ -166,6 +170,7 @@ bn_ig <- function(net){
 }
 #' Plot example subcomponents of a bipartite igraph
 #' internal function
+#' @noRd
 plot_example_sub_component <- function(g, size, idx = 1,
                                        cols = c("#E41A1C", "#377EB8"), ...){
     x <- igraph::components(g)

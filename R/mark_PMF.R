@@ -2,7 +2,9 @@
 #'
 #' Calculate the mark PMF ...
 #'
-#' @references 
+#' @references
+#' Barabási, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
+
 #' 
 #' @param time Numeric, the time at which to evaluate the pmf
 #' @param type Character, one of \code{"BA"} for Barabási–Albert or
@@ -15,12 +17,41 @@
 #' @param mark PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @param generate_mark Logical, Default: \code{FALSE}.
 #' @param generate_density PARAM_DESCRIPTION, Default: \code{TRUE}.
-#' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code[FALSE}.
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: code{NULL}.
+#' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code{FALSE}.
+#' @param new_edge_hash PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{10}.
 #' @param truncation Default: \code{NULL}.
+#' @param formula_RHS PARAM_DESCRIPTION, Default: \code{NULL}.
+#' @param mark_decay PARAM_DESCRIPTION, Default: \code{NULL}.
+#' @param model PARAM_DESCRIPTION, Default: \code{NULL}.
+#' @param ... PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @return OUTPUT_DESCRIPTION
-#' @details Func
+#' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
+#' Currenlty two options: \code{type = "BA"} and \code{type = "CS"}. 
+#'
+#' For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
+#' \deqn{
+#'   q(m \mid t, \mathcal{H}_t) =
+#'   \prod_{i=1}^{N_{t-}} \left(p_i^{BA}\right)^{e_i} \cdot
+#'   \left(1 - p_i^{BA}\right)^{1 - e_i}.
+#' }
+#' Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
+#' \deqn{
+#'   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
+#' }
+#' where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}}, 
+#' and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
+#' 
+#' For \code{type = "CS"} the change statistic (CS) model is used where he mark distribution is defined (similar to above) as
+#' \deqn{
+#'   q(m \mid t, \mathcal{H}_t) =
+#'   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
+#'   \left(1 - p_i^{CS}\right)^{1 - e_i}.
+#' }
+#' where the attachment probability, \eqn{p_i^{CS}}, is defined as
+#' \deqn{
+#' p_i^{CS} = \left(\nu + \exp(\tau \cdot(t - t_i))\right)\cdot\frac{1}{1 + \exp(-\theta^{\top} \cdot C_{i,N_t})}
+#' }
 #' @examples
 #' \dontrun{
 #' if(interactive()){
@@ -43,6 +74,7 @@
 #'  }
 #' }
 #' @seealso
+#' \code{\link{cond_intensity}}
 #' \code{\link{PMF_mark_BA}}
 #' \code{\link{PMF_mark_CS}}
 #' \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
@@ -86,6 +118,7 @@ PMF_mark <- function(time,
 
 #' Internal function to prepare for mark PMFs
 #' @inheritParams PMF_mark
+#' @noRd
 mark_setup <- function(mark = NULL, mark_filtration, time){
     if(is.null(mark)){
         mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
@@ -129,8 +162,9 @@ mark_setup <- function(mark = NULL, mark_filtration, time){
                 old_nodes = old_nodes))
 }
 
-#' Internal function for Barabási–Albert (BA) probability mass function
-#' @inheritParams PMF_mark
+#' Function for Barabási–Albert (BA) probability mass function
+#' @rdname PMF_mark
+#' @export
 PMF_mark_BA <- function(time,
                         params,
                         mark_filtration,
@@ -254,8 +288,9 @@ PMF_mark_BA <- function(time,
     ))
 }
 
-#' Internal function for CS HawkesNet probability mass function
-#' @inheritParams PMF_mark
+#' Function for change statistic (CS) HawkesNet probability mass function
+#' @rdname PMF_mark
+#' @export
 PMF_mark_CS <- function(time,
                         params,
                         mark_filtration,

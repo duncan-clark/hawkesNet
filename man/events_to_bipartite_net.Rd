@@ -13,6 +13,12 @@ events_to_bipartite_net(
 }
 \arguments{
 \item{x}{A data frame ...}
+
+\item{pid}{Character string}
+
+\item{eid}{Character string}
+
+\item{time}{Character string}
 }
 \description{
 FUNCTION_DESCRIPTION

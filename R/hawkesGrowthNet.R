@@ -8,14 +8,25 @@
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
 #' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
+#' @details
+#' Computes the conditional intensity function for the \code{hawkesGrowthNet} model
+#' defined as
+#' \deqn{
+#'   \lambda(t,m \mid \mathcal{H}_t) = 
+#'     q(m \mid t,\mathcal{H}_{t}) \left( \lambda(t \mid \mathcal{H}_{t}) \right)
+#' }
+#' where the time decay kernel function, \eqn{g(t_1,t_2 \mid \mathcal{H}_t)},
+#' is given by \eqn{g(t_1,t_2 \mid \mathcal{H}_t) = \exp(-\beta (t_1 - t_2))}.
+#' The mark PMF, \eqn{q(m \mid t,\mathcal{H}_{t})}, is supplied via \link{PMF_mark}.
+#' @seealso
+#'  \code{\link{PMF_mark}}
 #' @examples
 #' \dontrun{
 #' if(interactive()){
 #'  #EXAMPLE1
 #'  }
 #' }
-#' @rdname cond_intensity
+#' @rdname loglik_hawkesGrowthNet
 #' @export
 cond_intensity <- function(new_net,
                            t,
@@ -59,14 +70,14 @@ cond_intensity <- function(new_net,
 #' @description FUNCTION_DESCRIPTION
 #' @param params PARAM_DESCRIPTION
 #' @param time_window PARAM_DESCRIPTION
-#' @param PMF_mark PARAM_DESCRIPTION
-#' @param cond_intensity PARAM_DESCRIPTION
-#' @param hashed_edges PARAM_DESCRIPTION, Default: F
-#' @param verbose PARAM_DESCRIPTION, Default: F
+#' @param PMF_mark A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.
+#' @param cond_intensity A function to calcualte condiational_intensity, takes in a kernel_func
+#' @param hashed_edges PARAM_DESCRIPTION, Default: FALSE
+#' @param verbose PARAM_DESCRIPTION, Default: FALSE
 #' @param mu_multiplier PARAM_DESCRIPTION, Default: 10
-#' @param joint_accept PARAM_DESCRIPTION, Default: F
+#' @param joint_accept PARAM_DESCRIPTION, Default: FALSE
 #' @param n_mark_sample PARAM_DESCRIPTION, Default: NULL
-#' @param ... PARAM_DESCRIPTION
+#' @param ... to be past to \link{PMF_mark}
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples
@@ -82,24 +93,21 @@ cond_intensity <- function(new_net,
 #' @export
 sim_hawkesGrowthNet <- function(params,
                                 time_window,
-                                PMF_mark, # function that both generates new mark and calculates the density of existing mark
-                                cond_intensity, # function to calcualte condiational_intensity, takes in a kernel_func
-                                hashed_edges = F,
-                                verbose = F,
+                                PMF_mark,
+                                cond_intensity, 
+                                hashed_edges = FALSE,
+                                verbose = FALSE,
                                 mu_multiplier = 10,
-                                joint_accept = F,
+                                joint_accept = FALSE,
                                 n_mark_sample = NULL,
-                                ... # to be past to PMF_mark
-
-
-){
+                                ... ){
   t1 <- proc.time()
   # simulate the background points (can only simulate their times right now)
   mu <- params$mu
   theta <- params$theta
   beta <- params$beta
   K <- params$K
-
+  ## browser()
   # poisson in time lambda
   lambda <- mu_multiplier*mu
 
@@ -274,9 +282,8 @@ sim_hawkesGrowthNet <- function(params,
 #' @examples
 #' \dontrun{
 #' if(interactive()){
-#'  data(net, package = "hawkesGrowthNet")
-#' time <- get_times(net)$times
-#' params_ba <-  list(mu = length(time)/max(time), beta_overall = 0.1, K = 0.1,
+#' data(net, package = "hawkesGrowthNet")
+#' params_ba <-  list(mu = 10, beta_overall = 0.1, K = 0.1,
 #'                       beta_edges = 0.1,node_lambda = 1)
 #' mark_filtration <-  network::get.inducedSubgraph(net, v = 1:10)
 #' loglik_ba <- loglik_hawkesGrowthNet(params = params_ba,
@@ -286,7 +293,7 @@ sim_hawkesGrowthNet <- function(params,
 #'                                        verbose = FALSE)
 #' ## CS
 #'require(ernm)
-#' params_cs <-  list(mu = length(time)/max(time),
+#' params_cs <-  list(mu = 10,
 #'                      beta_overall = 0.1,
 #'                       K = 0.1,
 #'                       beta_edges = 0.1,
