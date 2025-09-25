@@ -1,13 +1,8 @@
 test_that("BA PMF", {
     data(net, package = "hawkesGrowthNet")
     time <- get_times(net)$times
-    params <-  list(mu = length(time)/max(time),
-                    beta_overall = 0.1,
-                    K = 0.1,
-                    beta_edges = 0.1,
-                    node_lambda = 1)
-    mark_filtration <-  filtration_to_net(net,10)
-    pmf <- PMF_mark_BA(time[10],  params, mark_filtration, mark = NULL,
+    params <-  list(beta_edges = 0.1)
+    pmf <- PMF_mark_BA(time[10],  params, mark_filtration = net, mark = NULL,
                        generate_mark = FALSE,  generate_density = TRUE,
                        grad = FALSE, new_edge_hash = NULL, truncation = NULL)
     expect_equal(pmf$mark_density,

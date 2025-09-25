@@ -1,3 +1,40 @@
+test_that("conditinoal_intensity", {
+    data(net, package = "hawkesGrowthNet")
+    ## BA
+    params_ba <-  list(mu = 10,
+                       beta_overall = 0.1,
+                       K = 0.1,
+                       beta_edges = 0.1,
+                       node_lambda = 1)
+    time <- get_times(net)$times
+    intensity_ba <- cond_intensity(new_net = NULL, t = time[10], 
+                                        mark_filtration = net,
+                                        PMF_mark = PMF_mark,  
+                                        params = params_ba)
+    ## CS
+    require(ernm)
+    params_cs <-  list(mu = 10,
+                       beta_overall = 0.1,
+                       K = 0.1,
+                       beta_edges = 0.1,
+                       node_lambda = 1,
+                       CS_params =  c(-10,0,0,0))
+    intensity_cs <- cond_intensity(new_net = NULL, t = time[10], 
+                                mark_filtration = net,
+                                PMF_mark = PMF_mark,  
+                                params = params_cs,
+                                type = "CS",
+                                truncation = 1,
+                                formula_RHS = "edges + triangles + star(c(2,3))",
+                                max_node_time = 1 )
+    ## expect
+    expect_equal(intensity_ba$result,
+                 3.504372,, 
+                 tolerance = 0.01)
+    expect_equal(intensity_cs$result,
+                 4.007338,
+                 tolerance = 0.01)
+})
 test_that("loglik", {
     data(net, package = "hawkesGrowthNet")
     require(network)
