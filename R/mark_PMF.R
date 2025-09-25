@@ -42,7 +42,7 @@
 #' where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}}, 
 #' and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
 #' 
-#' For \code{type = "CS"} the change statistic (CS) model is used where he mark distribution is defined (similar to above) as
+#' For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
 #' \deqn{
 #'   q(m \mid t, \mathcal{H}_t) =
 #'   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
@@ -139,7 +139,7 @@ mark_setup <- function(mark = NULL, mark_filtration, time){
     }
     ## get the possible edges for the given truncation:
     ## if no nodes have been added then :
-    poss_tails <- ((old_nodes + 1) : new_nodes)
+    poss_tails <- seq.int((old_nodes + 1), new_nodes)
     poss_tails <- poss_tails[poss_tails>0]
     poss_heads <- 1:old_nodes
     poss_heads <- poss_heads[poss_heads>0]
@@ -161,7 +161,67 @@ mark_setup <- function(mark = NULL, mark_filtration, time){
                 tails = tails, heads = heads, new_nodes = new_nodes,
                 old_nodes = old_nodes))
 }
-
+#' Internal function to prepare for bipartite mark PMFs
+#' @inheritParams PMF_mark
+#' @noRd
+mark_setup_bipartite <- function(mark = NULL, mark_filtration, time){
+    if(is.null(mark)){
+        mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+    }
+    last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
+    new_net <- last_net
+    if(is.null(last_net) || (last_net %n% "n") == 0){
+        last_net <- NULL
+        new_net <- network::network(matrix(0, 1, 1), directed = FALSE, bipartite = 0)
+        set.vertex.attribute(new_net, "time", time)
+        set.vertex.attribute(new_net, "role", "event")  
+        old_nodes <- 0
+        new_nodes <- 1
+    } else {
+        new_nodes <- mark %n% "n"
+        old_nodes <- last_net %n% "n"
+        network::add.vertices(new_net, nv = new_nodes - old_nodes)
+        set.vertex.attribute(new_net, "time",
+                             c(get.vertex.attribute(last_net, "time"),
+                               rep(time, new_nodes - old_nodes)))
+        roles <- get.vertex.attribute(last_net, "role")
+        if(is.null(roles)) roles <- rep("perp", old_nodes)
+        new_roles <- c(roles, rep("event", new_nodes - old_nodes))
+        set.vertex.attribute(new_net, "role", new_roles)
+    }
+    if(is.null(last_net)){
+        last_net <- network::network(matrix(0, 0, 0), directed = FALSE, bipartite = 0)
+        set.vertex.attribute(last_net, "time", numeric(0))
+        set.vertex.attribute(last_net, "role", character(0))
+    }
+    perp_nodes <- which(get.vertex.attribute(new_net, "role") == "perp")
+    event_nodes <- which(get.vertex.attribute(new_net, "role") == "event")
+    poss_tails <- seq.int(from = old_nodes + 1, to = new_nodes)
+    poss_tails <- poss_tails[poss_tails > 0]
+    poss_heads <- perp_nodes
+    poss_heads <- poss_heads[poss_heads > 0]
+    poss_edges <- expand.grid(poss_tails, poss_heads)
+    colnames(poss_edges) <- c("tail", "head")
+    tails <- poss_edges[, "tail"]
+    heads <- poss_edges[, "head"]
+    if(!is.null(last_net) && length(heads) > 0){
+        in_old_net <- sapply(1:length(heads), function(i){
+            length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
+        })
+        tails <- tails[!in_old_net]
+        heads <- heads[!in_old_net]
+    }
+    return(list(mark = mark,
+                new_net = new_net,
+                last_net = last_net,
+                poss_tails = poss_tails,
+                poss_heads = poss_heads,
+                poss_edges = poss_edges,
+                tails = tails,
+                heads = heads,
+                new_nodes = new_nodes,
+                old_nodes = old_nodes))
+}
 #' Function for Barabási–Albert (BA) probability mass function
 #' @rdname PMF_mark
 #' @export
@@ -286,6 +346,110 @@ PMF_mark_BA <- function(time,
         mark_sample_density = exp(log_mark_sample_density),
         log_mark_sample_density = log_mark_sample_density
     ))
+}
+#' Function for BA-style bipartite probablibity mass function
+#' @rdname PMF_mark
+#' @export
+PMF_mark_BA_bipartite <- function(time,
+                                  params,
+                                  mark_filtration,
+                                  mark = NULL,
+                                  generate_mark = TRUE,
+                                  generate_density = TRUE,
+                                  grad = NULL,
+                                  new_edge_hash = NULL,
+                                  truncation = NULL, ...) {
+  
+  ## --- Shared setup ---
+  setup <- mark_setup_bipartite(mark, mark_filtration, time)
+  mark <- setup$mark
+  new_net <- setup$new_net
+  last_net <- setup$last_net
+  poss_tails <- setup$poss_tails
+  poss_heads <- setup$poss_heads
+  poss_edges <- setup$poss_edges
+  tails <- setup$tails
+  heads <- setup$heads
+  new_nodes <- setup$new_nodes
+  old_nodes <- setup$old_nodes
+  perp_nodes <- which(get.vertex.attribute(new_net, "role") == "perp")
+    if(length(perp_nodes) > 0){
+        times <- get.vertex.attribute(new_net, "time")
+        c_offset <- 0.01 ## small degree fix
+        degs <- c_offset + degree(new_net)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
+        total_deg <- sum(degs)
+        if(total_deg == 0){
+            probs <- rep(1, length(perp_nodes))
+        } else {
+            probs <- degs / total_deg
+        }
+        heads <- perp_nodes  
+    } else {
+        probs <- numeric(0)
+        heads <- integer(0)
+    }
+  if(!is.null(mark) && length(probs) != 0){
+    if(is.null(new_edge_hash)){
+      in_mark <- sapply(1:length(heads), function(i){
+        length(get.edgeIDs(mark, heads[i], poss_tails)) != 0
+      })
+    } else {
+      in_mark <- has_edge(heads, poss_tails, new_edge_hash)
+    }
+    log_mark_density <- sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark]))
+    mark_density <- exp(log_mark_density)
+  } else {
+    log_mark_density <- 0
+    mark_density <- 1
+  }
+  if(generate_mark){
+    mark_sample <- new_net
+    new_event_id <- as.integer(mark_sample %n% "n") + 1
+    mark_sample <- network::add.vertices(mark_sample, 1)
+    set.vertex.attribute(mark_sample, "time", c(get.vertex.attribute(mark_sample, "time"), time))
+    set.vertex.attribute(mark_sample, "role", c(get.vertex.attribute(mark_sample, "role"), "event"))
+    perp_nodes <- which(get.vertex.attribute(mark_sample, "role") == "perp")
+    if(length(perp_nodes) > 0){
+      times <- get.vertex.attribute(mark_sample, "time")
+      degs <- degree(mark_sample)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
+      total_deg <- sum(degs)
+      if(total_deg == 0){
+        probs <- rep(1, length(perp_nodes))
+      } else {
+        probs <- degs / total_deg
+      }
+      add <- runif(length(probs)) < probs
+      network::add.edges(mark_sample, perp_nodes[add], rep(new_event_id, sum(add)))
+      log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
+      mark_sample_density <- exp(log_mark_sample_density)
+    } else {
+      log_mark_sample_density <- 0
+      mark_sample_density <- 1
+    }
+    K <- rpois(1, lambda = params$lambda_new)
+    if(K > 0){
+      new_perp_ids <- (mark_sample %n% "n") + seq_len(K)
+      mark_sample <- network::add.vertices(mark_sample, K)
+      set.vertex.attribute(mark_sample, "time",
+                           c(get.vertex.attribute(mark_sample, "time"), rep(time, K)))
+      set.vertex.attribute(mark_sample, "role",
+                           c(get.vertex.attribute(mark_sample, "role"), rep("perp", K)))
+      network::add.edges(mark_sample, new_perp_ids, rep(new_event_id, K))
+    }
+    
+  } else {
+    mark_sample <- new_net
+    log_mark_sample_density <- 0
+    mark_sample_density <- 1
+  }
+  return(list(
+    mark_density = mark_density,
+    log_mark_density = log_mark_density,
+    edge_probs = probs,
+    mark_sample = mark_sample,
+    mark_sample_density = mark_sample_density,
+    log_mark_sample_density = log_mark_sample_density
+  ))
 }
 
 #' Function for change statistic (CS) HawkesNet probability mass function
@@ -539,13 +703,13 @@ PMF_mark_CS <- function(time,
     }
 
     return(list(
-                                        # density of provided marks
+        ## density of provided marks
         mark_density = mark_density,
         log_mark_density = log_mark_density,
         edge_probs = probs,
         mark_grad = mark_grad,
         decay_grad = decay_grad,
-                                        # mark_sample
+        ## mark_sample
         mark_sample = mark_sample,
         mark_sample_density = mark_sample_density,
         log_mark_sample_density = log_mark_sample_density
