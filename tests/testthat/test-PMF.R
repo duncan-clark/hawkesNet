@@ -13,10 +13,7 @@ test_that("CS PMF", {
     require(ernm)
     data(net, package = "hawkesGrowthNet")
     time <- get_times(net)$times
-    params <-  list(mu = length(time)/max(time),
-                    beta_overall = 0.1,
-                    K = 0.1,
-                    beta_edges = 0.1,
+    params <-  list(beta_edges = 0.1,
                     node_lambda = 1,
                     CS_params =  c(-10,0,0,0))
     mark_filtration <-  filtration_to_net(net,10)
@@ -36,19 +33,12 @@ test_that("PMF", {
     data(net, package = "hawkesGrowthNet")
     time <- get_times(net)$times
     ## BA
-    params_ba <-  list(mu = length(time)/max(time),
-                       beta_overall = 0.1,
-                       K = 0.1,
-                       beta_edges = 0.1,
-                       node_lambda = 1)
+    params_ba <-  list(beta_edges = 0.1)
     mark_filtration <-  filtration_to_net(net,10)
     pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
     ## CS
     require(ernm)
-    params_cs <-  list(mu = length(time)/max(time),
-                       beta_overall = 0.1,
-                       K = 0.1,
-                       beta_edges = 0.1,
+    params_cs <-  list(beta_edges = 0.1,
                        node_lambda = 1,
                        CS_params =  c(-10,0,0,0))
     pmf_cs <- PMF_mark(time = time[10],  params = params_cs,

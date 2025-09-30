@@ -4,8 +4,7 @@ test_that("conditinoal_intensity", {
     params_ba <-  list(mu = 10,
                        beta_overall = 0.1,
                        K = 0.1,
-                       beta_edges = 0.1,
-                       node_lambda = 1)
+                       beta_edges = 0.1)
     time <- get_times(net)$times
     intensity_ba <- cond_intensity(new_net = NULL, t = time[10], 
                                         mark_filtration = net,
@@ -29,7 +28,7 @@ test_that("conditinoal_intensity", {
                                 max_node_time = 1 )
     ## expect
     expect_equal(intensity_ba$result,
-                 3.504372,, 
+                 3.504372, 
                  tolerance = 0.01)
     expect_equal(intensity_cs$result,
                  4.007338,
@@ -42,8 +41,7 @@ test_that("loglik", {
     params_ba <-  list(mu = 10,
                        beta_overall = 0.1,
                        K = 0.1,
-                       beta_edges = 0.1,
-                       node_lambda = 1)
+                       beta_edges = 0.1)
     mark_filtration <-  network::get.inducedSubgraph(net, v = 1:10)
     loglik_ba <- loglik_hawkesGrowthNet(params = params_ba,
                                         time_window = c(0,max(get_times(mark_filtration)$times)),

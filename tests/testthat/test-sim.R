@@ -3,9 +3,9 @@ test_that("simulation", {
     ## BA
     set.seed(1234)
     params_ba <- list(mu = 1,
-                      beta_overall = 2,
-                      K = 0.5,
-                      beta_edges = 0.5)
+                      beta_overall = 20,
+                      K = 0.1,
+                      beta_edges = 0.1)
     sim_ba <- sim_hawkesGrowthNet(params =  params_ba,
                                   time_window = time_window,
                                   PMF_mark = PMF_mark,
