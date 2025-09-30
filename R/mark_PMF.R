@@ -9,9 +9,10 @@
 #' @param time Numeric, the time at which to evaluate the pmf
 #' @param type Character, one of \code{"BA"} for Barabási–Albert or
 #' \code{"CS"} for CS Hawkes PMF. Default: \code{"BA"}.
-#' @param params A named list of parameter values: for \code{type = "BA"}, numeric values
-#' \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, & \code{node_lambda};
-#' for \code{type = "CS"} additional parameters include \code{CS_params} a vector of coefficients for
+#' @param params A named list of parameter values: for \code{type = "BA"}, numeric value
+#' \code{beta_edges};
+#' for \code{type = "CS"} additional parameters include \code{node_lambda} &
+#' \code{CS_params} a vector of coefficients for
 #' \code{formula_RHS}.
 #' @param mark_filtration PARAM_DESCRIPTION.
 #' @param mark PARAM_DESCRIPTION, Default: \code{NULL}.
@@ -58,15 +59,13 @@
 #'  data(net, package = "hawkesGrowthNet")
 #' time <- get_times(net)$times
 #' ## BA
-#' params_ba <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-#' beta_edges = 0.1,node_lambda = 1)
+#' params_ba <-  list( beta_edges = 0.1)
 #' mark_filtration <-  filtration_to_net(net,10)
 #' pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 #' ## CS
 #' devtools::install_github("duncan-clark/ernm", ref = "R_change_stats")
 #' require(ernm)
-#' params_cs <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-#' beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
+#' params_cs <-  list(beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
 #' pmf_cs <- PMF_mark(time = time[10],  params = params_cs,
 #' mark_filtration = mark_filtration, type = "CS",  truncation = 1,
 #' formula_RHS = "edges + triangles + star(c(2,3))",
@@ -119,7 +118,7 @@ PMF_mark <- function(time,
 #' Internal function to prepare for mark PMFs
 #' @inheritParams PMF_mark
 #' @noRd
-mark_setup <- function(mark = NULL, mark_filtration, time){
+mark_setup <- function(mark, mark_filtration, time){
     if(is.null(mark)){
         mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
     }
