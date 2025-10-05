@@ -33,7 +33,6 @@ PMF_mark_BA <- function(time,
                         new_edge_hash = NULL,
                         truncation = NULL,
                         ...){
-  
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
   }
@@ -103,8 +102,8 @@ PMF_mark_BA <- function(time,
     mark_density <- 1
   }
   
-  if(generate_mark){
-    if(!is.null(last_net) && (last_net %n% 'n') > 2){
+    if(generate_mark){
+    if(!is.null(last_net) && (last_net %n% 'n') >2 ){
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
       new_nodes <- 1
@@ -144,8 +143,8 @@ PMF_mark_BA <- function(time,
       }
       
       add <- runif(length(probs)) < probs
-      network::add.edges(mark_sample, heads[add], tails[add])
-      
+      mark_sample <- network::add.edges(mark_sample, heads[add], tails[add])
+      set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
       log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
       mark_sample_density <- exp(log_mark_sample_density)
     }else{
@@ -309,7 +308,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
@@ -458,7 +457,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
       diffs <- sapply(1:length(tails),function(i){
@@ -492,7 +491,7 @@ PMF_mark_CS <- function(time,
                              c(times,time))
         mark_sample_density <- 1
         log_mark_sample_density <- 0
-      }
+      } #
     }else{
       mark_sample <- new_net
       mark_sample_density <- 1

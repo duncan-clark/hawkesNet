@@ -222,6 +222,7 @@ sim_hawkesGrowthNet <- function(params,
                                 ...
         )
         net <- mark_sample$mark_sample
+
       }
 
       accept <- intensity/lambda
@@ -234,8 +235,10 @@ sim_hawkesGrowthNet <- function(params,
       if(verbose){
         print('accepted!')
       }
-      current_net <- net
+
+      current_net <-  net
       events$t[length(events$t)+1] <- current_event$time
+      events$n <- events$n + 1
       if(length(events$t) >2){
         events$mark_density <- c(events$mark_density,mark_sample$mark_density)
       }
@@ -247,6 +250,7 @@ sim_hawkesGrowthNet <- function(params,
       print(paste0("time is ",current_event$t, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
       print(paste0("time is ",current_event$t, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
     }
+    
     # Concatenate new events to event_queue only if we have only one event left to go
     old_n <- dim(event_queue)[1]
     event_queue <- rbindlist(list(event_queue, rbindlist(new_events_list, use.names = TRUE)))
