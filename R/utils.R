@@ -207,7 +207,13 @@ filtration_to_net <- function(net,
   if(!equals){
     e_times <- get.edge.attribute(net,"time")
     n_times <- get.vertex.attribute(net,"time")
-    t_to_delete <- max(c(e_times, n_times))
+    times <- c(e_times, n_times)
+    if (length(times) == 0 || all(is.na(times))) {
+        t_to_delete <- t  
+    } else {
+        t_to_delete <- max(times, na.rm = TRUE)
+    }
+    #t_to_delete <- max(c(e_times, n_times))
     delete.edges(net,which(e_times == t_to_delete))
     delete.vertices(net,which(n_times == t_to_delete))
   }
