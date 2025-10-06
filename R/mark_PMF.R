@@ -143,7 +143,7 @@ PMF_mark_BA <- function(time,
       }
       
       add <- runif(length(probs)) < probs
-      mark_sample <- network::add.edges(mark_sample, heads[add], tails[add])
+      network::add.edges(mark_sample, heads[add], tails[add])
       set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
       log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
       mark_sample_density <- exp(log_mark_sample_density)
@@ -491,7 +491,7 @@ PMF_mark_CS <- function(time,
                              c(times,time))
         mark_sample_density <- 1
         log_mark_sample_density <- 0
-      } #
+      }
     }else{
       mark_sample <- new_net
       mark_sample_density <- 1
