@@ -28,7 +28,7 @@
 #' @param ... PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @return OUTPUT_DESCRIPTION
 #' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-#' Currenlty two options: \code{type = "BA"} and \code{type = "CS"}. 
+#' Currenlty three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
 #'
 #' For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
 #' \deqn{
@@ -96,19 +96,25 @@ PMF_mark <- function(time,
                      max_node_time = 10,
                      ...){
     type <- type[1]
-    if (!(type %in% c("BA", "CS"))) {
-        stop("type can only be one of `BA` for Barabási–Albert or `CS` for CS Hawkes")
+    if (!(type %in% c("BA", "CS", "BA-bip"))) {
+        stop("type can only be one of `BA` for Barabási–Albert, `CS` for change statistic Hawkes, or `BA-bip` for bipartite Barabási–Albert.")
     }
     if(type == "BA"){
         pmf <- PMF_mark_BA(time, params, mark_filtration, mark,
                            generate_mark, generate_density, grad,
-                           new_edge_hash, truncation,...)
+                           new_edge_hash, truncation, ...)
     }else{
-        if(type == "CS"){
-            pmf <- PMF_mark_CS(time, params, mark_filtration,
-                        mark, generate_mark, generate_density,
-                        grad,  new_edge_hash, truncation, formula_RHS,
-                        mark_decay, model, max_node_time,...)
+        if(type == "BA-bip"){
+            pmf <- PMF_mark_BA_bipartite(time, params,  mark_filtration,
+                                      mark, generate_mark, generate_density,
+                                      grad, new_edge_hash, truncation, ...)
+        }else{
+            if(type == "CS"){
+                pmf <- PMF_mark_CS(time, params, mark_filtration,
+                                   mark, generate_mark, generate_density,
+                                   grad,  new_edge_hash, truncation, formula_RHS,
+                                   mark_decay, model, max_node_time, ...)
+            }
         }
     }
     return(pmf)

@@ -9,6 +9,23 @@ test_that("BA PMF", {
                  0.3215021,
                  tolerance = 0.01)
 })
+test_that("BA-bip PMF", {
+    events_list <- list(
+        i = c("A", "B", "C", "D","D"),
+        j = c(2, 3, 1, 2, 1),
+        t = c(5, 10, 15, 20, 21)
+    )
+    net <- events_to_bipartite_net(events_list)
+    time <- get_times(net)$times
+    params <-  list(beta_edges = 0.1, lambda_new = 1.5)
+    pmf <- PMF_mark_BA_bipartite(time[3],
+                                 params, mark_filtration = net, mark = NULL,
+                       generate_mark = FALSE,  generate_density = TRUE,
+                       grad = FALSE, new_edge_hash = NULL, truncation = NULL)
+    expect_equal(pmf$mark_density,
+                 1,
+                 tolerance = 0.01)
+})
 test_that("CS PMF", {
     require(ernm)
     data(net, package = "hawkesGrowthNet")

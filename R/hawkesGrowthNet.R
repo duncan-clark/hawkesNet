@@ -247,7 +247,7 @@ sim_hawkesGrowthNet <- function(params,
             events$t[length(events$t)+1] <- current_event$time
             ## current_net <- mark_sample$mark_sample  
             ## events$t <- c(events$t, current_event$time) 
-            ## events$n <- events$n + 1 
+            events$n <- events$n + 1 
             if(length(events$t) >2){
                 events$mark_density <- c(events$mark_density,mark_sample$mark_density)
             }
