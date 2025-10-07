@@ -1,4 +1,4 @@
-test_that("conditinoal_intensity", {
+test_that("conditional_intensity", {
     data(net, package = "hawkesGrowthNet")
     ## BA
     params_ba <-  list(mu = 10,
