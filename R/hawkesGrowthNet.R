@@ -71,7 +71,7 @@ cond_intensity <- function(new_net,
 #' @param params PARAM_DESCRIPTION
 #' @param time_window PARAM_DESCRIPTION
 #' @param PMF_mark A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.
-#' @param cond_intensity A function to calcualte condiational_intensity, takes in a kernel_func
+#' @param cond_intensity A function to calculate conditional_intensity, takes in a kernel_func
 #' @param hashed_edges PARAM_DESCRIPTION, Default: FALSE
 #' @param verbose PARAM_DESCRIPTION, Default: FALSE
 #' @param mu_multiplier PARAM_DESCRIPTION, Default: 10
