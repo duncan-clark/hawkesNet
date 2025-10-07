@@ -28,7 +28,7 @@
 #' @param ... PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @return OUTPUT_DESCRIPTION
 #' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-#' Currenlty three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
+#' Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
 #'
 #' For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
 #' \deqn{
