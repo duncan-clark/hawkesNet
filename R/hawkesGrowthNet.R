@@ -77,7 +77,7 @@ cond_intensity <- function(new_net,
 #' @param mu_multiplier PARAM_DESCRIPTION, Default: 10
 #' @param joint_accept PARAM_DESCRIPTION, Default: FALSE
 #' @param n_mark_sample PARAM_DESCRIPTION, Default: NULL
-#' @param ... to be past to \link{PMF_mark}
+#' @param ... to be passed to \link{PMF_mark}
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples
