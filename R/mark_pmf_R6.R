@@ -209,7 +209,7 @@ MarkKernel <- R6::R6Class(
         add <- stats::runif(length(probs)) < probs
         
         if(any(heads[add] > mark_sample %n% 'n') | any(tails[add] > mark_sample %n% 'n')){
-          browser()
+          stop("Internal error: Edge indices exceed number of nodes in mark_sample.")
         }
         network::add.edges(mark_sample, heads[add], tails[add])
         if (!is.null(mark_sample %e% "time")) {
