@@ -104,7 +104,7 @@ events_to_net <- function(events,
                           net = NULL,
                           directed = FALSE){
     ## validate input
-    if(! class(events) %in% c("list", "data.frame"))
+    if(! inherits(events, c("list", "data.frame")))
         stop("'events' should be either a list or a data frame.")
     if(sum(c("i", "j", "t") %in% names(events)) != 3)
         stop("'events' should have elements 'i', 'j', & 't'. Please see details.")
