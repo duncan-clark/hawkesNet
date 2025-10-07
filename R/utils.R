@@ -343,3 +343,29 @@ get_latest_times <- function(nw){
   
   return(latest_times)
 }
+
+
+#' Null-coalescing infix operator
+#'
+#' This operator returns its left-hand side if it is not `NULL`,
+#' otherwise it returns its right-hand side. It is a concise way
+#' to provide default values when a variable may be `NULL`.
+#'
+#' @name %||%
+#' @usage a %||% b
+#'
+#' @param a An object, possibly `NULL`.
+#' @param b A fallback value to return if `a` is `NULL`.
+#'
+#' @return `a` if not `NULL`, otherwise `b`.
+#'
+#' @examples
+#' x <- NULL
+#' y <- 10
+#' x %||% y   # returns 10
+#'
+#' z <- 5
+#' z %||% y   # returns 5
+#'
+#' @export
+`%||%` <- function(a, b) if (is.null(a)) b else a
