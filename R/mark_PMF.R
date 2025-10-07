@@ -1,32 +1,37 @@
 #' Mark probability mass function for the network generation process
 #'
-#' Calculate the mark PMF ...
+#' Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi–Albert, Change Statistic Hawkes, and BA-bipartite). 
 #'
 #' @references
 #' Barabási, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
-
-#' 
-#' @param time Numeric, the time at which to evaluate the pmf
-#' @param type Character, one of \code{"BA"} for Barabási–Albert or
-#' \code{"CS"} for CS Hawkes PMF. Default: \code{"BA"}.
-#' @param params A named list of parameter values: for \code{type = "BA"}, numeric value
-#' \code{beta_edges};
-#' for \code{type = "CS"} additional parameters include \code{node_lambda} &
-#' \code{CS_params} a vector of coefficients for
-#' \code{formula_RHS}.
-#' @param mark_filtration PARAM_DESCRIPTION.
-#' @param mark PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param generate_mark Logical, Default: \code{FALSE}.
-#' @param generate_density PARAM_DESCRIPTION, Default: \code{TRUE}.
-#' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code{FALSE}.
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{10}.
-#' @param truncation Default: \code{NULL}.
-#' @param formula_RHS PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param mark_decay PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param model PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param ... PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @return OUTPUT_DESCRIPTION
+#' @param time Numeric. The time at which to evaluate the PMF.
+#' @param params Named list. Model parameter values required for the chosen \code{type}:
+#'   - For \code{type = "BA"}: \code{beta_edges} (numeric).
+#'   - For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
+#'   - For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.
+#' @param mark_filtration Network or compatible object. The network history (filtration) up to the current time.
+#' @param type Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"BA-bip"}. Default: \code{"BA"}.
+#' @param mark Network or NULL. The current mark/network structure. If \code{NULL}, derived from \code{mark_filtration}.
+#' @param generate_mark Logical. If \code{TRUE}, generates a new mark/sample; otherwise computes density for the supplied mark. Default: \code{FALSE}.
+#' @param generate_density Logical. If \code{TRUE}, computes the density for the provided mark. Default: \code{TRUE}.
+#' @param grad Logical. If \code{TRUE}, also computes gradients of the mark density. Default: \code{FALSE}.
+#' @param new_edge_hash Hash or NULL. Optional hashed edge list for fast lookup. Default: \code{NULL}.
+#' @param truncation Integer or NULL. For \code{"CS"} models, controls which edges are considered (e.g., \code{1} means only new-to-old). Default: \code{NULL}.
+#' @param formula_RHS Character or formula. For \code{"CS"} models, specifies the right-hand-side for change statistics calculation. Default: \code{NULL}.
+#' @param mark_decay Character or NULL. How edge decay is modeled, e.g. \code{"node_entrance"}, \code{"activity"}, etc. Default: \code{NULL}.
+#' @param model Object or NULL. Preconstructed model object (for efficiency); if \code{NULL}, will be built internally. Default: \code{NULL}.
+#' @param max_node_time Numeric. The last time at which a node can enter the network (CS model). Default: \code{10}.
+#' @param ... Additional arguments, passed to model-specific PMF functions.
+#' @return Named list containing:
+#'   \item{mark_density}{Numeric. Density of the provided or generated mark.}
+#'   \item{log_mark_density}{Numeric. Log-density of the mark.}
+#'   \item{edge_probs}{Numeric vector. Probabilities for each possible edge.}
+#'   \item{mark_grad}{Numeric vector. Gradient of the mark density (if \code{grad = TRUE}).}
+#'   \item{decay_grad}{Numeric vector. Gradient with respect to decay (if \code{grad = TRUE}).}
+#'   \item{mark_sample}{Network. The sampled mark/network object.}
+#'   \item{mark_sample_density}{Numeric. Density of the sampled mark.}
+#'   \item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
+#'
 #' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
 #' Currenlty three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
 #'
@@ -97,7 +102,7 @@ PMF_mark <- function(time,
                      ...){
     type <- type[1]
     if (!(type %in% c("BA", "CS", "BA-bip"))) {
-        stop("type can only be one of `BA` for Barabási–Albert, `CS` for change statistic Hawkes, or `BA-bip` for bipartite Barabási–Albert.")
+        stop("type can only be one of `BA` for Barabasi–Albert, `CS` for change statistic Hawkes, or `BA-bip` for bipartite Barabási–Albert.")
     }
     if(type == "BA"){
         pmf <- PMF_mark_BA(time, params, mark_filtration, mark,

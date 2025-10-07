@@ -3,6 +3,7 @@
 \name{PMF_mark}
 \alias{PMF_mark}
 \alias{PMF_mark_BA}
+\alias{PMF_mark_BA_bipartite}
 \alias{PMF_mark_CS}
 \title{Mark probability mass function for the network generation process}
 \usage{
@@ -37,6 +38,19 @@ PMF_mark_BA(
   ...
 )
 
+PMF_mark_BA_bipartite(
+  time,
+  params,
+  mark_filtration,
+  mark = NULL,
+  generate_mark = TRUE,
+  generate_density = TRUE,
+  grad = NULL,
+  new_edge_hash = NULL,
+  truncation = NULL,
+  ...
+)
+
 PMF_mark_CS(
   time,
   params,
@@ -55,49 +69,58 @@ PMF_mark_CS(
 )
 }
 \arguments{
-\item{time}{Numeric, the time at which to evaluate the pmf}
+\item{time}{Numeric. The time at which to evaluate the PMF.}
 
-\item{params}{A named list of parameter values: for \code{type = "BA"}, numeric values
-\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, & \code{node_lambda};
-for \code{type = "CS"} additional parameters include \code{CS_params} a vector of coefficients for
-\code{formula_RHS}.}
+\item{params}{Named list. Model parameter values required for the chosen \code{type}:
+\itemize{
+\item For \code{type = "BA"}: \code{beta_edges} (numeric).
+\item For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
+\item For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.
+}}
 
-\item{mark_filtration}{PARAM_DESCRIPTION.}
+\item{mark_filtration}{Network or compatible object. The network history (filtration) up to the current time.}
 
-\item{type}{Character, one of \code{"BA"} for Barabási–Albert or
-\code{"CS"} for CS Hawkes PMF. Default: \code{"BA"}.}
+\item{type}{Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"BA-bip"}. Default: \code{"BA"}.}
 
-\item{mark}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{mark}{Network or NULL. The current mark/network structure. If \code{NULL}, derived from \code{mark_filtration}.}
 
-\item{generate_mark}{Logical, Default: \code{FALSE}.}
+\item{generate_mark}{Logical. If \code{TRUE}, generates a new mark/sample; otherwise computes density for the supplied mark. Default: \code{FALSE}.}
 
-\item{generate_density}{PARAM_DESCRIPTION, Default: \code{TRUE}.}
+\item{generate_density}{Logical. If \code{TRUE}, computes the density for the provided mark. Default: \code{TRUE}.}
 
-\item{grad}{Logical, if \code{TRUE} comupte gradient, Default: \code{FALSE}.}
+\item{grad}{Logical. If \code{TRUE}, also computes gradients of the mark density. Default: \code{FALSE}.}
 
-\item{new_edge_hash}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{new_edge_hash}{Hash or NULL. Optional hashed edge list for fast lookup. Default: \code{NULL}.}
 
-\item{truncation}{Default: \code{NULL}.}
+\item{truncation}{Integer or NULL. For \code{"CS"} models, controls which edges are considered (e.g., \code{1} means only new-to-old). Default: \code{NULL}.}
 
-\item{formula_RHS}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{formula_RHS}{Character or formula. For \code{"CS"} models, specifies the right-hand-side for change statistics calculation. Default: \code{NULL}.}
 
-\item{mark_decay}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{mark_decay}{Character or NULL. How edge decay is modeled, e.g. \code{"node_entrance"}, \code{"activity"}, etc. Default: \code{NULL}.}
 
-\item{model}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{model}{Object or NULL. Preconstructed model object (for efficiency); if \code{NULL}, will be built internally. Default: \code{NULL}.}
 
-\item{max_node_time}{Numeric, the last time at which a node can enter the network. Default: \code{10}.}
+\item{max_node_time}{Numeric. The last time at which a node can enter the network (CS model). Default: \code{10}.}
 
-\item{...}{PARAM_DESCRIPTION, Default: \code{NULL}.}
+\item{...}{Additional arguments, passed to model-specific PMF functions.}
 }
 \value{
-OUTPUT_DESCRIPTION
+Named list containing:
+\item{mark_density}{Numeric. Density of the provided or generated mark.}
+\item{log_mark_density}{Numeric. Log-density of the mark.}
+\item{edge_probs}{Numeric vector. Probabilities for each possible edge.}
+\item{mark_grad}{Numeric vector. Gradient of the mark density (if \code{grad = TRUE}).}
+\item{decay_grad}{Numeric vector. Gradient with respect to decay (if \code{grad = TRUE}).}
+\item{mark_sample}{Network. The sampled mark/network object.}
+\item{mark_sample_density}{Numeric. Density of the sampled mark.}
+\item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
 }
 \description{
-Calculate the mark PMF ...
+Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi–Albert, Change Statistic Hawkes, and BA-bipartite).
 }
 \details{
 Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-Currenlty two options: \code{type = "BA"} and \code{type = "CS"}.
+Currenlty three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}.
 
 For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
 \deqn{
@@ -112,7 +135,7 @@ Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
 where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}},
 and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
 
-For \code{type = "CS"} the change statistic (CS) model is used where he mark distribution is defined (similar to above) as
+For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
 \deqn{
   q(m \mid t, \mathcal{H}_t) =
   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
@@ -129,15 +152,13 @@ if(interactive()){
  data(net, package = "hawkesGrowthNet")
 time <- get_times(net)$times
 ## BA
-params_ba <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-beta_edges = 0.1,node_lambda = 1)
+params_ba <-  list( beta_edges = 0.1)
 mark_filtration <-  filtration_to_net(net,10)
 pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 ## CS
 devtools::install_github("duncan-clark/ernm", ref = "R_change_stats")
 require(ernm)
-params_cs <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
+params_cs <-  list(beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
 pmf_cs <- PMF_mark(time = time[10],  params = params_cs,
 mark_filtration = mark_filtration, type = "CS",  truncation = 1,
 formula_RHS = "edges + triangles + star(c(2,3))",
