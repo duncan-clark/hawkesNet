@@ -18,7 +18,7 @@
 #' @param mark PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @param generate_mark Logical, Default: \code{FALSE}.
 #' @param generate_density PARAM_DESCRIPTION, Default: \code{TRUE}.
-#' @param grad Logical, if \code{TRUE} comupte gradient, Default: \code{FALSE}.
+#' @param grad Logical, if \code{TRUE} compute gradient, Default: \code{FALSE}.
 #' @param new_edge_hash PARAM_DESCRIPTION, Default: \code{NULL}.
 #' @param max_node_time Numeric, the last time at which a node can enter the network. Default: \code{10}.
 #' @param truncation Default: \code{NULL}.
