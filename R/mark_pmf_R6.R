@@ -272,7 +272,7 @@ BAKernel <- R6::R6Class(
         if (time > self$opts$max_node_time) {
           return(0)
         } else if (!is.null(self$params$node_lambda)) {
-          return(rpois(1, self$params$node_lambda))
+          return(stats::rpois(1, self$params$node_lambda))
         } else {
           return(1)
         }
