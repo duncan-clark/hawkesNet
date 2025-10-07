@@ -281,6 +281,7 @@ PMF_mark_BA <- function(time,
     }
     
     if(generate_mark){
+        last_net <- mark
         if(!is.null(last_net) && (last_net %n% 'n') > 2){
             mark_sample <- last_net
             old_nodes <- last_net %n% 'n'
@@ -305,9 +306,9 @@ PMF_mark_BA <- function(time,
                 tails <- tails[!in_old_net]
                 heads <- heads[!in_old_net]
             }
-            
+            times <- get.vertex.attribute(last_net, "time")
             degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
-            total_deg <- sum(degs)
+            total_deg <- sum(degs, na.rm = TRUE)
             
             if(total_deg == 0){
                 probs <- rep(1, length(heads))
@@ -318,8 +319,7 @@ PMF_mark_BA <- function(time,
             if(any(is.na(probs))){
                 browser()
             }
-            
-            add <- runif(length(probs)) < probs
+            add <- runif(length(probs)) <  probs
             network::add.edges(mark_sample, heads[add], tails[add])
             
             log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
@@ -382,7 +382,7 @@ PMF_mark_BA_bipartite <- function(time,
         times <- get.vertex.attribute(new_net, "time")
         c_offset <- 0.01 ## small degree fix
         degs <- c_offset + degree(new_net)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
-        total_deg <- sum(degs)
+        total_deg <- sum(degs, na.rm = TRUE)
         if(total_deg == 0){
             probs <- rep(1, length(perp_nodes))
         } else {
