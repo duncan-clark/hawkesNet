@@ -2,7 +2,7 @@
 #' @details Base Class for markKernel - that adds network updates to the network
 #' note that the mark space is dynamic so the kernel depends on the filtration
 #' so as the filtration grows, the markKernel changes
-#' we let the mark kernel be stateful - i.e. it stores the most up to date state - but also refelcts the dynamic mark space:
+#' we let the mark kernel be stateful - i.e. it stores the most up to date state - but also reflects the dynamic mark space:
 #' 
 #' Base class for mark-update kernels on dynamic mark spaces
 #' Shared plumbing; subclasses supply edge-probability logic.
