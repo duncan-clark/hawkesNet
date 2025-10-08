@@ -383,7 +383,7 @@ loglik_hawkesGrowthNet = function(params,
     }
                                         # tmp <- sapply(intens_list,function(x){x$result})
     tmp <- unlist(intens_list)
-    print(tmp)
+    if (exists("verbose") && isTRUE(verbose)) print(tmp)
     
     if(any(is.na(tmp))){
         tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)])/2
