@@ -403,7 +403,6 @@ loglik_hawkesGrowthNet = function(params,
         (1-exp(-params$beta_overall*(tval-x)))
     })
     integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
-    browser()
     loglik <- intens_sum - integral
                                         # print(paste0("integral is ",integral))
                                         # print(paste0("intens_sum is ",intens_sum))
