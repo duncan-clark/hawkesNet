@@ -2,24 +2,35 @@
 % Please edit documentation in R/utils.R
 \name{events_to_bipartite_net}
 \alias{events_to_bipartite_net}
-\title{FUNCTION_TITLE}
+\title{Convert event-participant data to bipartite network}
 \usage{
-events_to_bipartite_net(
-  x,
-  pid = "anon_person_id",
-  eid = "event_id",
-  time = "diff_date"
-)
+events_to_bipartite_net(events)
 }
 \arguments{
-\item{x}{A data frame ...}
-
-\item{pid}{Character string}
-
-\item{eid}{Character string}
-
-\item{time}{Character string}
+\item{events}{Data frame or list. Must contain columns \code{i} (from node), \code{j} (to node),
+and \code{t} (time of interaction).}
+}
+\value{
+A bipartite \code{network} object, where vertices correspond to participants
+and events, and edges represent participation, with time-stamped attributes.
 }
 \description{
-FUNCTION_DESCRIPTION
+Creates a bipartite network from a data frame of participant-event
+memberships, with time attributes for each edge and node.
+}
+\details{
+The resulting network is undirected and bipartite (events and participants).
+Edges are added only if not already present. Time attributes are set for each edge
+}
+\examples{
+\dontrun{
+if(interactive()){
+events_list <- list(
+i = c("A", "B", "C", "D","D"),
+j = c(2, 3, 1, 2, 1),
+t = c(5, 10, 15, 20, 21))
+bip <- events_to_bipartite_net(events_list)
+plot(bip, vertex.col = ifelse(get.vertex.attribute(bip, "type") == "type_i", "#E41A1C", "#377EB8"))
+ }
+}
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{fit_hawkesGrowthNet}
 \alias{fit_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Fit hawkesGrowthNet Model via Maximum Likelihood}
 \usage{
 fit_hawkesGrowthNet(
   params_init,
@@ -19,36 +19,34 @@ fit_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{params_init}{PARAM_DESCRIPTION}
+\item{params_init}{List. Initial parameter values.}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric vector. Time interval for model fitting.}
 
-\item{mark_filtration}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Network. Network history/filtration.}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Function. Computes the mark PMF.}
 
-\item{trace}{PARAM_DESCRIPTION, Default: 0}
+\item{trace}{Integer. Optimizer trace level. Default: 0.}
 
-\item{REPORT}{PARAM_DESCRIPTION, Default: 10}
+\item{REPORT}{Integer. Optimizer report frequency. Default: 10.}
 
-\item{reltol}{PARAM_DESCRIPTION, Default: 1e-8}
+\item{reltol}{Numeric. Optimization relative tolerance. Default: 1e-8.}
 
-\item{maxit}{PARAM_DESCRIPTION}
+\item{maxit}{Integer. Maximum number of iterations.}
 
-\item{get_hessian}{PARAM_DESCRIPTION, Default: FALSE}
+\item{get_hessian}{Logical. Compute Hessian for SEs? Default: \code{FALSE}.}
 
-\item{fixed_params}{PARAM_DESCRIPTION, Default: NULL}
+\item{fixed_params}{Character vector or NULL. Parameter names to hold fixed. Default: \code{NULL}.}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{...}{Additional arguments passed to log-likelihood function.}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with component:
+\item{fit}{Object returned by \code{optim} (MLE fit).}
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
+Fits (estimates parameters for) a hawkesGrowthNet model by maximizing the log-likelihood.
 }
 \examples{
 \dontrun{
@@ -56,4 +54,7 @@ if(interactive()){
  #EXAMPLE1
  }
 }
+}
+\seealso{
+\code{\link{loglik_hawkesGrowthNet}}, \code{\link{sim_hawkesGrowthNet}}
 }

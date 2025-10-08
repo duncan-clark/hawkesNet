@@ -3,7 +3,7 @@
 \name{cond_intensity}
 \alias{cond_intensity}
 \alias{loglik_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Conditional Intensity Function for hawkesGrowthNet Model}
 \usage{
 cond_intensity(
   new_net,
@@ -27,37 +27,49 @@ loglik_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{new_net}{PARAM_DESCRIPTION}
+\item{new_net}{Network. The network representing the mark to evaluate.}
 
-\item{t}{PARAM_DESCRIPTION}
+\item{t}{Numeric. The time at which the mark occurs.}
 
-\item{mark_filtration}{PARAM_DESCRIPTION, Default: NULL}
+\item{mark_filtration}{Network. Filtration/history of the network over time.}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Function. Computes the mark PMF.}
 
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List. Model parameters (see \link{sim_hawkesGrowthNet}).}
 
-\item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
+\item{new_edge_hash}{Hash or NULL. Optional hash for fast edge lookup. Default: \code{NULL}.}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{...}{Additional arguments to pass to \code{PMF_mark}.}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric vector. Time interval for likelihood computation.}
 
-\item{edge_hash_list}{PARAM_DESCRIPTION, Default: NULL}
+\item{edge_hash_list}{List or NULL. Optional list of edge hashes for fast lookup. Default: \code{NULL}.}
 
-\item{verbose}{PARAM_DESCRIPTION, Default: FALSE}
+\item{verbose}{Logical. Print details. Default: \code{FALSE}.}
 
-\item{do_grad}{PARAM_DESCRIPTION, Default: FALSE}
+\item{do_grad}{Logical. If \code{TRUE}, also compute gradients. Default: \code{FALSE}.}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with elements:
+\item{result}{Numeric. The conditional intensity value.}
+\item{lambda}{Numeric. The background rate.}
+\item{kernel_sum}{Numeric. The sum of kernel decays.}
+\item{decays}{Numeric vector. Individual kernel decay values.}
+\item{diffs}{Numeric vector. Time differences.}
+\item{last_edge_probs}{Numeric vector. Edge probabilities from mark PMF.}
+\item{mark_density}{Numeric. Mark PMF value.}
+\item{mark_grad, decay_grad}{Gradients if computed.}
 
-OUTPUT_DESCRIPTION
+List with elements:
+\item{loglik}{Numeric. Log-likelihood value.}
+\item{grads}{Named vector/list of parameter gradients (if \code{do_grad = TRUE}).}
 }
 \description{
-FUNCTION_DESCRIPTION
+Computes the conditional intensity function for the hawkesGrowthNet model,
+defined as \deqn{\lambda(t,m | \mathcal{H}_t) = q(m | t,\mathcal{H}_t) \cdot \lambda(t | \mathcal{H}_t)}
+where time decay is governed by a kernel and the mark PMF is supplied via \link{PMF_mark}.
 
-FUNCTION_DESCRIPTION
+Computes the log-likelihood and optionally the gradients for a hawkesGrowthNet model, given observed network growth.
 }
 \details{
 Computes the conditional intensity function for the \code{hawkesGrowthNet} model
@@ -69,8 +81,6 @@ defined as
 where the time decay kernel function, \eqn{g(t_1,t_2 \mid \mathcal{H}_t)},
 is given by \eqn{g(t_1,t_2 \mid \mathcal{H}_t) = \exp(-\beta (t_1 - t_2))}.
 The mark PMF, \eqn{q(m \mid t,\mathcal{H}_{t})}, is supplied via \link{PMF_mark}.
-
-DETAILS
 }
 \examples{
 \dontrun{
@@ -81,8 +91,9 @@ if(interactive()){
 \dontrun{
 if(interactive()){
 data(net, package = "hawkesGrowthNet")
-params_ba <-  list(mu = 10, beta_overall = 0.1, K = 0.1,
-                      beta_edges = 0.1,node_lambda = 1)
+params_ba <-  list(mu = 10,
+beta_overall = 0.1,
+K = 0.1, beta_edges = 0.1)
 mark_filtration <-  network::get.inducedSubgraph(net, v = 1:10)
 loglik_ba <- loglik_hawkesGrowthNet(params = params_ba,
                                        time_window = c(0,max(get_times(mark_filtration)$times)),
@@ -113,4 +124,6 @@ loglik_cs <- loglik_hawkesGrowthNet(params = params_cs,
 
 \code{\link[network]{as.edgelist}}
 \code{\link[hash]{hash}}
+\code{\link{sim_hawkesGrowthNet}}
+\code{\link{cond_intensity}}
 }

@@ -2,6 +2,7 @@
 
 export(PMF_mark)
 export(PMF_mark_BA)
+export(PMF_mark_BA_bipartite)
 export(PMF_mark_CS)
 export(compensator_temporal_hawkes)
 export(compensators_hawkesGrowthNet)

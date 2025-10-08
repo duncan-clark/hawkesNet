@@ -1,13 +1,27 @@
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param new_net PARAM_DESCRIPTION
-#' @param t PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION, Default: NULL
-#' @param PMF_mark PARAM_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
-#' @param ... PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
+#' Conditional Intensity Function for hawkesGrowthNet Model
+#'
+#' Computes the conditional intensity function for the hawkesGrowthNet model,
+#' defined as \deqn{\lambda(t,m | \mathcal{H}_t) = q(m | t,\mathcal{H}_t) \cdot \lambda(t | \mathcal{H}_t)}
+#' where time decay is governed by a kernel and the mark PMF is supplied via \link{PMF_mark}.
+#'
+#' @param new_net Network. The network representing the mark to evaluate.
+#' @param t Numeric. The time at which the mark occurs.
+#' @param mark_filtration Network or NULL. Filtration/history of the network up to time \code{t}. Default: \code{NULL}.
+#' @param PMF_mark Function. Function to compute the mark PMF (see \link{PMF_mark}).
+#' @param params List. Model parameters, e.g. \code{mu}, \code{K}, \code{beta_overall}, \code{beta_edges}.
+#' @param new_edge_hash Hash or NULL. Optional hash for fast edge lookup. Default: \code{NULL}.
+#' @param ... Additional arguments passed to \code{PMF_mark}.
+#'
+#' @return List with elements:
+#'   \item{result}{Numeric. The conditional intensity value.}
+#'   \item{lambda}{Numeric. The background rate.}
+#'   \item{kernel_sum}{Numeric. The sum of kernel decays.}
+#'   \item{decays}{Numeric vector. Individual kernel decay values.}
+#'   \item{diffs}{Numeric vector. Time differences.}
+#'   \item{last_edge_probs}{Numeric vector. Edge probabilities from mark PMF.}
+#'   \item{mark_density}{Numeric. Mark PMF value.}
+#'   \item{mark_grad, decay_grad}{Gradients if computed.}
+#'
 #' @details
 #' Computes the conditional intensity function for the \code{hawkesGrowthNet} model
 #' defined as
@@ -64,22 +78,26 @@ cond_intensity <- function(new_net,
                 ))
 }
 
-                                        # According to CONOR we can't have a branching process due to the background rate issues:
-                                        # Now we want the to do a thinning approach, i.e. propose a bunch of points and the accept or reject them
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param time_window PARAM_DESCRIPTION
-#' @param PMF_mark A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.
-#' @param cond_intensity A function to calculate conditional_intensity, takes in a kernel_func
-#' @param hashed_edges PARAM_DESCRIPTION, Default: FALSE
-#' @param verbose PARAM_DESCRIPTION, Default: FALSE
-#' @param mu_multiplier PARAM_DESCRIPTION, Default: 10
-#' @param joint_accept PARAM_DESCRIPTION, Default: FALSE
-#' @param n_mark_sample PARAM_DESCRIPTION, Default: NULL
-#' @param ... to be passed to \link{PMF_mark}
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
+#' Simulate Network Growth Under Hawkes Process
+#'
+#' Simulates network and event arrival under a Hawkes process, using a thinning approach, for the hawkesGrowthNet model.
+#'
+#' @param params List. Model parameters (e.g. \code{mu}, \code{K}, \code{beta_overall}, \code{beta_edges}, etc).
+#' @param time_window Numeric vector of length 2. Time interval to simulate over.
+#' @param PMF_mark Function. Computes/generates the mark PMF (see \link{PMF_mark}).
+#' @param cond_intensity Function. Computes the conditional intensity (see \link{cond_intensity}).
+#' @param hashed_edges Logical. If \code{TRUE}, use hashed edges for fast lookup. Default: \code{FALSE}.
+#' @param verbose Logical. If \code{TRUE}, print simulation details. Default: \code{FALSE}.
+#' @param mu_multiplier Numeric. Multiplier for background rate. Default: \code{10}.
+#' @param joint_accept Logical. If \code{TRUE}, use joint acceptance criterion. Default: \code{FALSE}.
+#' @param n_mark_sample Integer or NULL. If set, use importance sampling for marks. Default: \code{NULL}.
+#' @param ... Additional arguments passed to \code{PMF_mark}.
+#'
+#' @return List with elements:
+#'   \item{events}{List of event times and densities.}
+#'   \item{net}{Final network at end of simulation.}
+#'   \item{accept_probs}{Acceptance probabilities for each event.}
+#'
 #' @examples
 #' \dontrun{
 #' if(interactive()){
@@ -89,6 +107,8 @@ cond_intensity <- function(new_net,
 #' @seealso
 #'  \code{\link[network]{as.edgelist}}
 #'  \code{\link[hash]{hash}}
+#' \code{\link{cond_intensity}}
+#' \code{\link{PMF_mark}}
 #' @rdname sim_hawkesGrowthNet
 #' @export
 sim_hawkesGrowthNet <- function(params,
@@ -102,16 +122,12 @@ sim_hawkesGrowthNet <- function(params,
                                 n_mark_sample = NULL,
                                 ... ){
     t1 <- proc.time()
-                                        # simulate the background points (can only simulate their times right now)
+    ## simulate the background points (can only simulate their times right now)
     mu <- params$mu
-    ## theta <- params$theta
-    ## beta <- params$beta
-    ## K <- params$K
-    ## browser()
-                                        # poisson in time lambda
+    ## poisson in time lambda
     lambda <- mu_multiplier*mu
 
-                                        # Initialize the output list of events
+    ## Initialize the output list of events
     events = list()
     events$n = 0
     events$t = c()
@@ -119,20 +135,16 @@ sim_hawkesGrowthNet <- function(params,
 
     accept_probs <- c()
 
-                                        # propose points to be thinned:
+    ## propose points to be thinned:
     n_bg = rpois(1, lambda * (time_window[2] - time_window[1]))
     event_queue <- data.table(time = sort(runif(n_bg, min=0, max=time_window[2])))
-                                        # maintain order so no need to sort
+    ## maintain order so no need to sort
     setkey(event_queue, time)
-                                        # Initialize the list to store new events
+    ## Initialize the list to store new events
     new_events_list <- list()
     list_index <- 1
     tot <- 0
     tot_attempt <- 0
-    ## current_net <- network::network(matrix(0, nrow = 3, ncol = 3), directed = FALSE)
-    ## set.vertex.attribute(current_net, "time", c(0,0,0))
-    ## add.edge(current_net, 1, 2)
-    ## add.edge(current_net, 2, 3)
     current_net <- network::network(matrix(1),directed = FALSE)
     delete.vertices(current_net,1)
     while (nrow(event_queue) > 0) {
@@ -245,8 +257,6 @@ sim_hawkesGrowthNet <- function(params,
             if(verbose) print('accepted!')
             current_net <- net
             events$t[length(events$t)+1] <- current_event$time
-            ## current_net <- mark_sample$mark_sample  
-            ## events$t <- c(events$t, current_event$time) 
             events$n <- events$n + 1 
             if(length(events$t) >2){
                 events$mark_density <- c(events$mark_density,mark_sample$mark_density)
@@ -273,17 +283,22 @@ sim_hawkesGrowthNet <- function(params,
                 accept_probs = accept_probs))
 }
 
-                                        # Simple function for independent edge adding
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @inheritParams fit_hawkesGrowthNet
-#' @param edge_hash_list PARAM_DESCRIPTION, Default: NULL
-#' @param verbose PARAM_DESCRIPTION, Default: FALSE
-#' @param do_grad PARAM_DESCRIPTION, Default: FALSE
-#' @param ... PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
+#' Log-Likelihood for hawkesGrowthNet Model
+#'
+#' Computes the log-likelihood and optionally the gradients for a hawkesGrowthNet model, given observed network growth.
+#'
+#' @param params List. Model parameters (see \link{sim_hawkesGrowthNet}).
+#' @param time_window Numeric vector. Time interval for likelihood computation.
+#' @param mark_filtration Network. Filtration/history of the network over time.
+#' @param PMF_mark Function. Computes the mark PMF.
+#' @param edge_hash_list List or NULL. Optional list of edge hashes for fast lookup. Default: \code{NULL}.
+#' @param verbose Logical. Print details. Default: \code{FALSE}.
+#' @param do_grad Logical. If \code{TRUE}, also compute gradients. Default: \code{FALSE}.
+#' @param ... Additional arguments to pass to \code{PMF_mark}.
+#'
+#' @return List with elements:
+#'   \item{loglik}{Numeric. Log-likelihood value.}
+#'   \item{grads}{Named vector/list of parameter gradients (if \code{do_grad = TRUE}).}
 #' @examples
 #' \dontrun{
 #' if(interactive()){
@@ -318,6 +333,8 @@ sim_hawkesGrowthNet <- function(params,
 #' @seealso
 #'  \code{\link[network]{as.edgelist}}
 #'  \code{\link[hash]{hash}}
+#'  \code{\link{sim_hawkesGrowthNet}}
+#'  \code{\link{cond_intensity}}
 #' @rdname loglik_hawkesGrowthNet
 #' @export
 loglik_hawkesGrowthNet = function(params,
@@ -452,21 +469,26 @@ loglik_hawkesGrowthNet = function(params,
                 grads = grads))
 }
 
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params_init PARAM_DESCRIPTION
-#' @param time_window PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
-#' @param PMF_mark PARAM_DESCRIPTION
-#' @param trace PARAM_DESCRIPTION, Default: 0
-#' @param REPORT PARAM_DESCRIPTION, Default: 10
-#' @param reltol PARAM_DESCRIPTION, Default: 1e-8
-#' @param maxit PARAM_DESCRIPTION
-#' @param get_hessian PARAM_DESCRIPTION, Default: FALSE
-#' @param fixed_params PARAM_DESCRIPTION, Default: NULL
-#' @param ... PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
+#' Fit hawkesGrowthNet Model via Maximum Likelihood
+#'
+#' Fits (estimates parameters for) a hawkesGrowthNet model by maximizing the log-likelihood.
+#'
+#' @param params_init List. Initial parameter values.
+#' @param time_window Numeric vector. Time interval for model fitting.
+#' @param mark_filtration Network. Network history/filtration.
+#' @param PMF_mark Function. Computes the mark PMF.
+#' @param trace Integer. Optimizer trace level. Default: 0.
+#' @param REPORT Integer. Optimizer report frequency. Default: 10.
+#' @param reltol Numeric. Optimization relative tolerance. Default: 1e-8.
+#' @param maxit Integer. Maximum number of iterations.
+#' @param get_hessian Logical. Compute Hessian for SEs? Default: \code{FALSE}.
+#' @param fixed_params Character vector or NULL. Parameter names to hold fixed. Default: \code{NULL}.
+#' @param ... Additional arguments passed to log-likelihood function.
+#'
+#' @return List with component:
+#'   \item{fit}{Object returned by \code{optim} (MLE fit).}
+#'
+#' @seealso \code{\link{loglik_hawkesGrowthNet}}, \code{\link{sim_hawkesGrowthNet}}
 #' @examples
 #' \dontrun{
 #' if(interactive()){
@@ -598,12 +620,18 @@ fit_hawkesGrowthNet <- function(params_init,
 }
 
 
-                                        # compensators for hawkesGrowthNet:
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param time_window PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
+#' Compensator Process for hawkesGrowthNet
+#'
+#' Computes compensator (integrated intensity) values for a hawkesGrowthNet realization.
+#'
+#' @param params List. Model parameters.
+#' @param time_window Numeric vector. Time interval.
+#' @param mark_filtration Network. Network history/filtration.
+#'
+#' @return Numeric vector. Compensator values at observed event times.
+#'
+#' @seealso \code{\link{loglik_hawkesGrowthNet}}
+#' @rdname ks_test_pval_hawkesGrowthNet
 #' @export
 compensators_hawkesGrowthNet <- function(params,
                                          time_window,
@@ -628,11 +656,18 @@ compensators_hawkesGrowthNet <- function(params,
     return(incremental)
 }
 
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param time_window PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
+#' Kolmogorov-Smirnov Test for hawkesGrowthNet Compensators
+#'
+#' Performs a KS test on transformed compensator increments to assess model fit.
+#'
+#' @param params List. Model parameters.
+#' @param time_window Numeric vector. Time interval.
+#' @param mark_filtration Network. Network history/filtration.
+#'
+#' @return Numeric. p-value from KS test.
+#'
+#' @seealso \code{\link{compensators_hawkesGrowthNet}}
+#' @rdname ks_test_pval_hawkesGrowthNet
 #' @export
 ks_test_pval_hawkesGrowthNet <- function(params,
                                          time_window,
@@ -644,8 +679,6 @@ ks_test_pval_hawkesGrowthNet <- function(params,
     compensator_incs <- diff(compensators)
     test_dist <- 1 - exp(-compensator_incs)
     test <- ks.test(test_dist,"punif")
-                                        # hist(test_dist)
-                                        # print(test$p.value)
     return(test$p.value)
 }
 

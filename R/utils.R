@@ -73,18 +73,24 @@ has_edge <- function(i, j,edge_hash) {
 }
 
 
-# roxgen documentation
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param events A named \code{n*3} \code{data.frame} or \code{3} element \code{list} of node interactions with times and 
-#' named columns/elements:
-#' \code{i} - \code{numeric} "from" node ID (i.e., node indices),
-#' \code{j} - \code{numeric} "to" node ID (i.e., node indices), &
-#' \code{t} - \code{numeric} time of interaction.
-#' @param net PARAM_DESCRIPTION, Default: \code{NULL}.
-#' @param directed Logical. Default: \code{FALSE}.
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
+#' Convert event list to network
+#'
+#' Constructs a network from a data frame of event interactions, where each event
+#' specifies a source node, a target node, and a timestamp. Vertices and edges are
+#' added as needed, and the time attribute is set for each.
+#'
+#' @param events Data frame or list. Must contain columns \code{i} (from node), \code{j} (to node),
+#' and \code{t} (time of interaction).
+#' @param net Network or NULL. Optionally, an existing network object to add events to.
+#' If \code{NULL}, a new network is constructed. Default: \code{NULL}.
+#' @param directed Logical. Whether the network should be directed. Default: \code{FALSE}.
+#'
+#' @return A \code{network} object with time-stamped edges and vertices. The network attribute
+#' \code{n} is set to the largest node index appearing in the events.
+#'
+#' @details
+#' Each row in \code{events_list} creates (if necessary) the specified nodes and adds an
+#' edge, with time attributes set for both edge and involved vertices.
 #' @examples
 #' \dontrun{
 #' if(interactive()){
@@ -104,7 +110,7 @@ events_to_net <- function(events,
                           net = NULL,
                           directed = FALSE){
     ## validate input
-    if(! inherits(events, c("list", "data.frame")))
+    if(!inherits(events, "data.frame") & !inherits(events, "list"))
         stop("'events' should be either a list or a data frame.")
     if(sum(c("i", "j", "t") %in% names(events)) != 3)
         stop("'events' should have elements 'i', 'j', & 't'. Please see details.")
@@ -120,7 +126,7 @@ events_to_net <- function(events,
     ## rename to match initial
     events_list <- events
     ## df --> list
-    if(class(events_list) == "data.frame") events_list <- as.list(events_list)
+    if(inherits(events_list, "data.frame")) events_list <- as.list(events_list)
     stopifnot(is.list(events_list))
     ## node indecies do not have to be numbered consectutively
     for(k in seq_along(events_list$i)){
@@ -176,11 +182,17 @@ events_to_net <- function(events,
 }
 
 
-#' @title FUNCTION_TITLE
-#' @description As \link{events_to_net} but the "from" (\code{i}) and
-#' "to" (\code{j}) nodes are considered to be different types and
-#' only nodes of different type can form an edge. Node IDs can
-#' be \code{character}s.
+#' Convert event-participant data to bipartite network
+#'
+#' Creates a bipartite network from a data frame of participant-event
+#' memberships, with time attributes for each edge and node.
+#'
+#' @return A bipartite \code{network} object, where vertices correspond to participants
+#' and events, and edges represent participation, with time-stamped attributes.
+#'
+#' @details
+#' The resulting network is undirected and bipartite (events and participants).
+#' Edges are added only if not already present. Time attributes are set for each edge
 #' @inheritParams events_to_net
 #' @examples
 #' \dontrun{
@@ -193,6 +205,7 @@ events_to_net <- function(events,
 #' plot(bip, vertex.col = ifelse(get.vertex.attribute(bip, "type") == "type_i", "#E41A1C", "#377EB8"))
 #'  }
 #' }
+#' @rdname events_to_bipartite_net
 #' @export
 events_to_bipartite_net <- function(events){
     events_list <- events
