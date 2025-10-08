@@ -41,7 +41,7 @@
 #'   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
 #' }
 #' where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}}, 
-#' and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
+#' and \eqn{d_{i}^{t}} is the sna::degree of node \eqn{i} just before time \eqn{t}.
 #' 
 #' For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
 #' \deqn{
@@ -252,7 +252,7 @@ PMF_mark_BA <- function(time,
     
     if(!is.null(last_net) && (last_net %n% 'n' > 2)){
         times <- get.vertex.attribute(last_net, "time")
-        degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
+        degs <- sna::degree(last_net) * exp(-params$beta_edges * (time - times))
         total_deg <- sum(degs)
         
         if(total_deg == 0){
@@ -307,7 +307,7 @@ PMF_mark_BA <- function(time,
                 heads <- heads[!in_old_net]
             }
             times <- get.vertex.attribute(last_net, "time")
-            degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
+            degs <- sna::degree(last_net) * exp(-params$beta_edges * (time - times))
             total_deg <- sum(degs, na.rm = TRUE)
             
             if(total_deg == 0){
@@ -380,8 +380,8 @@ PMF_mark_BA_bipartite <- function(time,
   perp_nodes <- which(get.vertex.attribute(new_net, "role") == "perp")
     if(length(perp_nodes) > 0){
         times <- get.vertex.attribute(new_net, "time")
-        c_offset <- 0.01 ## small degree fix
-        degs <- c_offset + degree(new_net)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
+        c_offset <- 0.01 ## small sna::degree fix
+        degs <- c_offset + sna::degree(new_net)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
         total_deg <- sum(degs, na.rm = TRUE)
         if(total_deg == 0){
             probs <- rep(1, length(perp_nodes))
@@ -416,7 +416,7 @@ PMF_mark_BA_bipartite <- function(time,
     perp_nodes <- which(get.vertex.attribute(mark_sample, "role") == "perp")
     if(length(perp_nodes) > 0){
       times <- get.vertex.attribute(mark_sample, "time")
-      degs <- degree(mark_sample)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
+      degs <- sna::degree(mark_sample)[perp_nodes] * exp(-params$beta_edges * (time - times[perp_nodes]))
       total_deg <- sum(degs)
       if(total_deg == 0){
         probs <- rep(1, length(perp_nodes))
