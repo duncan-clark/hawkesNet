@@ -2,7 +2,7 @@
 #' @details Base Class for markKernel - that adds network updates to the network
 #' note that the mark space is dynamic so the kernel depends on the filtration
 #' so as the filtration grows, the markKernel changes
-#' Currently works by supplyig bernoulli edge probabilities and then storing these
+#' Currently works by supplying bernoulli edge probabilities and then storing these
 #' Designed to be extensible to other edge probability models
 #' 
 #' Base class for mark-update kernels on dynamic mark spaces
