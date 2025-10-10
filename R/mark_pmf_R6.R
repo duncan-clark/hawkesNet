@@ -138,7 +138,7 @@ MarkKernel <- R6::R6Class(
         new_nodes <- mark %n% "n"
         old_nodes <- last_net %n% "n"
         to_add   <- max(0L, new_nodes - old_nodes)
-        network::add.vertices(new_net, nv = to_add)
+        if (to_add > 0) network::add.vertices(new_net, nv = to_add)
         set.vertex.attribute(new_net,
                              "time",
                              c(get.vertex.attribute(last_net, "time"),rep(time, to_add)))
