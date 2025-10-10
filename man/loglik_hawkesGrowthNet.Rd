@@ -81,8 +81,9 @@ if(interactive()){
 \dontrun{
 if(interactive()){
 data(net, package = "hawkesGrowthNet")
-params_ba <-  list(mu = 10, beta_overall = 0.1, K = 0.1,
-                      beta_edges = 0.1,node_lambda = 1)
+params_ba <-  list(mu = 10,
+beta_overall = 0.1,
+K = 0.1, beta_edges = 0.1)
 mark_filtration <-  network::get.inducedSubgraph(net, v = 1:10)
 loglik_ba <- loglik_hawkesGrowthNet(params = params_ba,
                                        time_window = c(0,max(get_times(mark_filtration)$times)),

@@ -62,7 +62,11 @@ MarkKernel <- R6::R6Class(
     compute = function(time, mark = NULL) {
       setup <- private$setup_common(time, mark)
       out_d <- private$eval_density(time, setup)
-      out_s <- private$generate_mark(time, setup)
+      if(max(setup$new_net %v% 'time') >= time){
+        out_s <- NULL
+      }else{
+        out_s <- private$generate_mark(time, setup)
+      }
       c(out_d, out_s)
     },
     
@@ -114,7 +118,7 @@ MarkKernel <- R6::R6Class(
         )
       }
     }
-  ),
+    ),
   
   private = list(
     #' -------- Shared setup (non-bipartite & bipartite) --------
@@ -168,12 +172,21 @@ MarkKernel <- R6::R6Class(
     # NOT IMPLEMENTED FOR NOW !!!
     # ===========================
     setup_bipartite = function(time, mark) {
+      browwser()
       stop("bipartite not supported in the base class yet.")
     },
     
     candidate_edges = function(last_net, new_nodes) {
+      if(is.null(last_net)){
+        tails <- integer(0)
+        heads <- integer(0)
+        return(list(poss_tails = tails,
+                    poss_heads = heads,
+                    poss_edges = matrix(numeric(0), ncol=2),
+                    tails = tails,
+                    heads = heads))
+      }
       old_nodes <- last_net %n% "n"
-      
       
       if(old_nodes == new_nodes){
         poss_tails <- 1:old_nodes
@@ -212,8 +225,12 @@ MarkKernel <- R6::R6Class(
     
     #' -------- Density evaluation pipeline --------
     eval_density = function(time, setup) {
-      if(max(setup$tails) > (setup$new_net %n% 'n') | max(setup$heads) > (setup$new_net %n% 'n')){
-        stop("Internal error: Edge indices exceed number of nodes in mark_sample.")
+      n <- network.size(setup$new_net)
+      h <- setup$heads; t <- setup$tails
+      if (length(h) && length(t) &&
+          (max(h, na.rm = TRUE) > n || max(t, na.rm = TRUE) > n ||
+           min(h, na.rm = TRUE) < 1 || min(t, na.rm = TRUE) < 1)){
+        stop(sprintf("Internal error: Edge indices outside [1,%d] in mark_sample.", n), call. = FALSE)
       }
       
       edge_probs <- private$edge_probs_from_setup(setup, time)
@@ -242,6 +259,10 @@ MarkKernel <- R6::R6Class(
     
     generate_mark = function(time, setup) {
       last_net <- setup$mark
+      # can only generate mark at a time if the last net is before that time:
+      if(max(last_net %v% 'time' >= time)){
+        stop("You cannot generate a mark at time ", time, " because the supplied mark already has nodes at or after that time.")
+      }
       if (!is.null(last_net) && (last_net %n% "n") >= 1) {
         mark_sample <- network::network.copy(last_net)
         old_nodes <- last_net %n% "n"
@@ -276,7 +297,9 @@ MarkKernel <- R6::R6Class(
         probs <- private$edge_probs_from_setup(grown_setup, time, generation = TRUE)
         add <- stats::runif(length(probs)) < probs
         
+        if((sum(is.na(heads[add])) + sum(is.na(tails[add]))) > 0) browser()
         if(any(heads[add] > mark_sample %n% 'n') | any(tails[add] > mark_sample %n% 'n')){
+          browser()
           stop("Internal error: Edge indices exceed number of nodes in mark_sample.")
         }
         network::add.edges(mark_sample, heads[add], tails[add])
@@ -348,7 +371,12 @@ BAKernel <- R6::R6Class(
     },
     
     node_growth_density = function(mark,time, last_net){
-      new_nodes <- mark %n% "n" - (last_net %n% "n" %||% 0)
+      if(is.null(last_net)){
+        old_nodes <- 0
+      }else{
+        old_nodes <- last_net %n% "n"
+      }
+      new_nodes <- (mark %n% "n") - old_nodes
       if (!is.null(self$params$node_lambda)) {
         return(stats::dpois(new_nodes, self$params$node_lambda))
       } else {
@@ -388,7 +416,7 @@ CSKernel <- R6::R6Class(
       # Get or build ERNM model
       m <- self$model
       if (is.null(m)) {
-        frm <- as.formula(paste("net ~ ", self$opts$formula_RHS))
+        frm <- as.formula(paste0("net ~ ", self$opts$formula_RHS))
         m <- ernm::createCppModel(frm)
       } else {
         m$setNetwork(ernm::as.BinaryNet(net))
@@ -547,8 +575,6 @@ CSKernel <- R6::R6Class(
     }
   )
 )
-
-
 
 #' @details BA_bipartite Kernel
 

@@ -24,7 +24,7 @@ sim_hawkesGrowthNet(
 
 \item{PMF_mark}{A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.}
 
-\item{cond_intensity}{A function to calcualte condiational_intensity, takes in a kernel_func}
+\item{cond_intensity}{A function to calculate conditional_intensity, takes in a kernel_func}
 
 \item{hashed_edges}{PARAM_DESCRIPTION, Default: FALSE}
 
@@ -36,7 +36,7 @@ sim_hawkesGrowthNet(
 
 \item{n_mark_sample}{PARAM_DESCRIPTION, Default: NULL}
 
-\item{...}{to be past to \link{PMF_mark}}
+\item{...}{to be passed to \link{PMF_mark}}
 }
 \value{
 OUTPUT_DESCRIPTION

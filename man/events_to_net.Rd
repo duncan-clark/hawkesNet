@@ -4,17 +4,18 @@
 \alias{events_to_net}
 \title{FUNCTION_TITLE}
 \usage{
-events_to_net(events_list, net = NULL, directed = FALSE)
+events_to_net(events, net = NULL, directed = FALSE)
 }
 \arguments{
-\item{events_list}{A data frame of interactions
-between participants,  with elements \code{i} - from node,
-\code{j} - to node, &
-\code{t} - time of interaction.}
+\item{events}{A named \code{n*3} \code{data.frame} or \code{3} element \code{list} of node interactions with times and
+named columns/elements:
+\code{i} - \code{numeric} "from" node ID (i.e., node indices),
+\code{j} - \code{numeric} "to" node ID (i.e., node indices), &
+\code{t} - \code{numeric} time of interaction.}
 
-\item{net}{PARAM_DESCRIPTION, Default: NULL}
+\item{net}{PARAM_DESCRIPTION, Default: \code{NULL}.}
 
-\item{directed}{PARAM_DESCRIPTION, Default: F}
+\item{directed}{Logical. Default: \code{FALSE}.}
 }
 \value{
 OUTPUT_DESCRIPTION
@@ -28,7 +29,12 @@ DETAILS
 \examples{
 \dontrun{
 if(interactive()){
- #EXAMPLE1
+events_list <- list(
+i = c(1, 2, 3, 1),
+j = c(2, 3, 1, 4),
+t = c(5, 10, 15, 20))
+net <- events_to_net(events_list)
+plot(net)
  }
 }
 }
