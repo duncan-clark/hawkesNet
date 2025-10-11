@@ -120,7 +120,7 @@ events_to_net <- function(events,
     ## rename to match initial
     events_list <- events
     ## df --> list
-    if(class(events_list) == "data.frame") events_list <- as.list(events_list)
+    if (inherits(events_list, "data.frame")) events_list <- as.list(events_list)
     stopifnot(is.list(events_list))
     ## node indecies do not have to be numbered consectutively
     for(k in seq_along(events_list$i)){
