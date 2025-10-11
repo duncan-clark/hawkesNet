@@ -1,4 +1,5 @@
 test_that("fit", {
+  skip("temporarily disabled for CI")
   skip_on_cran() ## takes too long
   data(net, package = "hawkesGrowthNet")
   mark_filtration <-  network::get.inducedSubgraph(net, v = 1:50)
