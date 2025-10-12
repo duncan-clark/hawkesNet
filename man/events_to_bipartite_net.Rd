@@ -4,22 +4,30 @@
 \alias{events_to_bipartite_net}
 \title{FUNCTION_TITLE}
 \usage{
-events_to_bipartite_net(
-  x,
-  pid = "anon_person_id",
-  eid = "event_id",
-  time = "diff_date"
-)
+events_to_bipartite_net(events)
 }
 \arguments{
-\item{x}{A data frame ...}
-
-\item{pid}{Character string}
-
-\item{eid}{Character string}
-
-\item{time}{Character string}
+\item{events}{A named \code{n*3} \code{data.frame} or \code{3} element \code{list} of node interactions with times and
+named columns/elements:
+\code{i} - \code{numeric} "from" node ID (i.e., node indices),
+\code{j} - \code{numeric} "to" node ID (i.e., node indices), &
+\code{t} - \code{numeric} time of interaction.}
 }
 \description{
-FUNCTION_DESCRIPTION
+As \link{events_to_net} but the "from" (\code{i}) and
+"to" (\code{j}) nodes are considered to be different types and
+only nodes of different type can form an edge. Node IDs can
+be \code{character}s.
+}
+\examples{
+\dontrun{
+if(interactive()){
+events_list <- list(
+i = c("A", "B", "C", "D","D"),
+j = c(2, 3, 1, 2, 1),
+t = c(5, 10, 15, 20, 21))
+bip <- events_to_bipartite_net(events_list)
+plot(bip, vertex.col = ifelse(get.vertex.attribute(bip, "type") == "type_i", "#E41A1C", "#377EB8"))
+ }
+}
 }

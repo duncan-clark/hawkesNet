@@ -107,7 +107,6 @@ sim_hawkesGrowthNet <- function(params,
     ## theta <- params$theta
     ## beta <- params$beta
     ## K <- params$K
-    ## browser()
                                         # poisson in time lambda
     lambda <- mu_multiplier*mu
 
@@ -357,7 +356,6 @@ loglik_hawkesGrowthNet = function(params,
         }else{
             model <- NULL
         }
-        
         intensity <- cond_intensity(new_net = current_net,
                                     t = times[i],
                                     mark_filtration = current_net,
@@ -385,15 +383,15 @@ loglik_hawkesGrowthNet = function(params,
     }
                                         # tmp <- sapply(intens_list,function(x){x$result})
     tmp <- unlist(intens_list)
+    if (exists("verbose") && isTRUE(verbose)) print(tmp)
     
     if(any(is.na(tmp))){
         tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)])/2
     }
-
     if(sum(tmp==0)!=0){
-        warning("some of the intens lists have zero")
+        warning("some of the intens lists have zero - something is probably wrong")
         tmp[tmp==0] <- min(tmp[tmp>0])/2
-        print(summary(tmp))
+        # print(summary(tmp))
     }
     intens_sum <- sum(log(tmp))
 

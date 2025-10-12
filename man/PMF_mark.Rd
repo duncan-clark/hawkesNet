@@ -3,6 +3,7 @@
 \name{PMF_mark}
 \alias{PMF_mark}
 \alias{PMF_mark_BA}
+\alias{PMF_mark_BA_bipartite}
 \alias{PMF_mark_CS}
 \title{Mark probability mass function for the network generation process}
 \usage{
@@ -37,6 +38,19 @@ PMF_mark_BA(
   ...
 )
 
+PMF_mark_BA_bipartite(
+  time,
+  params,
+  mark_filtration,
+  mark = NULL,
+  generate_mark = TRUE,
+  generate_density = TRUE,
+  grad = NULL,
+  new_edge_hash = NULL,
+  truncation = NULL,
+  ...
+)
+
 PMF_mark_CS(
   time,
   params,
@@ -57,9 +71,10 @@ PMF_mark_CS(
 \arguments{
 \item{time}{Numeric, the time at which to evaluate the pmf}
 
-\item{params}{A named list of parameter values: for \code{type = "BA"}, numeric values
-\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, & \code{node_lambda};
-for \code{type = "CS"} additional parameters include \code{CS_params} a vector of coefficients for
+\item{params}{A named list of parameter values: for \code{type = "BA"}, numeric value
+\code{beta_edges};
+for \code{type = "CS"} additional parameters include \code{node_lambda} &
+\code{CS_params} a vector of coefficients for
 \code{formula_RHS}.}
 
 \item{mark_filtration}{PARAM_DESCRIPTION.}
@@ -73,7 +88,7 @@ for \code{type = "CS"} additional parameters include \code{CS_params} a vector o
 
 \item{generate_density}{PARAM_DESCRIPTION, Default: \code{TRUE}.}
 
-\item{grad}{Logical, if \code{TRUE} comupte gradient, Default: \code{FALSE}.}
+\item{grad}{Logical, if \code{TRUE} compute gradient, Default: \code{FALSE}.}
 
 \item{new_edge_hash}{PARAM_DESCRIPTION, Default: \code{NULL}.}
 
@@ -97,7 +112,7 @@ Calculate the mark PMF ...
 }
 \details{
 Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-Currenlty two options: \code{type = "BA"} and \code{type = "CS"}.
+Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}.
 
 For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
 \deqn{
@@ -110,9 +125,9 @@ Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
 }
 where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}},
-and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
+and \eqn{d_{i}^{t}} is the sna::degree of node \eqn{i} just before time \eqn{t}.
 
-For \code{type = "CS"} the change statistic (CS) model is used where he mark distribution is defined (similar to above) as
+For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
 \deqn{
   q(m \mid t, \mathcal{H}_t) =
   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
@@ -129,15 +144,13 @@ if(interactive()){
  data(net, package = "hawkesGrowthNet")
 time <- get_times(net)$times
 ## BA
-params_ba <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-beta_edges = 0.1,node_lambda = 1)
+params_ba <-  list( beta_edges = 0.1)
 mark_filtration <-  filtration_to_net(net,10)
 pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 ## CS
 devtools::install_github("duncan-clark/ernm", ref = "R_change_stats")
 require(ernm)
-params_cs <-  list(mu = length(time)/max(time), beta_overall = 0.1,K = 0.1,
-beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
+params_cs <-  list(beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
 pmf_cs <- PMF_mark(time = time[10],  params = params_cs,
 mark_filtration = mark_filtration, type = "CS",  truncation = 1,
 formula_RHS = "edges + triangles + star(c(2,3))",

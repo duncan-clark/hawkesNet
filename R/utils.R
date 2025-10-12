@@ -120,7 +120,7 @@ events_to_net <- function(events,
     ## rename to match initial
     events_list <- events
     ## df --> list
-    if(class(events_list) == "data.frame") events_list <- as.list(events_list)
+    if (inherits(events_list, "data.frame")) events_list <- as.list(events_list)
     stopifnot(is.list(events_list))
     ## node indecies do not have to be numbered consectutively
     for(k in seq_along(events_list$i)){
@@ -245,6 +245,26 @@ plot_example_sub_component <- function(g, size, idx = 1,
          vertex.frame.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]), ...)
 }
 
+# Active edge IDs are the non-NULL slots of net$mel
+.active_eids <- function(net) which(!vapply(net$mel, is.null, FALSE))
+
+#' @title edge_ids_where
+#' @description helper function to make sure we delete the right edges when a network has been
+#' subject to deletion of vertices and edges
+#' @param net network object
+#' @param attr edge attribute to apply condition to 
+#' @param condition function on values returns vector of Bools
+#' @return return EIDs of the edges that meet tehe condition - for safe feeding into delete.edges
+
+
+# Return TRUE internal edge IDs where attr satisfies `condition`
+edge_ids_where <- function(net, attr, condition) {
+  vals <- get.edge.attribute(net, attr)
+  if (!length(vals)) return(integer(0))
+  idx  <- which(condition(vals))           # indices in the *attribute vector*
+  .active_eids(net)[idx]                   # map to real edge IDs in net$mel
+}
+
 #' @title FUNCTION_TITLE
 #' @description FUNCTION_DESCRIPTION
 #' @param net PARAM_DESCRIPTION
@@ -263,8 +283,8 @@ plot_example_sub_component <- function(g, size, idx = 1,
 filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
-  # make sure to leave one less edge or vertex that if equals
-  delete.edges(net, which(get.edge.attribute(net,"time")>t))
+  e_delete <- edge_ids_where(net, "time", function(x) x > t)
+  delete.edges(net,e_delete)
   delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
   if(!equals){
     e_times <- get.edge.attribute(net,"time")
@@ -273,10 +293,12 @@ filtration_to_net <- function(net,
     if (length(times) == 0 || all(is.na(times))) {
         t_to_delete <- t  
     } else {
+      # always removes the latest time
         t_to_delete <- max(times, na.rm = TRUE)
     }
-    #t_to_delete <- max(c(e_times, n_times))
-    delete.edges(net,which(e_times == t_to_delete))
+    # convert the edges into edgeIDs so we can delete them properly:
+    e_delete <- edge_ids_where(net, "time", function(x) x == t_to_delete)
+    delete.edges(net,e_delete)
     delete.vertices(net,which(n_times == t_to_delete))
   }
   # no need for vertex names

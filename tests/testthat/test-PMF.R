@@ -5,8 +5,17 @@ test_that("BA PMF", {
     pmf <- PMF_mark_BA(time[10],  params, mark_filtration = net, mark = NULL,
                        generate_mark = FALSE,  generate_density = TRUE,
                        grad = FALSE, new_edge_hash = NULL, truncation = NULL)
+    PMF_mark_BA_class <- BAKernel$new(params = params)$as_legacy_fun()
+    pmf_class <- PMF_mark_BA_class(time[10],  params, mark_filtration = net, mark = NULL,
+                       generate_mark = FALSE,  generate_density = TRUE,
+                       grad = FALSE, new_edge_hash = NULL, truncation = NULL)
+    
     expect_equal(pmf$mark_density,
                  0.3215021,
+                 tolerance = 0.01)
+    
+    expect_equal(pmf$mark_density,
+                 pmf_class$mark_density,
                  tolerance = 0.01)
 })
 test_that("BA-bip PMF", {
@@ -42,9 +51,29 @@ test_that("CS PMF", {
                        formula_RHS = "edges + triangles + star(c(2,3))",
                        mark_decay = 'node_entrance',
                        model = NULL, max_node_time = 1)
+    PMF_mark_CS_class <- CSKernel$new(params = params,
+                                      opts = list(formula_RHS = "edges + triangles + star(c(2,3))",
+                                                  mark_decay = 'node_entrance',
+                                                  model = NULL,
+                                                  max_node_time = 1)
+                                      )$as_legacy_fun()
+    pmf_class <- PMF_mark_CS_class(time[10],
+                                   params,
+                                   mark_filtration = net,
+                                   mark = NULL,
+                                   generate_mark = FALSE,
+                                   generate_density = TRUE,
+                                   grad = FALSE,
+                                   new_edge_hash = NULL,
+                                   truncation = NULL)
+    
     expect_equal(pmf$mark_density,
                  0.3678293,
                  tolerance = 0.01)
+    expect_equal(pmf$mark_density,
+                 pmf_class$mark_density,
+                 tolerance = 0.01)
+    
 })
 test_that("PMF", {
     data(net, package = "hawkesGrowthNet")
