@@ -147,9 +147,13 @@ mark_setup <- function(mark, mark_filtration, time){
         old_nodes <- 0
         new_nodes <- 1
     }
-    ## get the possible edges for the given truncation:
-    ## if no nodes have been added then :
+    ## get the possible edges for the given truncation
+    
+    # ====================
+    # THIS IS A BUG WHEN old_nodes = new_nodes!!!!!
+    # ====================
     poss_tails <- seq.int((old_nodes + 1), new_nodes)
+    
     poss_tails <- poss_tails[poss_tails>0]
     poss_heads <- 1:old_nodes
     poss_heads <- poss_heads[poss_heads>0]
@@ -165,6 +169,7 @@ mark_setup <- function(mark, mark_filtration, time){
         tails <- tails[!in_old_net]
         heads <- heads[!in_old_net]
     }
+    
     return(list(mark = mark, new_net = new_net, last_net = last_net,
                 poss_tails = poss_tails, poss_heads = poss_heads,
                 poss_edges = poss_edges,
@@ -295,7 +300,14 @@ PMF_mark_BA <- function(time,
             set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
             new_nodes <- mark_sample %n% 'n'
             
+            
+            # ====================
+            # THIS IS A BUG WHEN old_nodes = new_nodes
+            # ====================
             poss_tails <- (old_nodes+1) : (new_nodes)
+            
+            
+            
             poss_tails <- poss_tails[poss_tails>0]
             poss_heads <- 1:old_nodes
             poss_heads <- poss_heads[poss_heads>0]

@@ -7,13 +7,15 @@
 events_to_net(events, net = NULL, directed = FALSE)
 }
 \arguments{
-\item{events}{Data frame or list. Must contain columns \code{i} (from node), \code{j} (to node),
-and \code{t} (time of interaction).}
+\item{events}{A named \code{n*3} \code{data.frame} or \code{3} element \code{list} of node interactions with times and
+named columns/elements:
+\code{i} - \code{numeric} "from" node ID (i.e., node indices),
+\code{j} - \code{numeric} "to" node ID (i.e., node indices), &
+\code{t} - \code{numeric} time of interaction.}
 
-\item{net}{Network or NULL. Optionally, an existing network object to add events to.
-If \code{NULL}, a new network is constructed. Default: \code{NULL}.}
+\item{net}{PARAM_DESCRIPTION, Default: \code{NULL}.}
 
-\item{directed}{Logical. Whether the network should be directed. Default: \code{FALSE}.}
+\item{directed}{Logical. Default: \code{FALSE}.}
 }
 \value{
 A \code{network} object with time-stamped edges and vertices. The network attribute

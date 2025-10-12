@@ -133,7 +133,7 @@ Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
 }
 where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}},
-and \eqn{d_{i}^{t}} is the degree of node \eqn{i} just before time \eqn{t}.
+and \eqn{d_{i}^{t}} is the sna::degree of node \eqn{i} just before time \eqn{t}.
 
 For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
 \deqn{

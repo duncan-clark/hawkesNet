@@ -22,5 +22,5 @@ Imports:
     cubature
 Suggests:	
     testthat (>= 3.0.0)
-Remotes: github::duncan-clark/ernm@R_change_stats
+Remotes: github::fellstat/ernm
 Config/testthat/edition: 3
