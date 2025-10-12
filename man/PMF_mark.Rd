@@ -152,7 +152,7 @@ if(interactive()){
  data(net, package = "hawkesGrowthNet")
 time <- get_times(net)$times
 ## BA
-params_ba <-  list( beta_edges = 0.1)
+params_ba <-  list(beta_edges = 0.1)
 mark_filtration <-  filtration_to_net(net,10)
 pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 ## CS
