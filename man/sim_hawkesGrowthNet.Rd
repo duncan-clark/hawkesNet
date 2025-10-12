@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{sim_hawkesGrowthNet}
 \alias{sim_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Simulate Network Growth Under Hawkes Process}
 \usage{
 sim_hawkesGrowthNet(
   params,
@@ -18,34 +18,34 @@ sim_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List. Model parameters (e.g. \code{mu}, \code{K}, \code{beta_overall}, \code{beta_edges}, etc).}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric vector of length 2. Time interval to simulate over.}
 
-\item{PMF_mark}{A function that both generates new mark and calculates the density of existing mark, \link{PMF_mark}.}
+\item{PMF_mark}{Function. Computes/generates the mark PMF (see \link{PMF_mark}).}
 
 \item{cond_intensity}{A function to calculate conditional_intensity, takes in a kernel_func}
 
-\item{hashed_edges}{PARAM_DESCRIPTION, Default: FALSE}
+\item{hashed_edges}{Logical. If \code{TRUE}, use hashed edges for fast lookup. Default: \code{FALSE}.}
 
-\item{verbose}{PARAM_DESCRIPTION, Default: FALSE}
+\item{verbose}{Logical. If \code{TRUE}, print simulation details. Default: \code{FALSE}.}
 
-\item{mu_multiplier}{PARAM_DESCRIPTION, Default: 10}
+\item{mu_multiplier}{Numeric. Multiplier for background rate. Default: \code{10}.}
 
-\item{joint_accept}{PARAM_DESCRIPTION, Default: FALSE}
+\item{joint_accept}{Logical. If \code{TRUE}, use joint acceptance criterion. Default: \code{FALSE}.}
 
-\item{n_mark_sample}{PARAM_DESCRIPTION, Default: NULL}
+\item{n_mark_sample}{Integer or NULL. If set, use importance sampling for marks. Default: \code{NULL}.}
 
 \item{...}{to be passed to \link{PMF_mark}}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with elements:
+\item{events}{List of event times and densities.}
+\item{net}{Final network at end of simulation.}
+\item{accept_probs}{Acceptance probabilities for each event.}
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
+Simulates network and event arrival under a Hawkes process, using a thinning approach, for the hawkesGrowthNet model.
 }
 \examples{
 \dontrun{
@@ -57,4 +57,6 @@ if(interactive()){
 \seealso{
 \code{\link[network]{as.edgelist}}
 \code{\link[hash]{hash}}
+\code{\link{cond_intensity}}
+\code{\link{PMF_mark}}
 }

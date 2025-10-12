@@ -2,22 +2,25 @@
 % Please edit documentation in R/utils.R
 \name{events_to_bipartite_net}
 \alias{events_to_bipartite_net}
-\title{FUNCTION_TITLE}
+\title{Convert event-participant data to bipartite network}
 \usage{
 events_to_bipartite_net(events)
 }
 \arguments{
-\item{events}{A named \code{n*3} \code{data.frame} or \code{3} element \code{list} of node interactions with times and
-named columns/elements:
-\code{i} - \code{numeric} "from" node ID (i.e., node indices),
-\code{j} - \code{numeric} "to" node ID (i.e., node indices), &
-\code{t} - \code{numeric} time of interaction.}
+\item{events}{Data frame or list. Must contain columns \code{i} (from node), \code{j} (to node),
+and \code{t} (time of interaction).}
+}
+\value{
+A bipartite \code{network} object, where vertices correspond to participants
+and events, and edges represent participation, with time-stamped attributes.
 }
 \description{
-As \link{events_to_net} but the "from" (\code{i}) and
-"to" (\code{j}) nodes are considered to be different types and
-only nodes of different type can form an edge. Node IDs can
-be \code{character}s.
+Creates a bipartite network from a data frame of participant-event
+memberships, with time attributes for each edge and node.
+}
+\details{
+The resulting network is undirected and bipartite (events and participants).
+Edges are added only if not already present. Time attributes are set for each edge
 }
 \examples{
 \dontrun{

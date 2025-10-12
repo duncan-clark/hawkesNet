@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{events_to_net}
 \alias{events_to_net}
-\title{FUNCTION_TITLE}
+\title{Convert event list to network}
 \usage{
 events_to_net(events, net = NULL, directed = FALSE)
 }
@@ -18,13 +18,17 @@ named columns/elements:
 \item{directed}{Logical. Default: \code{FALSE}.}
 }
 \value{
-OUTPUT_DESCRIPTION
+A \code{network} object with time-stamped edges and vertices. The network attribute
+\code{n} is set to the largest node index appearing in the events.
 }
 \description{
-FUNCTION_DESCRIPTION
+Constructs a network from a data frame of event interactions, where each event
+specifies a source node, a target node, and a timestamp. Vertices and edges are
+added as needed, and the time attribute is set for each.
 }
 \details{
-DETAILS
+Each row in \code{events_list} creates (if necessary) the specified nodes and adds an
+edge, with time attributes set for both edge and involved vertices.
 }
 \examples{
 \dontrun{
