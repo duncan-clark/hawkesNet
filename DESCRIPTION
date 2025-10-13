@@ -4,7 +4,6 @@ Version: 0.0
 Authors@R: 
     person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
 Description: Tools for simulating and analyzing networks that grow with Hawkes process arrival times. Users can generate events under various Hawkesian network growth formulations and estimate model parameters for these models via maximum likelihood.
-License: `use_mit_license()`
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
@@ -19,8 +18,10 @@ Imports:
     ernm (>= 1.0.3),
     network,
     hash,
-    cubature
-Suggests:	
+    cubature,
+    igraph
+Suggests: 
     testthat (>= 3.0.0)
 Remotes: github::fellstat/ernm
 Config/testthat/edition: 3
+License: MIT + file LICENSE

@@ -116,11 +116,11 @@ Named list containing:
 \item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
 }
 \description{
-Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi–Albert, Change Statistic Hawkes, and BA-bipartite).
+Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi-Albert, Change Statistic Hawkes, and BA-bipartite).
 }
 \details{
 Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-Currenlty three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}.
+Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}.
 
 For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
 \deqn{
@@ -152,7 +152,7 @@ if(interactive()){
  data(net, package = "hawkesGrowthNet")
 time <- get_times(net)$times
 ## BA
-params_ba <-  list(beta_edges = 0.1)
+params_ba <-  list( beta_edges = 0.1)
 mark_filtration <-  filtration_to_net(net,10)
 pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 ## CS
@@ -167,7 +167,7 @@ max_node_time = 1)
 }
 }
 \references{
-Barabási, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. \emph{Science}, 286, 509–512. \doi{10.1126/science.286.5439.509}
+Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. \emph{Science}, 286, 509–512. \doi{10.1126/science.286.5439.509}
 }
 \seealso{
 \code{\link{cond_intensity}}

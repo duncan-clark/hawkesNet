@@ -1,9 +1,9 @@
 #' Mark probability mass function for the network generation process
 #'
-#' Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi–Albert, Change Statistic Hawkes, and BA-bipartite). 
+#' Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi-Albert, Change Statistic Hawkes, and BA-bipartite). 
 #'
 #' @references
-#' Barabási, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
+#' Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
 #' @param time Numeric. The time at which to evaluate the PMF.
 #' @param params Named list. Model parameter values required for the chosen \code{type}:
 #'   - For \code{type = "BA"}: \code{beta_edges} (numeric).
@@ -102,7 +102,7 @@ PMF_mark <- function(time,
                      ...){
     type <- type[1]
     if (!(type %in% c("BA", "CS", "BA-bip"))) {
-        stop("type can only be one of `BA` for Barabasi–Albert, `CS` for change statistic Hawkes, or `BA-bip` for bipartite Barabási–Albert.")
+        stop("type can only be one of `BA` for Barabasi-Albert, `CS` for change statistic Hawkes, or `BA-bip` for bipartite Barabasi-Albert.")
     }
     if(type == "BA"){
         pmf <- PMF_mark_BA(time, params, mark_filtration, mark,
@@ -237,7 +237,7 @@ mark_setup_bipartite <- function(mark = NULL, mark_filtration, time){
                 new_nodes = new_nodes,
                 old_nodes = old_nodes))
 }
-#' Function for Barabási–Albert (BA) probability mass function
+#' Function for Barabasi-Albert (BA) probability mass function
 #' @rdname PMF_mark
 #' @export
 PMF_mark_BA <- function(time,

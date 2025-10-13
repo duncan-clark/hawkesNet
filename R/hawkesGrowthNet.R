@@ -432,14 +432,15 @@ loglik_hawkesGrowthNet = function(params,
                                         # print(paste0("result is :",loglik))
                                         # print(paste0("this iteration of loglik took ", round((proc.time()-t)[3],2)," seconds"))
 
-                                        # calcualte the gradients:
-
-                                        # kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
-                                        # decays <- lapply(intens_list,function(x){x$decays})
-                                        # diffs <- lapply(intens_list,function(x){x$diffs})
+                                        
     
     grads <- list()
     if(do_grad){
+        # calcualte the gradients:
+
+        kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
+        decays <- lapply(intens_list,function(x){x$decays})
+        diffs <- lapply(intens_list,function(x){x$diffs})
                                         # hawkes_mu
         grads$mu <- sum(1/(params$mu + params$K*kernel_sum)) - tval
                                         # hawkes K

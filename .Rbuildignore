@@ -1,5 +1,5 @@
 ^hawkesNet\.Rproj$
 ^\.Rproj\.user$
-^inst/bipartide$
-^\\.github$
+.github
 ^.*\/\.#.*$
+^LICENSE\.md$
