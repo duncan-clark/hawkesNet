@@ -213,8 +213,8 @@ events_to_bipartite_net <- function(events){
     ## for bipartite setting
     type_i <- unique(events_list$i)
     type_j <- unique(events_list$j)
-    type_i_map <- setNames(seq_along(type_i), type_i)
-    type_j_map <- setNames(seq_along(type_j) + length(type_i), type_j)
+    type_i_map <- stats::setNames(seq_along(type_i), type_i)
+    type_j_map <- stats::setNames(seq_along(type_j) + length(type_i), type_j)
     events_list <- list(
         i = as.numeric(type_i_map[events_list$i]),
         j = as.numeric(type_j_map[events_list$j]),
@@ -382,18 +382,14 @@ get_latest_times <- function(nw){
 
 #' Null-coalescing infix operator
 #'
-#' This operator returns its left-hand side if it is not `NULL`,
-#' otherwise it returns its right-hand side. It is a concise way
-#' to provide default values when a variable may be `NULL`.
+#' Returns the left-hand side if it is not \code{NULL}, otherwise returns the right-hand side.
+#' Useful for providing default values in expressions.
 #'
 #' @name %||%
 #' @usage a %||% b
-#'
-#' @param a An object, possibly `NULL`.
-#' @param b A fallback value to return if `a` is `NULL`.
-#'
-#' @return `a` if not `NULL`, otherwise `b`.
-#'
+#' @param a An object, possibly \code{NULL}.
+#' @param b A fallback value to return if \code{a} is \code{NULL}.
+#' @return \code{a} if not \code{NULL}, otherwise \code{b}.
 #' @examples
 #' x <- NULL
 #' y <- 10
@@ -401,6 +397,5 @@ get_latest_times <- function(nw){
 #'
 #' z <- 5
 #' z %||% y   # returns 5
-#'
 #' @export
 `%||%` <- function(a, b) if (is.null(a)) b else a

@@ -90,8 +90,8 @@ loglik_temporal_hawk = function(params,
         min_t <- realiz$t[i-1]
         hcubature(int_func,
                   realiz = realiz[realiz$t==min_t,],
-                  lowerLimit = c(min_t, windowS$xrange[1], windowS$yrange[1]),
-                  upperLimit = c(max_t, windowS$xrange[2], windowS$yrange[2])
+                  lowerLimit = c(min_t, windowT$xrange[1], windowT$yrange[1]),
+                  upperLimit = c(max_t, windowT$xrange[2], windowT$yrange[2])
         )$integral
       }
       if(!is.null(cl)){
@@ -112,7 +112,7 @@ loglik_temporal_hawk = function(params,
       }
     }else{
       func_3 <- function(x){
-        t_comp <- (1-exp(-beta*(max_t-t)))
+        t_comp <- (1-exp(-beta*(max_t - realiz$t)))
         return(t_comp)
       }
       pieces <- func_3(realiz$t)

@@ -24,7 +24,7 @@ sim_hawkesGrowthNet(
 
 \item{PMF_mark}{Function. Computes/generates the mark PMF (see \link{PMF_mark}).}
 
-\item{cond_intensity}{A function to calculate conditional_intensity, takes in a kernel_func}
+\item{cond_intensity}{Function. Computes the conditional intensity (see \link{cond_intensity}).}
 
 \item{hashed_edges}{Logical. If \code{TRUE}, use hashed edges for fast lookup. Default: \code{FALSE}.}
 
@@ -36,7 +36,7 @@ sim_hawkesGrowthNet(
 
 \item{n_mark_sample}{Integer or NULL. If set, use importance sampling for marks. Default: \code{NULL}.}
 
-\item{...}{to be passed to \link{PMF_mark}}
+\item{...}{Additional arguments passed to \code{PMF_mark}.}
 }
 \value{
 List with elements:

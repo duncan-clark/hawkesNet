@@ -15,9 +15,8 @@ a %||% b
 \code{a} if not \code{NULL}, otherwise \code{b}.
 }
 \description{
-This operator returns its left-hand side if it is not \code{NULL},
-otherwise it returns its right-hand side. It is a concise way
-to provide default values when a variable may be \code{NULL}.
+Returns the left-hand side if it is not \code{NULL}, otherwise returns the right-hand side.
+Useful for providing default values in expressions.
 }
 \examples{
 x <- NULL
@@ -26,5 +25,4 @@ x \%||\% y   # returns 10
 
 z <- 5
 z \%||\% y   # returns 5
-
 }
