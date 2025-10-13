@@ -22,7 +22,7 @@
 #'   \item{as_legacy_fun}{Legacy wrapper to match old PMF_mark_* function signatures.}
 #' }
 #'
-#' #' @seealso
+#' @seealso
 #' \link{BAKernel}, \link{CSKernel}
 MarkKernel <- R6::R6Class(
                       "MarkKernel",
