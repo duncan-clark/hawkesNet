@@ -19,11 +19,11 @@ Base class for mark-update kernels on dynamic mark spaces. This class updates a 
 \item{compute}{Evaluate and (optionally) sample in one go (back-compat API).}
 \item{as_legacy_fun}{Legacy wrapper to match old PMF_mark_* function signatures.}
 }
-
-#' @seealso
-\link{BAKernel}, \link{CSKernel}
 }
 
+\seealso{
+\link{BAKernel}, \link{CSKernel}
+}
 \section{Public fields}{
 \if{html}{\out{<div class="r6-fields">}}
 \describe{

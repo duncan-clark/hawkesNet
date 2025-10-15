@@ -25,7 +25,7 @@ Implements a Change-Statistic (CS) kernel for HawkesNet, inheriting from MarkKer
 \link{MarkKernel}, \link{BAKernel}
 }
 \section{Super class}{
-\code{\link[hawkesGrowthNet:MarkKernel]{hawkesGrowthNet::MarkKernel}} -> \code{CSKernel}
+\code{hawkesGrowthNet::MarkKernel} -> \code{CSKernel}
 }
 \section{Methods}{
 \subsection{Public methods}{

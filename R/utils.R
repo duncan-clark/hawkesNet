@@ -397,5 +397,5 @@ get_latest_times <- function(nw){
 #'
 #' z <- 5
 #' z %||% y   # returns 5
-#' @export
+#' @noRd
 `%||%` <- function(a, b) if (is.null(a)) b else a
