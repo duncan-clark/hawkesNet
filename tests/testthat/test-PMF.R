@@ -31,8 +31,15 @@ test_that("BA-bip PMF", {
                                  params, mark_filtration = net, mark = NULL,
                        generate_mark = FALSE,  generate_density = TRUE,
                        grad = FALSE, new_edge_hash = NULL, truncation = NULL)
+    PMF_mark_BA_Bipartite_class <- BABipartiteKernel$new(params = params)$as_legacy_fun()
+    pmf_class <- PMF_mark_BA_Bipartite_class(time[3],  params, mark_filtration = net, mark = NULL,
+                       generate_mark = FALSE,  generate_density = TRUE,
+                       grad = FALSE, new_edge_hash = NULL, truncation = NULL)
     expect_equal(pmf$mark_density,
-                 1,
+                 1, ## Not stable, but are planning to defunc
+                 tolerance = 0.01)
+     expect_equal(pmf_class$mark_density,
+                 0.1481481,
                  tolerance = 0.01)
 })
 test_that("CS PMF", {
