@@ -22,7 +22,7 @@ Implements a Barabási–Albert (BA) style kernel for dynamic networks, inheriti
 \link{MarkKernel}, \link{CSKernel}
 }
 \section{Super class}{
-\code{hawkesGrowthNet::MarkKernel} -> \code{BAKernel}
+\code{\link[hawkesGrowthNet:MarkKernel]{hawkesGrowthNet::MarkKernel}} -> \code{BAKernel}
 }
 \section{Methods}{
 \subsection{Public methods}{
