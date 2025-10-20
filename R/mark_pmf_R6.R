@@ -222,7 +222,7 @@ MarkKernel <- R6::R6Class(
                                   old_nodes <- last_net %n% "n"
                                   network::add.vertices(new_net, nv = new_nodes - old_nodes)
                                   network::set.vertex.attribute(new_net, "time",
-                                                       c(get.vertex.attribute(last_net, "time"),
+                                                       c(network::get.vertex.attribute(last_net, "time"),
                                                          rep(time, new_nodes - old_nodes)))
                                   roles <- network::get.vertex.attribute(last_net, "role")
                                   if(is.null(roles)) roles <- rep("perp", old_nodes)
