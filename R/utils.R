@@ -272,7 +272,7 @@ plot_example_sub_component <- function(g, size, idx = 1,
 
 # Return TRUE internal edge IDs where attr satisfies `condition`
 edge_ids_where <- function(net, attr, condition) {
-  vals <- get.edge.attribute(net, attr)
+  vals <- network::get.edge.attribute(net, attr)
   if (!length(vals)) return(integer(0))
   idx  <- which(condition(vals))           # indices in the *attribute vector*
   .active_eids(net)[idx]                   # map to real edge IDs in net$mel
@@ -293,29 +293,32 @@ edge_ids_where <- function(net, attr, condition) {
 #' }
 #' @rdname filtration_to_net
 #' @export
-filtration_to_net <- function(net,
-                              t,
-                              equals = FALSE){
+filtration_to_net <- function(net, t, equals = FALSE){
+  if (is.null(net)){
+    net <- network::network(matrix(0, 0, 0), directed = FALSE, bipartite = 0)
+    return(net)
+  }
+  bip <- network::get.network.attribute(net, "bipartite")
   e_delete <- edge_ids_where(net, "time", function(x) x > t)
-  delete.edges(net,e_delete)
-  delete.vertices(net,which(get.vertex.attribute(net,"time")>t))
-  if(!equals){
-    e_times <- get.edge.attribute(net,"time")
-    n_times <- get.vertex.attribute(net,"time")
+  if (length(e_delete) > 0) delete.edges(net, e_delete)
+  v_times <- tryCatch(network::get.vertex.attribute(net, "time"), error = function(e) NULL)
+  if (!is.null(v_times)) delete.vertices(net, which(v_times > t))
+  if (!equals){
+    e_times <- tryCatch(network::get.edge.attribute(net,"time"), error = function(e) numeric(0))
+    n_times <- tryCatch(network::get.vertex.attribute(net,"time"), error = function(e) numeric(0))
     times <- c(e_times, n_times)
     if (length(times) == 0 || all(is.na(times))) {
-        t_to_delete <- t  
+      t_to_delete <- t
     } else {
-      # always removes the latest time
-        t_to_delete <- max(times, na.rm = TRUE)
+      t_to_delete <- max(times, na.rm = TRUE)
     }
-    # convert the edges into edgeIDs so we can delete them properly:
     e_delete <- edge_ids_where(net, "time", function(x) x == t_to_delete)
-    delete.edges(net,e_delete)
-    delete.vertices(net,which(n_times == t_to_delete))
+    if (length(e_delete) > 0) network::delete.edges(net, e_delete)
+    n_times <- tryCatch(network::get.vertex.attribute(net,"time"), error = function(e) numeric(0))
+    if (length(n_times) > 0) network::delete.vertices(net, which(n_times == t_to_delete))
   }
-  # no need for vertex names
-  delete.vertex.attribute(net,'vertex.names')
+  if ("vertex.names" %in% network::list.vertex.attributes(net)) network::delete.vertex.attribute(net,'vertex.names')
+  if (!is.null(bip)) network::set.network.attribute(net, "bipartite", bip)
   return(net)
 }
 
