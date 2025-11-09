@@ -224,10 +224,10 @@ MarkKernel <- R6::R6Class(
                                   network::set.vertex.attribute(new_net, "time",
                                                                 c(network::get.vertex.attribute(last_net, "time"),
                                                                   rep(time, new_nodes - old_nodes)))
-                                  ## roles <- network::get.vertex.attribute(last_net, "role")
-                                  ## if(is.null(roles)) roles <- rep("perp", old_nodes)
-                                  ## new_roles <- c(roles, rep("event", new_nodes - old_nodes))
-                                  ## network::set.vertex.attribute(new_net, "role", new_roles)
+                                  roles <- network::get.vertex.attribute(last_net, "role")
+                                  if(is.null(roles)) roles <- rep("perp", old_nodes)
+                                  new_roles <- c(roles, rep("event", new_nodes - old_nodes))
+                                  network::set.vertex.attribute(new_net, "role", new_roles)
                               }
                               
                               cand <- private$candidate_edges(last_net, new_nodes, bipartite = TRUE)
@@ -270,32 +270,16 @@ MarkKernel <- R6::R6Class(
                                   tails <- poss_edges[,1]
                                   heads <- poss_edges[,2]
                               } else {
-                                 b <- last_net %n% "bipartite"
-                                 if (is.null(b) || length(b) == 0) b <- 0L
-                                 b <- as.integer(b)
-                                 ## ensure b within bounds
-                                 if (b < 0) b <- 0L
-                                 if (b > old_nodes) b <- old_nodes
-                                 mode1_nodes <- if (b >= 1) seq_len(b) else integer(0)        ## 1:b
-                                 mode2_nodes <- if (old_nodes > b) seq.int(b + 1, old_nodes) else integer(0) ## (b+1):old_nodes
-                                 poss_tails <- seq.int(from = old_nodes + 1, to = new_nodes)
-                                 poss_tails <- poss_tails[poss_tails > 0]
-                                 if (length(poss_tails) > 0 && any(poss_tails > b)) {
-                                     poss_heads <- mode1_nodes
-                                 } else {
-                                     poss_heads <- mode2_nodes
-                                 }
-                                 poss_heads <- poss_heads[poss_heads > 0]
-                                 poss_edges <- if (length(poss_tails) > 0 && length(poss_heads) > 0)
-                                                   expand.grid(poss_tails, poss_heads) else
-                                                                                           matrix(numeric(0), ncol = 2)
-                                 if (nrow(poss_edges) == 0) {
-                                     tails <- integer(0); heads <- integer(0)
-                                 } else {
-                                     colnames(poss_edges) <- c("tail", "head")
-                                     tails <- poss_edges[, "tail"]
-                                     heads <- poss_edges[, "head"]
-                                 }
+                                  perp_nodes <- which(network::get.vertex.attribute(last_net, "role") == "perp")
+                                  event_nodes <- which(network::get.vertex.attribute(last_net, "role") == "event")
+                                  poss_tails <- seq.int(from = old_nodes + 1, to = new_nodes)
+                                  poss_tails <- poss_tails[poss_tails > 0]
+                                  poss_heads <- perp_nodes
+                                  poss_heads <- poss_heads[poss_heads > 0]
+                                  poss_edges <- expand.grid(poss_tails, poss_heads)
+                                  colnames(poss_edges) <- c("tail", "head")
+                                  tails <- poss_edges[, "tail"]
+                                  heads <- poss_edges[, "head"]
                               }
                               if (!is.null(last_net)) {
                                   in_old <- vapply(seq_along(heads), function(i)
@@ -720,19 +704,13 @@ BABipartiteKernel <- R6::R6Class(
                                      last_net <- setup$last_net %||% setup$new_net
                                      if (is.null(last_net) || (last_net %n% "n") <= 1) return(c(1))
                                      if(length(setup$heads) == 0) return(numeric(0))
-                                     b <- last_net %n% "bipartite"
-                                     if (is.null(b) || length(b) == 0) b <- 0L
-                                     b <- as.integer(b)
-                                     if (b < 0) b <- 0L
-                                     old_n <- last_net %n% "n"
-                                     if (b > old_n) b <- old_n
-                                     mode1_nodes <- if (b >= 1) seq_len(b) else integer(0)
+                                     perp_nodes <- which(network::get.vertex.attribute(last_net, "role") == "perp")
                                      degs <- sna::degree(last_net)
                                      times <- network::get.vertex.attribute(last_net, "time")
                                      factor <- self$decay_fun(times, time, self$params, idx = seq_along(times))
                                      degs_w <- degs * factor
                                      probs <- degs_w[setup$heads]
-                                     probs[!(setup$heads %in% mode1_nodes)] <- 1e-8
+                                     probs[!(setup$heads %in% perp_nodes)] <- 1e-8 ## check
                                      if (sum(probs)==0) rep(1, length(setup$heads)) else probs / sum(probs)
                                  },
                                  node_growth_sample = function(time, last_net) {
