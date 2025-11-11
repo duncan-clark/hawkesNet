@@ -106,80 +106,58 @@ has_edge <- function(i, j,edge_hash) {
 #'  \code{\link[network]{network}}, \code{\link[network]{attribute.methods}}, \code{\link[network]{add.vertices}}
 #' @rdname events_to_net
 #' @export
-events_to_net <- function(events,
-                          net = NULL,
-                          directed = FALSE){
-    ## validate input
-    if(!inherits(events, "data.frame") & !inherits(events, "list"))
-        stop("'events' should be either a list or a data frame.")
-    if(sum(c("i", "j", "t") %in% names(events)) != 3)
-        stop("'events' should have elements 'i', 'j', & 't'. Please see details.")
-    if (!is.numeric(events$i) || any(events$i %% 1 != 0))
-        stop("'i' must be whole numbers (i.e., node indices)")
-    if (!is.numeric(events$j) || any(events$j %% 1 != 0)) 
-        stop("'j' must be whole numbers (i.e., node indices)")
-    if (!is.numeric(events$t)) stop("'t' must be numeric (times)")
-    if (length(events$i) != length(events$j) ||
-        length(events$i) != length(events$t)) {
-        stop("'i', 'j', and 't' must all have the same length")
+events_to_net <- function(events, net = NULL, directed = FALSE) {
+  if(!inherits(events, "data.frame") & !inherits(events, "list"))
+    stop("'events' should be either a list or a data frame.")
+  if(sum(c("i", "j", "t") %in% names(events)) != 3)
+    stop("'events' should have elements 'i', 'j', & 't'.")
+  if (!is.numeric(events$i) || any(events$i %% 1 != 0)) stop("'i' must be integers")
+  if (!is.numeric(events$j) || any(events$j %% 1 != 0)) stop("'j' must be integers")
+  if (!is.numeric(events$t)) stop("'t' must be numeric")
+  events_list <- if (inherits(events, "data.frame")) as.list(events) else events
+  all_ids <- unique(c(events_list$i, events_list$j))
+  id_to_idx <- setNames(seq_along(all_ids), all_ids)
+  if (is.null(net)) {
+    net <- network::network(matrix(0, nrow = length(all_ids), ncol = length(all_ids)), directed = directed)
+    network::set.vertex.attribute(net, "vertex.names", as.character(all_ids))
+    network::set.vertex.attribute(net, "time", rep(NA, network.size(net)))
+  } else {
+    existing_ids <- network::get.vertex.attribute(net, "vertex.names")
+    missing_ids <- setdiff(all_ids, existing_ids)
+    if (length(missing_ids) > 0) {
+      net <- network::add.vertices(net, length(missing_ids))
+      updated_names <- c(existing_ids, as.character(missing_ids))
+      network::set.vertex.attribute(net, "vertex.names", updated_names)
+      times <- network::get.vertex.attribute(net, "time")
+      if (length(times) < network.size(net)) times <- c(times, rep(NA, network.size(net) - length(times)))
+      network::set.vertex.attribute(net, "time", times)
     }
-    ## rename to match initial
-    events_list <- events
-    ## df --> list
-    if (inherits(events_list, "data.frame")) events_list <- as.list(events_list)
-    stopifnot(is.list(events_list))
-    ## node indecies do not have to be numbered consectutively
-    for(k in seq_along(events_list$i)){
-        i <- events_list$i[k]
-        j <- events_list$j[k]
-        t <- events_list$t[k]
-        if(k == 1 & is.null(net)){
-            net <- network::network(matrix(c(i, j), nrow = 1), directed = directed)
-      if (!(i %in% get.vertex.attribute(net, "vertex.names"))) {
-        network::set.vertex.attribute(net,"vertex.names", i, v = 1)
-      }
-      if (!(j %in% get.vertex.attribute(net, "vertex.names"))) {
-        network::set.vertex.attribute(net,"vertex.names", j, v = 2)
-      }
-      network::set.vertex.attribute(net,"time", t, v = 1)
-      network::set.vertex.attribute(net,"time", t, v = 2)
-    } else {
-      N <- net %n% 'n'
-      over_i <- i - N
-      over_j <- j - N
-      if(over_i > 0){
-        net <- network::add.vertices(net, over_i)
-      }
-      if(over_j > 0){
-        net <- network::add.vertices(net, over_j)
-      }
-      existing_names <- get.vertex.attribute(net, "vertex.names")
-      if (!(i %in% existing_names)) {
-        v_index <- which(is.na(existing_names))[1]  
-        network::set.vertex.attribute(net, "vertex.names", i, v = v_index)
-        network::set.vertex.attribute(net, "time", t, v = v_index)
-      } else {
-        v_index <- which(existing_names == i)
-        network::set.vertex.attribute(net, "time", t, v = v_index)
-      }
-      if (!(j %in% existing_names)) {
-        v_index <- which(is.na(existing_names))[1]
-        network::set.vertex.attribute(net, "vertex.names", j, v = v_index)
-        network::set.vertex.attribute(net, "time", t, v = v_index)
-      } else {
-        v_index <- which(existing_names == j)
-        network::set.vertex.attribute(net, "time", t, v = v_index)
-      }
-      add.edge(net, i, j)
-    }
-    e <- get.dyads.eids(net, i, j)
-    if(!is.na(e[[1]])){
+  }
+  
+  vertex_names <- network::get.vertex.attribute(net, "vertex.names")
+  times <- network::get.vertex.attribute(net, "time")
+  
+  for (k in seq_along(events_list$i)) {
+    i_id <- as.character(events_list$i[k])
+    j_id <- as.character(events_list$j[k])
+    t <- events_list$t[k]
+    i_idx <- which(vertex_names == i_id)
+    j_idx <- which(vertex_names == j_id)
+    
+    times[i_idx] <- max(t, times[i_idx], na.rm = TRUE)
+    times[j_idx] <- max(t, times[j_idx], na.rm = TRUE)
+    
+    if(length(get.edgeIDs(net, i_idx, j_idx)) == 0){
+      network::add.edge(net, i_idx, j_idx)
+      e <- get.dyads.eids(net, i_idx, j_idx)
       network::set.edge.attribute(net, "time", t, e = e[[1]])
     }
   }
-  network::set.network.attribute(net,'n',max(c(events_list$i,events_list$j)))
+  network::set.vertex.attribute(net, "time", times)
+  network::set.network.attribute(net, 'n', network.size(net))
   return(net)
 }
+
 
 
 #' Convert event-participant data to bipartite network
