@@ -228,21 +228,23 @@ events_to_bipartite_net <- function(events){
     return(net)
 }
 
-#' Internal function, takes a
-#' bipartite network and makes it into a bipartite igraph
-#' mainly useful for plotting
+#' Internal function, takes a bipartite network as returned by \link{events_to_bipartite_net}
+#' and makes it into a bipartite igraph; mainly useful for plotting.
 #' @noRd
 bn_ig <- function(net){
     edges <- network::as.matrix.network.edgelist(net)
     g <- igraph::graph_from_data_frame(edges, directed = FALSE)
-    igraph::V(g)$type <- ifelse(igraph::V(g)$name %in% unique(edges[,2]), TRUE, FALSE)
+    igraph::V(g)$type <- ifelse(igraph::V(g)$name %in% unique(edges[,2]), "type_j", "type_i")
+    igraph::V(g)$time <- network::get.vertex.attribute(net, "time")
+    igraph::E(g)$time <- network::get.edge.attribute(net, "time")
     return(g)
 }
-#' Plot example subcomponents of a bipartite igraph
-#' internal function
+#' Plot example subcomponents of a bipartite igraph as returned by \link{bn_ig}
+#' (internal function). if \code{grow} is `TRUE` then an animation is returned.
 #' @noRd
 plot_example_sub_component <- function(g, size, idx = 1,
-                                       cols = c("#E41A1C", "#377EB8"), ...){
+                                       cols = c("#E41A1C", "#377EB8"), grow = FALSE,
+                                       gif.name = "network_growth.gif", interval = 0.8, ...){
     x <- igraph::components(g)
     if(!size %in% x$csize){
         stop(paste("`size` must be one of", paste(names(table(x$csize)), collapse = ", ")))
@@ -253,9 +255,27 @@ plot_example_sub_component <- function(g, size, idx = 1,
     comp_id <- which(x$csize == size)[idx]
     nodes <- igraph::V(g)$name[x$membership == comp_id]
     sub_g <- igraph::induced_subgraph(g, vids = nodes)
-    ## col; if type == TRUE then cols[1]
-    igraph::plot.igraph(sub_g, vertex.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]),
-         vertex.frame.color = ifelse(igraph::V(sub_g)$type, cols[1], cols[2]), ...)
+    ## col; if type == "type_i" then cols[1]
+    if(grow == FALSE){
+        igraph::plot.igraph(sub_g, vertex.color = ifelse(igraph::V(sub_g)$type == "type_i", cols[1], cols[2]),
+                            vertex.frame.color = ifelse(igraph::V(sub_g)$type == "type_i", cols[1], cols[2]), ...)
+    }else{
+        tidx <- igraph::V(sub_g)$time |> sort() |> unique()
+        layout_static <- igraph::layout_with_fr(sub_g)
+        animation::saveGIF({
+            for (t in tidx) {
+                eidx <- which(igraph::E(sub_g)$time <= t)
+                g_t <- igraph::subgraph_from_edges(sub_g, eids = eidx, delete.vertices = TRUE)
+                idx <- match(igraph::V(g_t)$name, igraph::V(sub_g)$name)
+                igraph::plot.igraph(g_t,layout = matrix(layout_static[idx, ], ncol = 2),
+                                    vertex.color = ifelse(igraph::V(g_t)$type == "type_i", cols[1], cols[2]),
+                                    vertex.frame.color = ifelse(igraph::V(g_t)$type == "type_i", cols[1], cols[2]),
+                                    xlim = range(layout_static[,1]),
+                                    ylim = range(layout_static[,2]),
+                                    rescale = FALSE, ...)
+            }
+        }, movie.name = gif.name, interval = interval)
+    }
 }
 
 # Active edge IDs are the non-NULL slots of net$mel

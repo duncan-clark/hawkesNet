@@ -263,7 +263,7 @@ PMF_mark_BA <- function(time,
     if(!is.null(last_net) && (last_net %n% 'n' > 2)){
         times <- get.vertex.attribute(last_net, "time")
         degs <- sna::degree(last_net) * exp(-params$beta_edges * (time - times))
-        total_deg <- sum(degs)
+        total_deg <- sum(degs, na.rm = TRUE)
         
         if(total_deg == 0){
             probs <- rep(1, length(heads))
