@@ -703,38 +703,35 @@ BABipartiteKernel <- R6::R6Class(
   private = list(
     edge_probs_from_setup = function(setup, time, generation = FALSE) {
       last_net <- setup$last_net %||% setup$new_net
-      if (is.null(last_net) || (last_net %n% "n") <= 1) return(c(1))
-      if (length(setup$heads) == 0) return(numeric(0))
-
-      el <- tryCatch(network::as.edgelist(last_net, names = FALSE),
-                     error = function(e) matrix(numeric(0), ncol = 2))
-      edge_times <- last_net %e% "time"
-      if (is.null(edge_times)) edge_times <- rep(NA_real_, nrow(el))
+      if(is.null(last_net) || (last_net %n% "n") <= 1) return(c(1))
       candidate_heads <- setup$heads
+      if(length(candidate_heads) == 0) return(numeric(0))
+
+      el <- network::as.edgelist(last_net, names = FALSE)
+      edge_times <- if(nrow(el) > 0) last_net %e% "time" else numeric(0)
+      times <- network::get.vertex.attribute(last_net, "time")
+      degs  <- sna::degree(last_net)
       type_i_nodes <- which(network::get.vertex.attribute(last_net, "type") == "type_i")
+      beta_e <- self$params$beta_edges %||% 0.1  # small default if missing
+      beta_e <- max(0, beta_e)
 
-      if (nrow(el) == 0) {
-        degs <- sna::degree(last_net)
-        scores <- degs[candidate_heads]
-        scores[is.na(scores)] <- 0
-        if (sum(scores) == 0) scores <- rep(1, length(scores))
-        return(scores / sum(scores))
+      scores <- numeric(length(candidate_heads))
+      for(i in seq_along(candidate_heads)) {
+        h <- candidate_heads[i]
+        if(!(h %in% type_i_nodes)) {
+          scores[i] <- 1e-8
+          next
+        }
+
+        incident_idx <- which(el[,1] == h | el[,2] == h)
+        if(length(incident_idx) == 0) {
+          scores[i] <- 1 + exp(-beta_e * (time - times[h]))
+        } else {
+          et <- edge_times[incident_idx]
+          diffs <- pmax(time - et, 0)
+          scores[i] <- sum(exp(-beta_e * diffs)) + 1  ## mimics BA offset
+        }
       }
-      beta_e <- self$params$beta_edges %||% 0.0
-      scores <- vapply(candidate_heads, function(h) {
-        incident_idx <- which(el[, 1] == h | el[, 2] == h)
-        if (length(incident_idx) == 0) return(0.0)
-        et <- edge_times[incident_idx]
-        valid <- !is.na(et)
-        if (!any(valid)) return(length(incident_idx))
-        diffs <- time - et[valid]
-        diffs[diffs < 0] <- 0
-        sum(exp(-beta_e * diffs), na.rm = TRUE)
-      }, numeric(1))
-      if (all(scores == 0) || any(is.nan(scores))) scores[] <- 1
-
-      invalid_mask <- !(candidate_heads %in% type_i_nodes)
-      if (any(invalid_mask)) scores[invalid_mask] <- 1e-8
 
       probs <- scores / sum(scores)
       return(probs)
@@ -744,9 +741,10 @@ BABipartiteKernel <- R6::R6Class(
       list(U = 0, V = K)
     },
     node_growth_density = function(mark, time, last_net) {
-      if (is.null(last_net)) old_nodes <- 0 else old_nodes <- last_net %n% "n"
+      old_nodes <- if(is.null(last_net)) 0 else last_net %n% "n"
       new_nodes <- (mark %n% "n") - old_nodes
       stats::dpois(new_nodes, self$params$lambda_new %||% 1)
     }
+
   )
 )
