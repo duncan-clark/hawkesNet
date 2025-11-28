@@ -725,11 +725,11 @@ BABipartiteKernel <- R6::R6Class(
 
         incident_idx <- which(el[,1] == h | el[,2] == h)
         if(length(incident_idx) == 0) {
-          scores[i] <- 1 + exp(-beta_e * (time - times[h]))
+          scores[i] <- 1 + self$decay_fun(times[h], time, self$params, "head")
         } else {
           et <- edge_times[incident_idx]
           diffs <- pmax(time - et, 0)
-          scores[i] <- sum(exp(-beta_e * diffs)) + 1  ## mimics BA offset
+          scores[i] <- sum(self$decay_fun(et, time, self$params, "edge")) + 1  ## mimics BA offset
         }
       }
 
