@@ -32,7 +32,7 @@ test_that("BA-bip PMF", {
                        generate_mark = FALSE,  generate_density = TRUE,
                        grad = FALSE, new_edge_hash = NULL, truncation = NULL)
     expect_equal(pmf$mark_density,
-                 1,
+                 1, ## Not stable, but are planning to defunc
                  tolerance = 0.01)
 })
 test_that("CS PMF", {
@@ -101,3 +101,22 @@ test_that("PMF", {
                  tolerance = 0.01)
     expect_error(PMF_mark(time[10],  params_ba, mark_filtration, type = "CA"))
 })
+test_that("*Kernel$new returns expected objects", {
+    params_ba <- list(beta_edges = 0.1, node_lambda = 2)
+    params_bip <- list(beta_edges = 0.1, lambda_new = 2)
+    params_cs <- list(beta_edges = 0.1, node_lambda = 2, CS_params = 0.5)
+    decay_fun <- function(node_times, time, params, idx) {
+        exp(-params$beta_edges * (time - node_times[idx]))
+    }
+    time <- 10
+    ba_kernel <- BAKernel$new(params = params_ba, decay_fun = decay_fun)
+    ba_bip_kernel <- BABipartiteKernel$new(params = params_bip, decay_fun = decay_fun, bipartite = TRUE)
+    cs_kernel <- CSKernel$new(params = params_cs, decay_fun = decay_fun)
+    pmf_ba <- ba_kernel$pmf(time)
+    pmf_bip <- ba_bip_kernel$pmf(time)
+    pmf_cs <- cs_kernel$pmf(time)
+    expect_named(pmf_ba, c("mark_density", "log_mark_density", "edge_probs"))
+    expect_named(pmf_bip, c("mark_density", "log_mark_density", "edge_probs"))
+    expect_named(pmf_cs, c("mark_density", "log_mark_density", "edge_probs"))
+})
+

@@ -167,6 +167,7 @@ MarkKernel <- R6::R6Class(
                               if(max(mark %v% "time") > time){
                                   warning("You supplied a mark that has nodes with time >= current time; this is likely an error.")
                               }
+                              
                               new_net <- network::network.copy(last_net)
                               
                               if (!is.null(last_net) && (last_net %n% "n") != 0) {
@@ -174,13 +175,14 @@ MarkKernel <- R6::R6Class(
                                   old_nodes <- last_net %n% "n"
                                   to_add   <- max(0L, new_nodes - old_nodes)
                                   if (to_add > 0) network::add.vertices(new_net, nv = to_add)
-                                  set.vertex.attribute(new_net,
+                                  network::set.vertex.attribute(new_net,
                                                        "time",
-                                                       c(get.vertex.attribute(last_net, "time"),rep(time, to_add)))
+                                                       c(network::get.vertex.attribute(last_net, "time"),
+                                                         rep(time, to_add)))
                               } else {
                                   last_net <- NULL
                                   new_net  <- network::network(matrix(0, 1, 1), directed = FALSE)
-                                  set.vertex.attribute(new_net, "time", time)
+                                  network::set.vertex.attribute(new_net, "time", time)
                                   old_nodes <- 0
                                   new_nodes <- 1
                               }
@@ -199,15 +201,50 @@ MarkKernel <- R6::R6Class(
                               )
                           },
                           
-                                        #============================
-                                        # NOT IMPLEMENTED FOR NOW !!!
-                                        # ===========================
+                          ##============================
+                          ##  Bipartite
+                          ## ===========================
                           setup_bipartite = function(time, mark) {
-                              browwser()
-                              stop("bipartite not supported in the base class yet.")
+                              if(is.null(mark)){
+                                  mark <- filtration_to_net(self$filtration, time, equals = TRUE)
+                              }
+                              last_net <- filtration_to_net(self$filtration, time, equals = FALSE)
+                              new_net <- network::network.copy(last_net)
+                              if(is.null(last_net) || (last_net %n% "n") == 0){
+                                  new_net <- network::network(matrix(0, 1, 1), directed = FALSE, bipartite = 0)
+                                  network::set.vertex.attribute(new_net, "time", time)
+                                  network::set.vertex.attribute(new_net, "type", "type_j") # was event 
+                                  old_nodes <- 0
+                                  new_nodes <- 1
+                                  last_net <- network::network(matrix(0,0,0), directed = FALSE, bipartite = 0)
+                              } else {
+                                  new_nodes <- mark %n% "n"
+                                  old_nodes <- last_net %n% "n"
+                                  network::add.vertices(new_net, nv = new_nodes - old_nodes)
+                                  network::set.vertex.attribute(new_net, "time",
+                                                                c(network::get.vertex.attribute(last_net, "time"),
+                                                                  rep(time, new_nodes - old_nodes)))
+                                  types <- network::get.vertex.attribute(last_net, "type")
+                                  if(is.null(types)) types <- rep("type_i", old_nodes)        # was "perp"
+                                  new_types <- c(types, rep("type_j", new_nodes - old_nodes)) # event to type_j
+                                  network::set.vertex.attribute(new_net, "type", new_types)
+                              }
+                              
+                              cand <- private$candidate_edges(last_net, new_nodes, bipartite = TRUE)
+                              list(mark = mark,
+                                   new_net = new_net,
+                                   last_net = last_net,
+                                   poss_tails = cand$poss_tails,
+                                   poss_heads = cand$poss_heads,
+                                   poss_edges = cand$poss_edges,
+                                   tails = cand$tails,
+                                   heads = cand$heads,
+                                   new_nodes = new_nodes,
+                                   old_nodes = old_nodes)
+                              
                           },
                           
-                          candidate_edges = function(last_net, new_nodes) {
+                          candidate_edges = function(last_net, new_nodes, bipartite = FALSE) {
                               if(is.null(last_net)){
                                   tails <- integer(0)
                                   heads <- integer(0)
@@ -224,17 +261,29 @@ MarkKernel <- R6::R6Class(
                               }else{
                                   poss_tails <- seq.int(old_nodes + 1, new_nodes)
                               }
-                              
-                              poss_tails <- poss_tails[poss_tails > 0]
-                              poss_heads <- seq_len(old_nodes)
-                              poss_heads <- poss_heads[poss_heads > 0]
-                              poss_edges <- expand.grid(poss_tails, poss_heads)
-                              poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2], , drop = FALSE]
-                              tails <- poss_edges[,1]
-                              heads <- poss_edges[,2]
+                              if(!bipartite){
+                                  poss_tails <- poss_tails[poss_tails > 0]
+                                  poss_heads <- seq_len(old_nodes)
+                                  poss_heads <- poss_heads[poss_heads > 0]
+                                  poss_edges <- expand.grid(poss_tails, poss_heads)
+                                  poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2], , drop = FALSE]
+                                  tails <- poss_edges[,1]
+                                  heads <- poss_edges[,2]
+                              } else {
+                                  type_i_nodes <- which(network::get.vertex.attribute(last_net, "type") == "type_i")
+                                  type_j_nodes <- which(network::get.vertex.attribute(last_net, "type") == "type_j")
+                                  poss_tails <- seq.int(from = old_nodes + 1, to = new_nodes)
+                                  poss_tails <- poss_tails[poss_tails > 0]
+                                  poss_heads <- type_i_nodes
+                                  poss_heads <- poss_heads[poss_heads > 0]
+                                  poss_edges <- expand.grid(poss_tails, poss_heads)
+                                  colnames(poss_edges) <- c("tail", "head")
+                                  tails <- poss_edges[, "tail"]
+                                  heads <- poss_edges[, "head"]
+                              }
                               if (!is.null(last_net)) {
                                   in_old <- vapply(seq_along(heads), function(i)
-                                      length(get.edgeIDs(last_net, heads[i], tails[i])) != 0, logical(1))
+                                      length(network::get.edgeIDs(last_net, heads[i], tails[i])) != 0, logical(1))
                                   tails <- tails[!in_old]; heads <- heads[!in_old]
                               }
                                         # do the truncation:
@@ -373,7 +422,8 @@ MarkKernel <- R6::R6Class(
 #' BAKernel R6 Class
 #'
 #' @description
-#' Implements a Barabási–Albert (BA) style kernel for dynamic networks, inheriting from MarkKernel. Edge probabilities are degree-based, with exponential aging on heads (nodes). Node growth is controlled by Poisson or fixed logic.
+#' Implements a Barabási–Albert (BA) style kernel for dynamic networks, inheriting from MarkKernel. Edge probabilities are degree-based, with exponential aging on heads (nodes).
+#'  Node growth is controlled by Poisson or fixed logic.
 #'
 #' @docType class
 #' @section Methods:
@@ -394,7 +444,7 @@ BAKernel <- R6::R6Class(
                                         # degree-based with exponential aging on heads
                             last_net <- setup$last_net %||% setup$new_net
                             if (is.null(last_net) || (last_net %n% "n") <= 2) return(c(1))
-                            times <- get.vertex.attribute(last_net, "time")
+                            times <- network::get.vertex.attribute(last_net, "time")
                             degs  <- sna::degree(last_net)
                             factor <- self$decay_fun(times, time, self$params, idx = seq_along(times))
                             degs_w <- degs * factor
@@ -623,7 +673,7 @@ CSKernel <- R6::R6Class(
                             add <- stats::runif(length(probs)) < probs
                             
                             network::add.edges(mark_sample, heads[add], tails[add])
-                            set.edge.attribute(mark_sample, "time",
+                            network::set.edge.attribute(mark_sample, "time",
                                                c(mark_sample %e% "time", rep(time, sum(add))))
                             
                                         # Sample log-density: product of Bernoullis × Poisson(new-old) (if before cutoff)
@@ -640,7 +690,61 @@ CSKernel <- R6::R6Class(
                     )
                 )
 
-#' @details BA_bipartite Kernel
+#'  BA_BipartiteKernel R6 Class
+#' @description
+#' Implements a Barabási–Albert (BA) style kernel for bipartite dynamic networks, inheriting from MarkKernel.
+#' @docType class
+#' @seealso
+#' \link{MarkKernel}, \link{BAKernel}
 
+BABipartiteKernel <- R6::R6Class(
+  "BABipartiteKernel",
+  inherit = MarkKernel,
+  private = list(
+    edge_probs_from_setup = function(setup, time, generation = FALSE) {
+      last_net <- setup$last_net %||% setup$new_net
+      if(is.null(last_net) || (last_net %n% "n") <= 1) return(c(1))
+      candidate_heads <- setup$heads
+      if(length(candidate_heads) == 0) return(numeric(0))
 
+      el <- network::as.edgelist(last_net, names = FALSE)
+      edge_times <- if(nrow(el) > 0) last_net %e% "time" else numeric(0)
+      times <- network::get.vertex.attribute(last_net, "time")
+      degs  <- sna::degree(last_net)
+      type_i_nodes <- which(network::get.vertex.attribute(last_net, "type") == "type_i")
+      beta_e <- self$params$beta_edges %||% 0.1  # small default if missing
+      beta_e <- max(0, beta_e)
 
+      scores <- numeric(length(candidate_heads))
+      for(i in seq_along(candidate_heads)) {
+        h <- candidate_heads[i]
+        if(!(h %in% type_i_nodes)) {
+          scores[i] <- 1e-8
+          next
+        }
+
+        incident_idx <- which(el[,1] == h | el[,2] == h)
+        if(length(incident_idx) == 0) {
+          scores[i] <- 1 + self$decay_fun(times[h], time, self$params, "head")
+        } else {
+          et <- edge_times[incident_idx]
+          diffs <- pmax(time - et, 0)
+          scores[i] <- sum(self$decay_fun(et, time, self$params, "edge")) + 1  ## mimics BA offset
+        }
+      }
+
+      probs <- scores / sum(scores)
+      return(probs)
+    },
+    node_growth_sample = function(time, last_net) {
+      K <- stats::rpois(1, lambda = self$params$lambda_new %||% 0)
+      list(U = 0, V = K)
+    },
+    node_growth_density = function(mark, time, last_net) {
+      old_nodes <- if(is.null(last_net)) 0 else last_net %n% "n"
+      new_nodes <- (mark %n% "n") - old_nodes
+      stats::dpois(new_nodes, self$params$lambda_new %||% 1)
+    }
+
+  )
+)
