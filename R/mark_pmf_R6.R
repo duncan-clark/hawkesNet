@@ -283,7 +283,7 @@ MarkKernel <- R6::R6Class(
                               }
                               if (!is.null(last_net)) {
                                   in_old <- vapply(seq_along(heads), function(i)
-                                      length(get.edgeIDs(last_net, heads[i], tails[i])) != 0, logical(1))
+                                      length(network::get.edgeIDs(last_net, heads[i], tails[i])) != 0, logical(1))
                                   tails <- tails[!in_old]; heads <- heads[!in_old]
                               }
                                         # do the truncation:
