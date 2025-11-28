@@ -149,7 +149,7 @@ events_to_net <- function(events, net = NULL, directed = FALSE) {
     
     if(length(get.edgeIDs(net, i_idx, j_idx)) == 0){
       network::add.edge(net, i_idx, j_idx)
-      e <- get.dyads.eids(net, i_idx, j_idx)
+      e <- network::get.dyads.eids(net, i_idx, j_idx)
       network::set.edge.attribute(net, "time", t, e = e[[1]])
     }
   }
