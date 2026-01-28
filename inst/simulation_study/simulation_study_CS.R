@@ -23,8 +23,8 @@ params <- list(mu = 10,
                K = 0.5,
                beta_edges = 0.5,
                node_lambda = 1,
-               #CS_params = c(-5,1.0,-0.5,0.1)
-               CS_params = c(-6,0.5,0.3,-0.1)
+               CS_params = c(-5,1.0,-0.5,0.1)
+               #CS_params = c(-6,0.5,0.3,-0.1)
                )
 TRUNCATION  = 50
 INVESTIGATE = F
@@ -92,7 +92,8 @@ if(SIMULATE){
                           mu_multiplier = 3,
                           joint_accept = F,
                           truncation = TRUNCATION,
-                          formula_RHS = "edges  + triangles() + star(c(2,3))")
+                          formula_RHS = "edges  + triangles() + star(c(2,3))"
+                          )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
       message("Error in sim_hawkesGrowthNet: ", e$message)

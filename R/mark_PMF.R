@@ -224,6 +224,9 @@ PMF_mark_CS <- function(time,
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration,time,equals = TRUE)
   }
+  if(is.null(max_node_time)){
+    max_node_time <- Inf
+  }
   # warning if the new net is the same as old net - no mark density:
   # don't think we need this ! 
   # times1 <- get_times(last_net)$times
@@ -303,7 +306,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
@@ -452,7 +455,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
       diffs <- sapply(1:length(tails),function(i){

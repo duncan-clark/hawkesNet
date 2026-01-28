@@ -14,6 +14,7 @@ fit_hawkesGrowthNet(
   reltol = 1e-08,
   maxit,
   get_hessian = FALSE,
+  fixed_params = NULL,
   ...
 )
 }

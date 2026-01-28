@@ -16,6 +16,8 @@ PMF_mark_CS(
   grad = FALSE,
   truncation = 1,
   mark_decay = "node_entrance",
+  model = NULL,
+  max_node_time = NULL,
   ...
 )
 }
