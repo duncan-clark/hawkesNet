@@ -217,23 +217,14 @@ PMF_mark_CS <- function(time,
                         max_node_time = NULL,
                         ...
 ){
-  # if we are not starting from nothing:
-  last_net <- filtration_to_net(mark_filtration,time,equals = FALSE)
-  # set equal to last net - then add things
-  new_net <- last_net
   if(is.null(mark)){
-    mark <- filtration_to_net(mark_filtration,time,equals = TRUE)
+    mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
   }
-  # warning if the new net is the same as old net - no mark density:
-  # don't think we need this ! 
-  # times1 <- get_times(last_net)$times
-  # times2 <- get_times(mark)$times
-  # if(length(times1) == length(times2)){
-  #   if(all(times1 == times2)){
-  #     print(time)
-  #     warning("The mark and the last network exactly the same")
-  #   }
-  # }
+  last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
+  new_net <- last_net
+  if(is.null(max_node_time)){
+    max_node_time <- max(get.vertex.attribute(mark_filtration, "time"))
+  }
   
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
@@ -271,6 +262,9 @@ PMF_mark_CS <- function(time,
   # =============
   # mark density
   # =============
+  
+  # NEED TO MAKE THIS NOT A FUNCTION AGAIN !
+  # +++++++++++++  
   if(!is.null(last_net) & generate_density){
     if(last_net %n% 'n' > 2){
       # if new net has less than 4 nodes add some:
@@ -280,7 +274,7 @@ PMF_mark_CS <- function(time,
       }else{
         old_new_net <- new_net
       }
-
+      
       if(max(tails)>new_net %n% 'n'){
         stop("accidently adding a edge into the network that doesn't have that node yet")
       }
@@ -296,6 +290,7 @@ PMF_mark_CS <- function(time,
       model$calculate()
       stat <- model$statistics()
       change_stats <- model$computeChangeStats(tails, heads)
+      
       probs <- apply(change_stats, 1, function(c){
         1/(1+exp(-sum(c*params$CS_params)))
       })
@@ -303,21 +298,25 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
       factor <- exp(-params$beta_edges*(diffs))
       probs <- probs * factor
-
+      
     }else{
+      change_stats <- matrix(0, nrow = 0, ncol = length(params$CS_params))
+      in_mark <- logical(0)
       times <- last_net %v% 'time'
       probs <- c(1)
     }
   }else{
+    change_stats <- matrix(0, nrow = 0, ncol = length(params$CS_params))
+    in_mark <- logical(0)
     probs <- NULL
   }
-
+  
   if(!is.null(mark) & !is.null(probs)){
     if(is.null(new_edge_hash)){
       in_mark <- sapply(1:length(heads),function(i){
@@ -326,7 +325,7 @@ PMF_mark_CS <- function(time,
     }else{
       in_mark <- has_edge(heads,tails,new_edge_hash)
     }
-
+    
     if(length(probs)==1){
       log_mark_density <- 0
       mark_density <-1
@@ -336,11 +335,11 @@ PMF_mark_CS <- function(time,
       if(time >max_node_time){
         node_dens <- 0
       }else{
-        node_dens <- log(dpois(new_nodes-old_nodes,params$node_lambda))
+        node_dens <- log(stats::dpois(new_nodes-old_nodes,params$node_lambda))
       }
       log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark])) + node_dens
       mark_density <- exp(log_mark_density)
-
+      
       if(grad){
         # get the mark grad:
         probs_grads <- lapply(change_stats,function(c){
@@ -356,7 +355,7 @@ PMF_mark_CS <- function(time,
         # get devided by the right prob:
         derivs <- do.call(rbind,derivs)
         mark_grad <- colSums(derivs)
-
+        
         # get the mark grad:
         decay_grads <- -(time-times)*exp(-params$beta_edges*(time - times))
         e <- in_mark*1
@@ -373,8 +372,8 @@ PMF_mark_CS <- function(time,
         mark_grad <- 0
         decay_grad <- 0
       }
-
-
+      
+      
     }
   }else{
     mark_density <- 1
@@ -383,6 +382,95 @@ PMF_mark_CS <- function(time,
     mark_density_normalized <- NULL
     log_mark_density <- 0
   }
+  
+  # if node_dens doesn't exist set it to 0
+  if(!exists("node_dens")){
+    node_dens <- 0
+  }
+  
+  log_density_func_light <- function(params) {
+    eta <- change_stats %*% params$CS_params
+    p   <- stats::plogis(eta)
+    # p <- 1/(1+exp(-eta))
+    log_edge_part <- sum(log(p[in_mark])) + sum(log1p(-p[!in_mark]))
+    log_edge_part + node_dens
+  }
+
+  
+  environment(log_density_func_light) <- list2env(
+    list(
+      change_stats = change_stats,
+      in_mark      = in_mark,
+      node_dens    = node_dens,
+      plogis = stats::plogis
+    ),
+    parent = baseenv()
+  )
+  
+  # define the function (will be rebound to a minimal env right after)
+  log_density_func_light <- function(params) {
+    # Everything it needs will come from its environment:
+    # change_stats, in_mark, diffs, new_nodes, old_nodes, time, max_node_time, degenerate_edges
+    
+    if (degenerate_edges) {
+      return(0)
+    }
+    
+    eta    <- as.vector(change_stats %*% params$CS_params)
+    p_base <- stats::plogis(eta)
+    
+    # same decay factor as direct
+    p <- p_base * exp(-params$beta_edges * diffs)
+    
+    # 2. SAFETY CLAMP
+    # Ensure p is never exactly 0 or 1. 
+    # This prevents log(0) and log(1-1) errors.
+    epsilon <- 1e-10
+    p[p > (1 - epsilon)] <- 1 - epsilon
+    p[p < epsilon] <- epsilon
+    
+    if (anyNA(p)) return(NA_real_)
+    log_edge_part <- sum(log(p[in_mark])) + sum(log1p(-p[!in_mark]))
+    node_dens <- if (!is.null(max_node_time) && time > max_node_time) {
+      0
+    } else {
+      log(stats::dpois(new_nodes - old_nodes, params$node_lambda))
+    }
+    log_edge_part + node_dens
+  }
+  
+  # Decide if you’re in the same degenerate branch as the direct computation
+  degenerate_edges <- is.null(probs) || length(probs) == 1L
+  
+  # Now *force* a tiny environment (no local needed)
+  environment(log_density_func_light) <- list2env(
+    list(
+      change_stats     = change_stats,
+      in_mark          = in_mark,
+      diffs            = if (exists("diffs", inherits = FALSE)) diffs else numeric(0),
+      new_nodes        = new_nodes,
+      old_nodes        = old_nodes,
+      time             = time,
+      max_node_time    = max_node_time,
+      degenerate_edges = degenerate_edges
+    ),
+    parent = baseenv()
+  )
+  
+  density_func_light <- function(params){
+    log_density <- log_density_func_light(params)
+    exp(log_density)
+  }
+  
+  environment(density_func_light) <- list2env(
+    list(
+      change_stats = change_stats,
+      in_mark      = in_mark,
+      node_dens    = node_dens,
+      plogis = stats::plogis
+    ),
+    parent = baseenv()
+  )
 
   # =============
   # generate mark
@@ -452,7 +540,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
       }
-      if(mark_decay == 'node_entranace'){
+      if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
       diffs <- sapply(1:length(tails),function(i){
@@ -468,10 +556,10 @@ PMF_mark_CS <- function(time,
                 tails[add]
       )
       set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
-      mark_sample_density = prod(probs[add])*prod(1-probs[!add])*dpois(new_nodes-old_nodes,params$node_lambda)
+      mark_sample_density = prod(probs[add])*prod(1-probs[!add])*stats::dpois(new_nodes-old_nodes,params$node_lambda)
       log_mark_sample_density <- sum(log(probs[add])) +
                                  sum(log(1-probs[!add])) +
-                                 log(dpois(new_nodes-old_nodes,params$node_lambda))
+                                 log(stats::dpois(new_nodes-old_nodes,params$node_lambda))
       }else{
         if(is.null(last_net)){
           mark_sample <- network::network(matrix(1),directed = F)
@@ -497,6 +585,8 @@ PMF_mark_CS <- function(time,
     # density of provided marks
     mark_density = mark_density,
     log_mark_density = log_mark_density,
+    density_func = density_func_light,
+    log_density_func = log_density_func_light,
     edge_probs = probs,
     mark_grad = mark_grad,
     decay_grad = decay_grad,

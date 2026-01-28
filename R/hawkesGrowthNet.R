@@ -25,34 +25,61 @@ cond_intensity <- function(new_net,
                            PMF_mark,
                            params,
                            new_edge_hash = NULL,
-                           ...){
+                           times = NULL,
+                           ...) {
+  
   tmp <- PMF_mark(time = t,
                   params = params,
                   mark_filtration = mark_filtration,
                   mark = new_net,
                   generate_mark = FALSE,
                   new_edge_hash = new_edge_hash,
-                  ...
+                  ...)
+  
+  if (is.null(times)) times <- get_times(mark_filtration)
+  tt <- times$times
+  tt <- tt[tt < t]
+  diffs <- t - tt
+  
+  # Pull ONLY what we need out of tmp (do NOT keep tmp in the closure)
+  log_mark_density0 <- tmp$log_mark_density
+  log_density_func  <- tmp$log_density_func
+  
+  # Initial value at current params (optional but you do it)
+  decays0 <- exp(-params$beta_overall * diffs)
+  log_result0 <- log_mark_density0 + log(params$mu + params$K * sum(decays0))
+  result0 <- exp(log_result0)
+  
+  # Build a *tiny* closure: capture only diffs + log_density_func
+  func <- local({
+    diffs_local <- diffs
+    ldf_local   <- log_density_func  # mark log-density function only
+    
+    function(params) {
+      decays <- exp(-params$beta_overall * diffs_local)
+      exp(ldf_local(params) + log(params$mu + params$K * sum(decays)))
+    }
+  })
+  
+  # Force the environment to contain ONLY what we intend.
+  # (Note: baseenv() parent means only base functions are found by default.)
+  e_new <- new.env(parent = baseenv())
+  e_new$diffs_local <- environment(func)$diffs_local
+  e_new$ldf_local   <- environment(func)$ldf_local
+  environment(func) <- e_new
+  
+  # Optional: sanity check what it captured (comment out in production)
+  # stopifnot(identical(ls(environment(func)), c("diffs_local","ldf_local")))
+  
+  list(
+    result = result0,
+    func   = func,
+    lambda = params$mu,
+    kernel_sum = params$K * sum(decays0),
+    decays = decays0,
+    diffs  = diffs
+    # (keep other outputs if you truly need them; they increase memory)
   )
-  times <- get_times(mark_filtration)
-  times <- times$times
-  times <- times[times<t]
-  diffs  <- t - times
-
-  decays <- exp(-params$beta_overall*diffs)
-  log_result <- tmp$log_mark_density + log(params$mu + params$K*sum(decays))
-  result <- exp(log_result)
-
-  return(list(result = result,
-              lambda = params$mu,
-              kernel_sum = params$K*sum(decays),
-              decays = decays,
-              diffs = diffs,
-              last_edge_probs = tmp$edge_probs,
-              mark_density = tmp$mark_density,
-              mark_grad = tmp$mark_grad,
-              decay_grad = tmp$decay_grad
-  ))
 }
 
 # According to CONOR we can't have a branching process due to the background rate issues:
@@ -295,6 +322,7 @@ loglik_hawkesGrowthNet = function(params,
                                   edge_hash_list = NULL,
                                   verbose = FALSE,
                                   do_grad = FALSE,
+                                  intens_funcs = NULL,
                                   ...
 ){
   t<-proc.time()
@@ -312,62 +340,78 @@ loglik_hawkesGrowthNet = function(params,
   if(tval < max(times) - min(times)){
     stop("realization has points outside time window")
   }
-
-  # do the sum of the intensities:
-  intens_sum <- 0
-  intens_list <- list()
   
-  # if parallelize do that here with PSOCK for simplicity:
-  intens_func <- function(i){
-    # need to do this on the fly otherwise too storage intensive
-    current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
-    if("formula_RHS" %in% names(list(...))){
-      model = createCppModel(as.formula(paste("current_net ~ ",list(...)$formula_RHS)))
-    }else{
-      model <- NULL
+  if(is.null(intens_funcs)){
+    # do the sum of the intensities:
+    intens_sum <- 0
+    times_precalc <- get_times(mark_filtration)
+    
+    # if parallelize do that here with PSOCK for simplicity:
+    intens_func <- function(i){
+      # need to do this on the fly otherwise too storage intensive
+      current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+      if("formula_RHS" %in% names(list(...))){
+        model = createCppModel(as.formula(paste("current_net ~ ",list(...)$formula_RHS)))
+      }else{
+        model <- NULL
+      }
+      
+      intensity <- cond_intensity(new_net = current_net,
+                                  t = times[i],
+                                  mark_filtration = current_net,
+                                  PMF_mark = PMF_mark,
+                                  params = params,
+                                  model = model,
+                                  times = times_precalc,
+                                  ...)
+      return(list(result = intensity$result,
+                  func = intensity$func
+                  ))
     }
     
-    intensity <- cond_intensity(new_net = current_net,
-                                t = times[i],
-                                mark_filtration = current_net,
-                                PMF_mark = PMF_mark,
-                                params = params,
-                                model = model,
-                                ...)
-    return(intensity$result)
-    #return(intensity)
-  }
-  
-  if("cores" %in% names(list(...))){
-    if(verbose){
-      print(paste0("using ",list(...)$cores," cores on ",length(times), " objects"))
+    if("cores" %in% names(list(...))){
+      if(verbose){
+        print(paste0("using ",list(...)$cores," cores on ",length(times), " objects for cond intensity list first calculation"))
+      }
+      print("starting intens list calculation")
+      cores <- list(...)$cores
+      t <- proc.time()
+      intens_list <- pbmclapply(rev(seq_along(times)),
+                                intens_func,
+                                mc.cores = cores,
+                                mc.preschedule=FALSE)
+      print(paste0("intens list ", round((proc.time()-t)[3],2)," seconds"))
+      intens_vec <- sapply(intens_list,function(x){x$result})
+      intens_funcs <- sapply(intens_list,function(x){x$func})
+    }else{
+      t1 <- proc.time()
+      intens_list <- lapply(1:length(times),intens_func)
+      intens_vec <- sapply(intens_list,function(x){x$result})
+      intens_funcs <- sapply(intens_list,function(x){x$func})
+      print(paste0("intens list took ", round((proc.time()-t1)[3],2)," seconds"))
     }
-    cores <- list(...)$cores
-    #cl <- makeForkCluster(cores)
-    t <- proc.time()
-    # intens_list <- parLapply(cl,X=1:length(times),fun = function(x){intens_func(x)})
-    intens_list <- parallel::mclapply(seq_along(times), intens_func, mc.cores = cores,mc.preschedule=FALSE)
-    print(paste0("intens list ", round((proc.time()-t)[3],2)," seconds"))
-    #stopCluster(cl)
+
   }else{
-    intens_list <- lapply(1:length(times),intens_func)
+    t1 <- proc.time()
+    intens_vec <- numeric(length(intens_funcs))
+    for (i in seq_along(intens_funcs)) intens_vec[i] <- intens_funcs[[i]](params)
+    if(verbose){
+      print(paste0("evaluating intens list with intens funcs took ", round((proc.time()-t1)[3],2)," seconds"))
+    }
   }
-  # tmp <- sapply(intens_list,function(x){x$result})
-  tmp <- unlist(intens_list)
-  
+
+  tmp <- intens_vec
   if(any(is.na(tmp))){
     tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)])/2
   }
-
-  if(sum(tmp==0)!=0){
+  
+  if(sum(tmp<=0)!=0){
     warning("some of the intens lists have zero")
-    tmp[tmp==0] <- min(tmp[tmp>0])/2
-    print(summary(tmp))
+    tmp[tmp<=0] <- min(tmp[tmp>0])/2
   }
   intens_sum <- sum(log(tmp))
 
   # Integral due to kernel being density:
-
 
   max_t <- max(times)
   pieces <- sapply(times,function(x){
@@ -418,6 +462,7 @@ loglik_hawkesGrowthNet = function(params,
   }
 
   return(list(loglik = loglik,
+              intens_funcs = intens_funcs,
               grads = grads))
 }
 
@@ -444,10 +489,11 @@ fit_hawkesGrowthNet <- function(params_init,
                                 time_window,
                                 mark_filtration,
                                 PMF_mark,
+                                maxit,
                                 trace = 0,
                                 REPORT = 10,
                                 reltol = 1e-8,
-                                maxit,
+                                parscale = NULL,
                                 get_hessian = FALSE,
                                 fixed_params = NULL,
                                 ...){
@@ -458,17 +504,16 @@ fit_hawkesGrowthNet <- function(params_init,
     }
   }
   
+  if (is.null(parscale)) {
+    flat_params <- unlist(params_init)
+    parscale <- rep(1, length(flat_params))
+  }
+  
   optim_func <- function(params,...){
     param_vec <- params
     params <- relist(params,skeleton = params_init)
     params[fixed_params] <- params_init_old[fixed_params]
     
-    # Don't think K always needs to be less than 1 ? 
-    # if(params$K>1){
-    #   return(list(value = -10**(20),
-    #               grad = NULL))
-    # }
-
     result <- loglik_hawkesGrowthNet(params = params,
                                      time_window = time_window,
                                      mark_filtration = mark_filtration,
@@ -518,6 +563,15 @@ fit_hawkesGrowthNet <- function(params_init,
     return(res$grad)
   }
   t<-proc.time()
+  
+  # pre-calculate the param -> conditonal intensity mapping
+  # since the observation never changes - not need to do expensive network processes every iteration
+  # then param -> likelihood should be very fast
+  init_lik <- loglik_hawkesGrowthNet(params = params_init_old,
+                                     time_window = time_window,
+                                     mark_filtration = mark_filtration,
+                                     PMF_mark = PMF_mark,
+                                     ...)
   fit <- optim(par = unlist(params_init),
                fn = fn_wrapper,
                # gr = gr_wrapper,
@@ -529,13 +583,15 @@ fit_hawkesGrowthNet <- function(params_init,
                               trace=trace,
                               maxit=maxit,
                               reltol = reltol,
+                              parscale = parscale,
                               abstol = NULL),
                hessian = get_hessian,
+               intens_funcs = init_lik$intens_funcs,
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
   
   # Numerically estimate Hessian at optimal params
-  # THIS IS GONNA TKE FOREVER - NEED TO CODE UP GRADIENT!
+  # THIS IS GONNA TAKE FOREVER - NEED TO CODE UP GRADIENT!
   # hessian_estimate <- numDeriv::hessian(
   #   func = function(p) {
   #     cat(sprintf("Parameters: %s\n",paste(round(p, 4), collapse = ", ")))
@@ -559,7 +615,8 @@ fit_hawkesGrowthNet <- function(params_init,
   
 
   
-  return(list(fit=fit))
+  return(list(fit=fit,
+              intens_funcs = init_lik$intens_funcs))
 }
 
 

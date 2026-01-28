@@ -4,7 +4,7 @@ library(sna)
 library(ernm)
 library(dplyr)
 library(parallel)
-# library(ergm)
+library(pbmcapply)
 
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 MAX_ITER <- 2000
@@ -168,6 +168,7 @@ dat_clean <- process_dat(net_dat,
                          head_drop = 3,
                          tail_drop = 1
                          )
+dat_clean$fit_temp$par
 # drop the first two and last isolated points:
 dat_clean$times
 # net times 
@@ -194,13 +195,15 @@ params_init <- list(mu = 500,
                    K = 1,
                    beta_edges = 0.1,
                    node_lambda = 1,
-                   CS_params = c(-5,0,0,0)
+                   CS_params = c(-10,0,0,0)
 )
 
 # note in this network the nodes do not keep arriving!
 times <- get_times(net)
 max(times$node_times)
 max(times$edge_times)
+
+# GOT TO HERE SOMETHING WRONG WITH THE LAST TIME POINT 
 
 
 if(FALSE){
@@ -228,13 +231,22 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            max_node_time = max(times$node_times),
                            grad = FALSE,
                            trace = 1,
-                           reltol = 1e-6,
+                           reltol = 1e-8,
                            verbose = FALSE,
                            get_hessian = T,
                            maxit = MAX_ITER,
                            cores = N_CORES,
                            fixed_params = c("K")
                            )
+
+# This is definitely wrong - but it is now fast enough to iterate on :) 
+
+results <- data.frame(
+  param = names(fit$fit$par),
+  estimate = fit$fit$par,
+  se = sqrt(diag(solve(-fit$fit$hessian)))
+)
+results
 
 times <- get_times(net)$times
 temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,

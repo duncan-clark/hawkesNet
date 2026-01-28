@@ -1,282 +1,174 @@
+## ============================================================
+## Power-law Hawkes (temporal) fit — KDE Background
+##   - Background: mu(t) = gamma * KDE(t)
+##   - Kernel: g(t) = (p-1) c^(p-1) / (t + c)^p 
+##   - Optimization: L-BFGS-B with native constraints
+## ============================================================
 
+## ---- Helper: Pre-compute KDE Background ----
+# Call this before fitting to get the background 'mu' vector
+compute_kde_background <- function(times, windowT, bw = "nrd0") {
+  dens <- stats::density(times, from = windowT[1], to = windowT[2], bw = bw)
+  # Interpolate to get exact density at event times
+  mu_at_events <- stats::approx(dens$x, dens$y, xout = times)$y
+  # Return both the values at events and the total integral (should be ~1)
+  list(mu_vec = mu_at_events, total_int = 1) 
+}
 
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param realiz PARAM_DESCRIPTION
-#' @param windowT PARAM_DESCRIPTION
-#' @param dists PARAM_DESCRIPTION, Default: NULL
-#' @param density_approx PARAM_DESCRIPTION, Default: TRUE
-#' @param numeric_integral PARAM_DESCRIPTION, Default: FALSE
-#' @param cl PARAM_DESCRIPTION, Default: NULL
-#' @param optimized PARAM_DESCRIPTION, Default: T
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @seealso
-#'  \code{\link[parallel]{clusterApply}}
-#' @rdname loglik_temporal_hawk
-#' @export
-#' @importFrom parallel clusterExport
-loglik_temporal_hawk = function(params,
-                                realiz,
-                                windowT,
-                                dists = NULL,
-                                density_approx = TRUE,
-                                numeric_integral= FALSE,
-                                cl = NULL,
-                                optimized = T
-){
-  tval <- windowT[2]-windowT[1]
-  max_t <- max(realiz$t)
-  if(tval < max(realiz$t) - min(realiz$t)){
-    stop("realization has points outside time window")
+hawkes_kernel_density <- function(dt, kernel = c("exp", "powerlaw"), beta = NULL, c = NULL) {
+  kernel <- match.arg(kernel)
+  out <- matrix(0, nrow = nrow(dt), ncol = ncol(dt))
+  if (kernel == "exp") {
+    if (is.null(beta) || beta <= 0) return(out)
+    out <- beta * exp(-beta * dt)
+  } else {
+    p <- beta
+    if (is.null(p) || is.null(c) || p <= 1 || c <= 0) return(out)
+    out <- (p - 1) * (c^(p - 1)) / ((dt + c)^p)
   }
-  mu<-params[1]
-  beta<-params[2]
-  K<-params[3]
+  out[dt < 0] <- 0
+  out
+}
 
-  # don't allow negative parameters
-  if(min(mu,K,beta)<0) return(-999999)
-  # don't allow explosive growth
-  if(K>.99999) return(-999999)
+hawkes_kernel_cdf <- function(u, kernel = c("exp", "powerlaw"), beta = NULL, c = NULL) {
+  kernel <- match.arg(kernel)
+  u[u < 0] <- 0
+  if (kernel == "exp") {
+    if (is.null(beta) || beta <= 0) return(rep(0, length(u)))
+    return(1 - exp(-beta * u))
+  } else {
+    p <- beta
+    if (is.null(p) || is.null(c) || p <= 1 || c <= 0) return(rep(0, length(u)))
+    return(1 - (c / (u + c))^(p - 1))
+  }
+}
 
-  # Precompute distances if not supplied:
-  if(is.null(dists)){
-    realiz <- realiz[order(realiz$t),]
+## ---- Updated Log-likelihood with KDE Background ----
+loglik_temporal_hawk <- function(params, realiz, windowT, dists = NULL,
+                                 kde_bg = NULL, kernel = c("exp", "powerlaw")) {
+  kernel <- match.arg(kernel)
+  
+  # Params: gamma (KDE scale), beta/p (decay), K (branching), [c (powerlaw)]
+  gamma <- params[1]
+  beta  <- params[2]
+  K     <- params[3]
+  c_pl  <- if (kernel == "powerlaw") params[4] else NULL
+  
+  # Native constraints for Nelder-Mead (though we'll use L-BFGS-B)
+  if (gamma < 0 || K < 0 || K >= 1) return(-1e10)
+  
+  # Intensity at event times: lambda(tj) = gamma*KDE(tj) + K * sum g(tj-ti)
+  # kde_bg$mu_vec must be pre-calculated for these exact event times
+  mu_term <- gamma * kde_bg$mu_vec
+  
+  if (is.null(dists)) {
     time_dist <- outer(realiz$t, realiz$t, "-")
-  }else{
+  } else {
     time_dist <- dists$time_dist
   }
-  exp_decay_mat <- exp(-beta * time_dist)
-  # for stability
-  exp_decay_mat[upper.tri(exp_decay_mat)] <- 0
-
-  # Adjust for areas with no background intensity
-  adjust_factor <- 1
-  if(density_approx){
-    # For intlam to work according to
-    # Facilitated estimation of ETAS. Bulletin of the Seismological Society of America, 103(1), 601-605
-    # We need \int_{xy} \mu(x,y,t) dx,dy = \mu T
-    # This means we need some rescaling of mu in later in the code
-    # that is if the window is not of area 1 the "mu" in the likelihood is rescaled below
-    # K is E # points, alpha and beta from exponential decay
-    # note that we need alpha/pi to make sure the triggering function is a density
-    mu_star <- mu
-    intlam <- adjust_factor*mu*tval + K*dim(realiz)[1]
-    const  <- K*beta
-  }else{
-    mu_star <- mu
-    intlam <- adjust_factor*mu*tval
-    const  <- K*beta
-    if(numeric_integral){
-      const  <- K*beta
-      int_func <- function(x,realiz){
-        # must take arg x, x is vector c(t,x,y)
-        t<- x[1]
-        t_diff <- t - realiz$t
-        time_dist <- t_diff
-        # cut down the dist matrices based on integral
-        result <- sum(exp(-beta * t_diff))
-        if((result==0)){
-          return(1e-10)
-        }
-        return(K*result)
-      }
-      func <- function(i){
-        max_t <- realiz$t[i]
-        min_t <- realiz$t[i-1]
-        hcubature(int_func,
-                  realiz = realiz[realiz$t==min_t,],
-                  lowerLimit = c(min_t, windowS$xrange[1], windowS$yrange[1]),
-                  upperLimit = c(max_t, windowS$xrange[2], windowS$yrange[2])
-        )$integral
-      }
-      if(!is.null(cl)){
-        # pass the func to the cluster:
-        parallel::clusterExport(cl, c("func",
-                                      "int_func",
-                                      "hcubature",
-                                      "realiz",
-                                      "x_diff",
-                                      "y_diff",
-                                      "t_diff",
-                                      "space_dist",
-                                      "time_dist"),
-                                envir = environment())
-        pieces <- parSapply(cl = cl,X = 2:dim(realiz)[1],FUN = func)
-      }else{
-        pieces <- sapply(2:dim(realiz)[1],func)
-      }
-    }else{
-      func_3 <- function(x){
-        t_comp <- (1-exp(-beta*(max_t-t)))
-        return(t_comp)
-      }
-      pieces <- func_3(realiz$t)
-    }
-    if(K!=0 & (dim(realiz)[1] !=1)){
-      intlam <- intlam + K*sum(pieces)
-    }
-  }
-  # initialize log sum:
-  sum_log <- log(mu_star)
-  lamjs <- c()
-
-  if(optimized){
-    # Then
-    gij_vec <- rowSums( # sum across columns up to j - 1
-      lower.tri(exp_decay_mat, diag = FALSE) * exp_decay_mat
-    )
-    lamjs <- mu_star + const * gij_vec
-    lamjs <- lamjs[2:length(lamjs)]
-  }else{
-    if(nrow(realiz) >= 2){
-      for (j in 2:nrow(realiz)){
-        # only points in the past can trigger the current point
-        gij <- sum(exp_decay_mat[j, 1:(j-1)])
-        lamjs[j-1] <- mu_star + const * gij
-      }
-    }else{
-      sum_log <- 0
-    }
-  }
-  # add the log lamjs in:
-  if(any(is.na(lamjs)) || any(lamjs < 0)){
-    return(-999999)
-  }else{
-    sum_log <- sum_log + sum(log(lamjs))
-  }
-  loglik <- sum_log - intlam
-  if(loglik == -Inf){
-    return(-999999)
-  }
+  
+  kern_mat <- hawkes_kernel_density(dt = time_dist, kernel = kernel, beta = beta, c = c_pl)
+  kern_mat[upper.tri(kern_mat, diag = TRUE)] <- 0
+  
+  g_sum <- rowSums(kern_mat)
+  lambdas <- mu_term + K * g_sum
+  
+  if (any(lambdas <= 0) || any(is.na(lambdas))) return(-1e10)
+  
+  # Integral term: gamma * ∫KDE + K * sum G(T-ti)
+  # Since KDE integrates to 1 over the window:
+  u <- windowT[2] - realiz$t
+  G_vals <- hawkes_kernel_cdf(u, kernel = kernel, beta = beta, c = c_pl)
+  
+  int_lam <- gamma * kde_bg$total_int + K * sum(G_vals)
+  
+  loglik <- sum(log(lambdas)) - int_lam
   return(loglik)
 }
 
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params_init PARAM_DESCRIPTION
-#' @param realiz PARAM_DESCRIPTION
-#' @param windowT PARAM_DESCRIPTION
-#' @param trace PARAM_DESCRIPTION, Default: 0
-#' @param maxit PARAM_DESCRIPTION
-#' @param ... PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @rdname fit_temporal_hawkes
-#' @export
 fit_temporal_hawkes <- function(params_init,
                                 realiz,
                                 windowT,
+                                method = "L-BFGS-B", 
+                                maxit = 200,
+                                kernel = c("exp", "powerlaw"),
                                 trace = 0,
-                                maxit,
-                                ...){
-  if(class(params_init) == "list"){params_init <- unlist(params_init)}
-  realiz <- realiz[order(realiz$t),]
-  time_dist <- outer(realiz$t, realiz$t, "-")
-  dists <- list(time_dist = time_dist)
-
-  fit <- optim(par = params_init,
-               fn = loglik_temporal_hawk,
-               method = "Nelder-Mead", # since no hessian is available
-               control = list(fnscale = -1,
-                              trace=trace,
-                              maxit=maxit),
-               realiz = realiz,
-               windowT = windowT,
-               dists = dists,
-               hessian = T,
-               ...)
-  return(fit)
+                                low = NULL,
+                                upp = NULL) {
+  kernel <- match.arg(kernel)
+  realiz <- realiz[order(realiz$t),,drop = FALSE]
+  
+  # Pre-calculate KDE background rate
+  bg <- compute_kde_background(realiz$t, windowT)
+  dists <- list(time_dist = outer(realiz$t, realiz$t, "-"))
+  
+  # --- 1. Define Default Constraints ---
+  # We define them regardless, but we only pass them to optim if using L-BFGS-B
+  default_low <- if(kernel == "exp") c(1e-5, 1e-5, 1e-5) else c(1e-5, 1.001, 1e-5, 1e-5)
+  default_upp <- if(kernel == "exp") c(Inf, Inf, 0.9999) else c(Inf, Inf, 0.9999, Inf)
+  
+  # Use user-provided bounds if they exist, otherwise use defaults
+  if(is.null(low)) low <- default_low
+  if(is.null(upp)) upp <- default_upp
+  
+  # --- 2. Handle Optimization Method ---
+  if (method == "Nelder-Mead") {
+    # Nelder-Mead ignores 'lower'/'upper' in optim().
+    # We must pass NULL to avoid warnings, and rely on the internal 
+    # 'return(-1e10)' check in the log-likelihood function to handle bounds.
+    optim_lower <- -Inf
+    optim_upper <- Inf
+  } else {
+    # L-BFGS-B uses these bounds strictly
+    optim_lower <- low
+    optim_upper <- upp
+  }
+  
+  optim(
+    par = unlist(params_init),
+    fn = loglik_temporal_hawk,
+    method = method,
+    lower = optim_lower, # Pass NULL/-Inf if Nelder-Mead
+    upper = optim_upper, # Pass NULL/Inf if Nelder-Mead
+    control = list(fnscale = -1, trace = trace, maxit = maxit),
+    realiz = realiz,
+    windowT = windowT,
+    dists = dists,
+    kde_bg = bg,
+    kernel = kernel,
+    hessian = TRUE
+  )
 }
 
-# Compensator function of spatial temporal hawkes - for RCT theorem
-# roxgen documentation
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param realiz PARAM_DESCRIPTION
-#' @param windowT PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @rdname compensator_temporal_hawkes
-#' @export
+## ---- Updated Compensator ----
 compensator_temporal_hawkes <- function(params,
                                         realiz,
-                                        windowT){
-  # make realiz
-  realiz <- realiz[order(realiz$t),]
-  # make realiz start at time 0
-  realiz$t <- realiz$t - windowT[1]
-  realiz <- realiz[realiz$t >= 0,]
-
-  # get params
-  mu<-params[1]
-  beta<-params[2]
-  K<-params[3]
-  intlam <- mu
-
-  # do analytic method:
-  t_comps <- outer(
-    X = realiz$t,
-    Y = realiz$t,
-    FUN = function(x,y){
-      (x >= y)*(1 - exp(-beta * (x - y)))
-    }
-  )
-  t_comps[is.na(t_comps)] <- 0
-  pieces <- rowSums(t_comps)
-  incremental <- realiz$t * intlam + K * pieces
-  return(incremental)
+                                        windowT,
+                                        kernel = c("exp", "powerlaw")
+                                        ) {
+  kernel <- match.arg(kernel)
+  realiz <- realiz[order(realiz$t),,drop = FALSE]
+  bg <- compute_kde_background(realiz$t, windowT)
+  
+  gamma <- params[1]; beta <- params[2]; K <- params[3]
+  c_pl <- if (kernel == "powerlaw") params[4] else NULL
+  
+  # KDE integral up to each ti (Cumulative Density Function of the KDE)
+  # We use the empirical CDF of the background here
+  dens <- stats::density(realiz$t, from = windowT[1], to = windowT[2])
+  # Integrate the KDE density numerically for the background part
+  bg_cdf_fun <- stats::approxfun(dens$x, cumsum(dens$y)/sum(dens$y))
+  bg_integral <- gamma * bg_cdf_fun(realiz$t)
+  
+  dt <- outer(realiz$t, realiz$t, "-")
+  dt[upper.tri(dt, diag = TRUE)] <- NA_real_
+  Gmat <- matrix(hawkes_kernel_cdf(as.vector(dt), kernel, beta, c_pl), nrow=nrow(realiz))
+  Gmat[is.na(Gmat)] <- 0
+  
+  incremental <- bg_integral + K * rowSums(Gmat)
+  incremental
 }
 
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param realiz PARAM_DESCRIPTION
-#' @param windowT PARAM_DESCRIPTION
-#' @param hawkes_par PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @rdname ks_test_pval_temporal
-#' @export
-ks_test_pval_temporal <- function(realiz,
-                                  windowT,
-                                  hawkes_par
-){
-  compensators <- compensator_temporal_hawkes(params = unlist(hawkes_par),
-                                              realiz = realiz,
-                                              windowT = windowT)
-  compensator_incs <- diff(compensators)
-  test_dist <- 1 - exp(-compensator_incs)
-  # hist(test_dist)
-  # print(test$p.value)
-  test <- ks.test(test_dist,"punif")
-  return(test$p.value)
-}
 
 #' @title Simulate a univariate Hawkes process (branching structure)
 #'
@@ -359,3 +251,197 @@ simulate_hawkes_branching <- function(mu, K, beta, T, seed = NULL) {
   return(events)
 }
 
+
+if(FALSE){
+
+  library(ggplot2)
+  library(dplyr)
+  library(tidyr)
+  
+  # =========================================================================
+  # 1. GENERAL SIMULATOR (EXP & POWER-LAW)
+  # =========================================================================
+  # This replaces the specific 'simulate_hawkes_branching' to handle both kernels
+  simulate_hawkes_general <- function(kernel = c("exp", "powerlaw"), 
+                                      mu, K, 
+                                      beta = NULL,      # For Exp
+                                      p = NULL, c = NULL, # For Power Law
+                                      T_max, seed = NULL) {
+    
+    if (!is.null(seed)) set.seed(seed)
+    kernel <- match.arg(kernel)
+    
+    # 1. Background Events (Poisson Process)
+    # Expected N = mu * T_max
+    N0 <- rpois(1, lambda = mu * T_max)
+    if (N0 > 0) {
+      events <- sort(runif(N0, min = 0, max = T_max))
+    } else {
+      events <- numeric(0)
+    }
+    
+    # 2. Branching Loop
+    i <- 1
+    while (i <= length(events)) {
+      parent_time <- events[i]
+      # Number of children ~ Poisson(K)
+      num_children <- rpois(1, K)
+      
+      if (num_children > 0) {
+        if (kernel == "exp") {
+          # Exponential waiting time: Exp(beta)
+          offsets <- rexp(num_children, rate = beta)
+        } else {
+          # Power Law waiting time: Inverse CDF of Lomax
+          # u ~ U(0,1) -> dt = c * ((1-u)^(-1/(p-1)) - 1)
+          u <- runif(num_children)
+          offsets <- c * ((1 - u)^(-1 / (p - 1)) - 1)
+        }
+        
+        child_times <- parent_time + offsets
+        child_times <- child_times[child_times <= T_max]
+        
+        if (length(child_times) > 0) {
+          events <- c(events, child_times)
+        }
+      }
+      i <- i + 1
+    }
+    
+    return(sort(events))
+  }
+  
+  # =========================================================================
+  # 2. SIMULATION STUDY A: EXPONENTIAL KERNEL
+  # =========================================================================
+  
+  # --- Config A ---
+  N_REPS_EXP <- 100
+  T_WIN      <- 1000
+  TRUE_MU    <- 0.2
+  TRUE_K     <- 0.5
+  TRUE_BETA  <- 1.5
+  TRUE_GAMMA <- TRUE_MU * T_WIN # Expected background integral
+  
+  results_exp <- list()
+  
+  cat(sprintf("\n--- STARTING STUDY A: EXPONENTIAL (%d Reps) ---\n", N_REPS_EXP))
+  pb <- txtProgressBar(min = 0, max = N_REPS_EXP, style = 3)
+  
+  for(i in 1:N_REPS_EXP) {
+    # 1. Simulate Exp Data
+    times <- simulate_hawkes_general("exp", mu=TRUE_MU, K=TRUE_K, beta=TRUE_BETA, T_max=T_WIN)
+    
+    if(length(times) > 20) {
+      # 2. Fit Exp Model
+      try({
+        fit <- fit_temporal_hawkes(
+          params_init = list(gamma = length(times)/2, beta = 1.0, K = 0.2),
+          realiz = data.frame(t = times),
+          windowT = c(0, T_WIN),
+          kernel = "exp",
+          trace = 0
+        )
+        
+        results_exp[[length(results_exp)+1]] <- data.frame(
+          Rep = i,
+          Gamma = fit$par[1],
+          Beta = fit$par[2], 
+          K = fit$par[3]
+        )
+      }, silent=TRUE)
+    }
+    setTxtProgressBar(pb, i)
+  }
+  close(pb)
+  
+  # --- Plot A: Exponential Recovery ---
+  df_exp <- do.call(rbind, results_exp) %>%
+    pivot_longer(cols = c(Gamma, Beta, K), names_to = "Parameter", values_to = "Estimate")
+  
+  truth_exp <- data.frame(
+    Parameter = c("Gamma", "Beta", "K"),
+    Value     = c(TRUE_GAMMA, TRUE_BETA, TRUE_K)
+  )
+  
+  plot_a <- ggplot(df_exp, aes(x = "Exp Fit", y = Estimate)) +
+    geom_boxplot(fill = "#00BFC4", alpha = 0.6, outlier.shape = 21) +
+    geom_hline(data = truth_exp, aes(yintercept = Value), 
+               color = "red", linetype = "dashed", size = 1) +
+    facet_wrap(~Parameter, scales = "free_y") +
+    theme_bw() +
+    labs(
+      title = "Study A: Parameter Recovery (Exponential Kernel)",
+      subtitle = "Simulated Exp -> Fitted Exp (100 Reps)",
+      y = "MLE Estimate", x = ""
+    )
+  
+  print(plot_a)
+  
+  
+  # =========================================================================
+  # 3. SIMULATION STUDY B: POWER-LAW KERNEL
+  # =========================================================================
+  
+  # --- Config B ---
+  N_REPS_PL <- 100
+  TRUE_P    <- 2.5
+  TRUE_C    <- 0.5
+  # (Mu and K stay the same as above)
+  
+  results_pl <- list()
+  
+  cat(sprintf("\n\n--- STARTING STUDY B: POWER-LAW (%d Reps) ---\n", N_REPS_PL))
+  pb <- txtProgressBar(min = 0, max = N_REPS_PL, style = 3)
+  
+  for(i in 1:N_REPS_PL) {
+    # 1. Simulate Power-Law Data
+    times <- simulate_hawkes_general("powerlaw", mu=TRUE_MU, K=TRUE_K, p=TRUE_P, c=TRUE_C, T_max=T_WIN)
+    
+    if(length(times) > 20) {
+      # 2. Fit Power-Law Model
+      try({
+        fit <- fit_temporal_hawkes(
+          params_init = list(gamma = length(times)/2, p = 2.0, K = 0.2, c = 0.1),
+          realiz = data.frame(t = times),
+          windowT = c(0, T_WIN),
+          kernel = "powerlaw",
+          trace = 0
+        )
+        
+        results_pl[[length(results_pl)+1]] <- data.frame(
+          Rep = i,
+          Gamma = fit$par[1],
+          P = fit$par[2], 
+          K = fit$par[3],
+          C = fit$par[4]
+        )
+      }, silent=TRUE)
+    }
+    setTxtProgressBar(pb, i)
+  }
+  close(pb)
+  
+  # --- Plot B: Power-Law Recovery ---
+  df_pl <- do.call(rbind, results_pl) %>%
+    pivot_longer(cols = c(Gamma, P, K, C), names_to = "Parameter", values_to = "Estimate")
+  
+  truth_pl <- data.frame(
+    Parameter = c("Gamma", "P", "K", "C"),
+    Value     = c(TRUE_GAMMA, TRUE_P, TRUE_K, TRUE_C)
+  )
+  
+  plot_b <- ggplot(df_pl, aes(x = "PowerLaw Fit", y = Estimate)) +
+    geom_boxplot(fill = "#F8766D", alpha = 0.6, outlier.shape = 21) +
+    geom_hline(data = truth_pl, aes(yintercept = Value), 
+               color = "red", linetype = "dashed", size = 1) +
+    facet_wrap(~Parameter, scales = "free_y", nrow = 1) +
+    theme_bw() +
+    labs(
+      title = "Study B: Parameter Recovery (Power-Law Kernel)",
+      subtitle = "Simulated PowerLaw -> Fitted PowerLaw (100 Reps)",
+      y = "MLE Estimate", x = ""
+    )
+  
+  print(plot_b)
+}
