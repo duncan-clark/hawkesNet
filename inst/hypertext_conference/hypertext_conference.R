@@ -7,7 +7,7 @@ library(parallel)
 library(pbmcapply)
 
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
-MAX_ITER <- 2000
+MAX_ITER <- 500
 
 # function to plot pp on line:
 pp_line_plot <- function(t,title= NULL){
@@ -180,6 +180,8 @@ pp_line_plot(dat_clean$times)
 # all times:
 pp_line_plot(c(dat_clean$edges$time,dat_clean$times))
 
+#
+plot_kde_intensity(get_times(dat_clean$net)$times)
 
 net <- dat_clean$net
 # check network times
@@ -187,7 +189,7 @@ hist(dat_clean$times,breaks = 100)
 TRUNCATION <- net %n% 'n'
 
 # turns out initial param matter quite a bit:
-# if nodes form in [0,0.1] mu = 100 we expecet 10 events -> need node_lambda = 10
+# if nodes form in [0,0.1] mu = 100 we expect 10 events -> need node_lambda = 10
 # but this will never work almost all nodes are added as singletons 
 # need mu ~1000, node_lambda ~ 1
 params_init <- list(mu = 500,
@@ -195,16 +197,13 @@ params_init <- list(mu = 500,
                    K = 1,
                    beta_edges = 0.1,
                    node_lambda = 1,
-                   CS_params = c(-10,0,0,0)
+                   CS_params = c(-6,0,0,0)
 )
 
 # note in this network the nodes do not keep arriving!
 times <- get_times(net)
 max(times$node_times)
 max(times$edge_times)
-
-# GOT TO HERE SOMETHING WRONG WITH THE LAST TIME POINT 
-
 
 if(FALSE){
   init_lik <- loglik_hawkesGrowthNet(params = params_init,
@@ -236,7 +235,7 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            get_hessian = T,
                            maxit = MAX_ITER,
                            cores = N_CORES,
-                           fixed_params = c("K")
+                           fixed_params = c("K","mu")
                            )
 
 # This is definitely wrong - but it is now fast enough to iterate on :) 
@@ -247,6 +246,11 @@ results <- data.frame(
   se = sqrt(diag(solve(-fit$fit$hessian)))
 )
 results
+
+# 1. Get the negative Hessian
+H <- -fit$fit$hessian
+eigen_H <- eigen(H)
+print(eigen_H$values)
 
 times <- get_times(net)$times
 temp_fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,

@@ -4,7 +4,7 @@
 \alias{get_times}
 \title{FUNCTION_TITLE}
 \usage{
-get_times(net)
+get_times(net, time_name = "time")
 }
 \arguments{
 \item{net}{PARAM_DESCRIPTION}

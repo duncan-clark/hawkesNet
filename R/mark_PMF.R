@@ -223,7 +223,7 @@ PMF_mark_CS <- function(time,
   last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
   new_net <- last_net
   if(is.null(max_node_time)){
-    max_node_time <- max(get.vertex.attribute(mark_filtration, "time"))
+    max_node_time <- Inf
   }
   
   if(last_net %n% 'n' != 0){

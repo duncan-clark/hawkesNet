@@ -23,8 +23,8 @@ params <- list(mu = 10,
                K = 0.5,
                beta_edges = 0.5,
                node_lambda = 1,
-               CS_params = c(-4,0.5,-0.5,0.1)
-               #CS_params = c(-6,0.5,0.3,-0.1)
+               #CS_params = c(-4,0.5,-0.5,0.1)
+               CS_params = c(-6,0.5,0.3,-0.1)
                )
 TRUNCATION  = 50
 INVESTIGATE = F
@@ -37,18 +37,6 @@ N_SIMS <- 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
 
 SEED <- 01267
-
-tmp <- sim_hawkesGrowthNet(params =  params,
-                           time_window = c(0,TIME),
-                           PMF_mark = PMF_mark_CS,
-                           cond_intensity = cond_intensity,
-                           hashed_edges = T,
-                           verbose = F,
-                           mu_multiplier = 3,
-                           joint_accept = F,
-                           truncation = TRUNCATION,
-                           formula_RHS = "edges  + triangles() + star(c(2,3))"
-                           )
 
 make_cluster <- function(N_CORES){
   # setup the cluster:
@@ -108,7 +96,7 @@ if(SIMULATE){
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
       message("Error in sim_hawkesGrowthNet: ", e$message)
-      return(NULL)
+      return(e)
     })
     return(results)
   })
