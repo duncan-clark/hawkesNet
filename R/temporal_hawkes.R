@@ -169,6 +169,30 @@ compensator_temporal_hawkes <- function(params,
   incremental
 }
 
+# Some documentaton:
+#' @description
+#' @param realiz list with elements, n,lon,lat,t
+#' @param windowT vector with elements, start,end
+#' @param windowS os.win
+#' @param hawkes_par list with elements,   mu,alpha,beta,K
+#' @param zero_background_region os.win
+ks_test_pval <- function(realiz,
+                         windowT,
+                         hawkes_par,
+                         kernel = c("exp", "powerlaw")
+                         ){
+  compensators <- compensator_temporal_hawkes(
+                                     params = unlist(hawkes_par),
+                                     realiz = realiz,
+                                     windowT = windowT,
+                                     kernel = kernel
+                                     )
+  compensator_incs <- diff(compensators)
+  test_dist <- 1 - exp(-compensator_incs)
+  test <- ks.test(test_dist,"punif")
+  return(test$p.value)
+}
+
 
 #' @title Simulate a univariate Hawkes process (branching structure)
 #'

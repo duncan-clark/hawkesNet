@@ -260,7 +260,12 @@ sim_hawkesGrowthNet <- function(params,
     accept_probs <- c(accept_probs,accept)
 
     # if we accept the point add it in
-    if(verbose){print(paste0("accept prob is: ",accept))}
+    if(verbose){
+      print(paste0("Number of edges proposed is ",length(net$mel)))
+      print(paste0("Number of nodes proposed is ",length(net$oel)))
+      print(paste0("accept prob is: ",accept))
+      
+      }
     if(runif(1) < accept){
       if(verbose){
         print('accepted!')
@@ -384,6 +389,7 @@ loglik_hawkesGrowthNet = function(params,
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
     }else{
+      browser()
       t1 <- proc.time()
       intens_list <- lapply(1:length(times),intens_func)
       intens_vec <- sapply(intens_list,function(x){x$result})

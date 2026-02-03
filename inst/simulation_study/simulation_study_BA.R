@@ -17,13 +17,13 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 100
+TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
-               K = 0.5,
-               beta_edges = 0.5
+               K = 1,
+               beta_edges = 1
 )
-TRUNCATION  = 1000
+TRUNCATION  = 100
 INVESTIGATE = F
 SIMULATE = T
 PAPER_OUTPUT = FALSE
@@ -97,6 +97,8 @@ if(SIMULATE){
     })
     return(results)
   })
+  print("Simulation took:")
+  print(proc.time()-t)
   
   # only keep non null sims:
   sims <- sims[sapply(sims,length)!=0]
@@ -108,6 +110,7 @@ if(SIMULATE){
                       beta_edges = 0.1
                       )
   clusterExport(cl, c("params_init"))
+  t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
       fit_hawkesGrowthNet(
@@ -128,6 +131,8 @@ if(SIMULATE){
     })
     return(fit)
   })
+  print("Fitting took:")
+  print(proc.time()-t1)
   # Save the fits and final network for analysis:
   temp_hawkes_fits <- lapply(sims,function(x){
     fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
@@ -271,6 +276,14 @@ if(INVESTIGATE){
   )
   print("Simulation took:")
   print(proc.time()-t)
+  
+  ernm::calculateStatistics(results$net ~ degree(0:15))
+  ernm::calculateStatistics(results$net ~ esp(0:15))
+  
+  degs <- degree(results$net)
+  mean(degs)
+  
+  plot(results$net)
   
   if(DEBUG){
     # ==================================

@@ -37,6 +37,7 @@ PMF_mark_BA <- function(time,
   last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
   new_net <- last_net
   
+
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
@@ -49,7 +50,7 @@ PMF_mark_BA <- function(time,
     old_nodes <- 0
     new_nodes <- 1
   }
-  
+
   # get the possible edges for the given truncation:
   # if no nodes have been added then :
   poss_tails <- ((old_nodes+1) : new_nodes)
@@ -99,7 +100,7 @@ PMF_mark_BA <- function(time,
     log_mark_density <- 0
     mark_density <- 1
   }
-  
+
   if(generate_mark){
     if(!is.null(last_net) && (last_net %n% 'n') > 2){
       mark_sample <- last_net
@@ -154,6 +155,9 @@ PMF_mark_BA <- function(time,
       }
       times <- mark_sample %v% 'time'
       mark_sample <- network::add.vertices(mark_sample,1)
+      if(mark_sample %n% 'n' == 2){
+        network::add.edges(mark_sample, 2, 1) # Force the first edge to create a seed
+      }
       set.vertex.attribute(mark_sample,"time",c(times,time))
       mark_sample_density <- 1
       log_mark_sample_density <- 0
@@ -251,7 +255,7 @@ PMF_mark_CS <- function(time,
   heads <- poss_edges[,2]
 
   # only consider edges that were not already in the old network
-  if(!is.null(last_net)){
+  if(!is.null(last_net) & length(heads)!=0){
     in_old_net <- sapply(1:length(heads),function(i){
       length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
     })
@@ -259,14 +263,8 @@ PMF_mark_CS <- function(time,
     heads <- heads[!in_old_net]
   }
 
-  # =============
-  # mark density
-  # =============
-  
-  # NEED TO MAKE THIS NOT A FUNCTION AGAIN !
-  # +++++++++++++  
   if(!is.null(last_net) & generate_density){
-    if(last_net %n% 'n' > 2){
+    if(last_net %n% 'n' > 0){
       # if new net has less than 4 nodes add some:
       if(new_net %n% 'n' < 4){
         old_new_net <- new_net
@@ -304,6 +302,11 @@ PMF_mark_CS <- function(time,
       diffs <- time - node_times[heads]
       factor <- exp(-params$beta_edges*(diffs))
       probs <- probs * factor
+      
+      if(length(probs)==0){
+        in_mark <- logical(0)
+        probs <- NULL
+      }
       
     }else{
       change_stats <- matrix(0, nrow = 0, ncol = length(params$CS_params))

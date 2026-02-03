@@ -154,9 +154,8 @@ filtration_to_net <- function(net,
   if(!equals){
     e_times <- get.edge.attribute(net,"time")
     n_times <- get.vertex.attribute(net,"time")
-    t_to_delete <- max(c(e_times, n_times))
-    delete.edges(net,which(e_times == t_to_delete))
-    delete.vertices(net,which(n_times == t_to_delete))
+    delete.edges(net,which(e_times == t))
+    delete.vertices(net,which(n_times == t))
   }
   # no need for vertex names
   delete.vertex.attribute(net,'vertex.names')
@@ -557,3 +556,5 @@ ks_test_pval <- function(realiz,
   hist(test_dist)
   return(test$p.value)
 }
+
+ks_test_pval_temporal <- ks_test_pval

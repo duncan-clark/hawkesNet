@@ -20,21 +20,20 @@ library(hawkesGrowthNet)
 TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
-               K = 0.5,
-               beta_edges = 0.5,
+               K = 1,
+               beta_edges = 1,
                node_lambda = 1,
-               #CS_params = c(-4,0.5,-0.5,0.1)
-               CS_params = c(-6,0.5,0.3,-0.1)
+               CS_params = c(-7,2,0.2,-0.1)
                )
-TRUNCATION  = 50
-INVESTIGATE = F
-SIMULATE = T
-PAPER_OUTPUT = FALSE
+TRUNCATION  = 100
+INVESTIGATE = FALSE
+SIMULATE = TRUE
+PAPER_OUTPUT = TRUE
 DEBUG = FALSE
 MAX_ITER = 2000
 
 N_SIMS <- 100
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 16))
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
 
@@ -81,6 +80,7 @@ if(SIMULATE){
     }
   }, add = TRUE)
 
+  print("Commencing simulation:")
   sims <- parLapply(cl=cl,1:N_SIMS,function(x){
     results <- tryCatch({
       sim_hawkesGrowthNet(params =  params,
@@ -108,13 +108,14 @@ if(SIMULATE){
   
   fits <- NULL
   params_init <- list(mu = 10,
-                      beta_overall = 0.1,
-                      K = 0.5,
-                      beta_edges = 0.1,
+                      beta_overall = 1,
+                      K = 1,
+                      beta_edges = 1,
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
   clusterExport(cl, c("params_init"))
+  print("Commencing Fitting")
   t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
@@ -128,12 +129,13 @@ if(SIMULATE){
         trace = 0,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        get_hessian =TRUE
+        get_hessian = TRUE,
+        fixed_params = c("K")
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
       message("Error in fit_hawkesGrowthNet: ", e$message)
-      return(NULL)
+      return(e$message)
     })
     return(fit)
   })
@@ -160,12 +162,12 @@ if(SIMULATE){
           file = "results_CS.RDS")
   stopCluster(cl)
   print("Simulating and fitting took:")
-  print((t - proc.time())[3])
+  print(proc.time()-t)
 }
 
 if(PAPER_OUTPUT){
   
-  load("results_CS.RDS")
+  results_CS <- readRDS("results_CS.RDS")
   sims <- results_CS$sims
   fits <- results_CS$fits
   temp_hawkes_fits <- results_CS$temp_hawkes_fits
@@ -212,25 +214,40 @@ if(PAPER_OUTPUT){
          y = "Value")+
     theme_minimal()
   esp_plot
+  
+  # mean degree :
+  mean_degs <- sapply(sims,function(s){
+    mean(degree(s$net,gmode = "graph"))
+  })
+  mean_deg_df <- data.frame(mean_deg = mean_degs)
+  hist(mean_deg_df$mean_deg,
+       main = "Histogram of Mean Degrees",
+       xlab = "Mean Degree",
+       breaks = 10)
+  vlines <- mean(mean_deg_df$mean_deg)
+  abline(v = vlines, col = "red", lwd = 2)
 
   # ==========================
   # RESULTS TABLE
   # ==========================
   # get mean and sd of parameters from fits:
-  keep <- which(sapply(fits,length)!=0)
+  keep <- which(sapply(fits,function(x){length(x)!=0 & x$fit$convergence==0 & !any(x$fit$par > 100)}))
   paste0("keeping ",length(keep), " of ", N_SIMS," fits")
-  sapply(fits,function(x){x$fit$convergence==1})
-  # check if any converged:
 
   estims <- do.call(rbind,lapply(fits[keep],function(x){
     return(as.data.frame(t(x$fit$par),names = names(x$fit$par)))
   }))
+  
+  params_vec <- unlist(params)
+  params_vec <- params_vec[names(params_vec) %in% colnames(estims)]
+  params_init_vec <- unlist(params_init)
+  params_init_vec <- params_init_vec[names(params_init_vec) %in% colnames(estims)]
+  
 
   results <- data.frame(mean = colMeans(estims),
                         sd = apply(estims,2,sd),
-                        true = unlist(params),
-                        init = unlist(params_init)
-  )
+                        true = params_vec,
+                        init = params_init_vec)
   print(results)
 
   # ==========================
@@ -253,16 +270,13 @@ if(PAPER_OUTPUT){
   })
 
   temp_p_vals <- mapply(sims,temp_hawkes_fits,FUN = function(x,y){
-    ks_test_pval_temporal(realiz = data.frame(t = x$events$t,
+    ks_test_pval(realiz = data.frame(t = x$events$t,
                                               n = rep(x$events$n,length(x$events$t))),
                           windowT = c(0,TIME),
                           hawkes_par = y$par
 
     )
   })
-
-  # need to investigate this! - expect higher pvals for true model
-  # LOOK INTO PARAMETIZATION OF K !
   mean(marked_p_vals)
   mean(temp_p_vals)
 }
@@ -285,6 +299,11 @@ if(INVESTIGATE){
   
   ernm::calculateStatistics(results$net ~ degree(0:15))
   ernm::calculateStatistics(results$net ~ esp(0:15))
+  
+  degs <- degree(results$net)
+  mean(degs)
+  
+  plot(results$net)
 
 if(DEBUG){
   # ==================================
@@ -324,7 +343,6 @@ if(DEBUG){
   esps <- ernm::calculateStatistics(results$net ~ esp(0:10))
   print(esps)
   plot(esps)
-  
 
 
 # K
