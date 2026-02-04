@@ -17,16 +17,21 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
+INVESTIGATE = FALSE
+SIMULATE = TRUE
+PAPER_OUTPUT = TRUE
+RUN_EXPLOSIVE <- TRUE
+RUN_CONSISTENCY <- TRUE
+
 TIME <- 10
 params <- list(mu = 10,
-               beta_overall = 2,
-               K = 1,
+               beta_overall = 1,
+               K = 0.5,
                beta_edges = 1
 )
 TRUNCATION  = 100
-INVESTIGATE = F
-SIMULATE = T
-PAPER_OUTPUT = FALSE
+
+
 DEBUG = FALSE
 MAX_ITER = 2000
 
@@ -104,10 +109,10 @@ if(SIMULATE){
   sims <- sims[sapply(sims,length)!=0]
   
   fits <- NULL
-  params_init <- list(mu = 10,
+  params_init <- list(mu = 0.1,
                       beta_overall = 0.1,
-                      K = 0.1,
-                      beta_edges = 0.1
+                      beta_edges = 0.1,
+                      K = params$K
                       )
   clusterExport(cl, c("params_init"))
   t1 <- proc.time()
@@ -120,14 +125,15 @@ if(SIMULATE){
         PMF_mark = PMF_mark_BA,
         grad = FALSE,
         trace = 0,
-        maxit =MAX_ITER,
+        maxit = MAX_ITER,
         truncation = TRUNCATION,
-        get_hessian = TRUE
+        get_hessian = TRUE,
+        fixed_params = c("K")
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
       message("Error in fit_hawkesGrowthNet: ", e$message)
-      return(NULL)
+      return(e$message)
     })
     return(fit)
   })
@@ -160,10 +166,10 @@ if(SIMULATE){
 
 if(PAPER_OUTPUT){
   
-  load("results_BA.RDS")
-  sims <- results_CS$sims
-  fits <- results_CS$fits
-  temp_hawkes_fits <- results_CS$temp_hawkes_fits
+  results_BA <- readRDS("results_BA.RDS")
+  sims <- results_BA$sims
+  fits <- results_BA$fits
+  temp_hawkes_fits <- results_BA$temp_hawkes_fits
   
   # ==========================
   # Network Descriptive Stats
@@ -208,25 +214,41 @@ if(PAPER_OUTPUT){
     theme_minimal()
   esp_plot
   
+  # mean degree :
+  mean_degs <- sapply(sims,function(s){
+    mean(degree(s$net,gmode = "graph"))
+  })
+  mean_deg_df <- data.frame(mean_deg = mean_degs)
+  hist(mean_deg_df$mean_deg,
+       main = "Histogram of Mean Degrees",
+       xlab = "Mean Degree",
+       breaks = 10)
+  vlines <- mean(mean_deg_df$mean_deg)
+  abline(v = vlines, col = "red", lwd = 2)
+  
   # ==========================
   # RESULTS TABLE
   # ==========================
   # get mean and sd of parameters from fits:
-  keep <- which(sapply(fits,length)!=0)
+  keep <- which(sapply(fits,function(x){length(x)!=0 & x$fit$convergence==0 & !any(x$fit$par > 100) & !any(x$fit$par[2] >10)}))
   paste0("keeping ",length(keep), " of ", N_SIMS," fits")
-  sapply(fits,function(x){x$convergence==1})
-  # check if any converged:
   
   estims <- do.call(rbind,lapply(fits[keep],function(x){
     return(as.data.frame(t(x$fit$par),names = names(x$fit$par)))
   }))
   
+  params_vec <- unlist(params)
+  params_vec <- params_vec[names(params_vec) %in% colnames(estims)]
+  params_init_vec <- unlist(params_init)
+  params_init_vec <- params_init_vec[names(params_init_vec) %in% colnames(estims)]
+  
+  
   results <- data.frame(mean = colMeans(estims),
                         sd = apply(estims,2,sd),
-                        true = unlist(params),
-                        init = unlist(params_init)
-  )
+                        true = params_vec,
+                        init = params_init_vec)
   print(results)
+  estims
   
   # ==========================
   # KS TEST Table
@@ -496,4 +518,235 @@ if(INVESTIGATE){
                                               time_window = c(0,TIME))
   
   
+}
+
+
+
+# ==============================================================================
+# STUDY 1: Consistency Analysis (Sliding Window / Increasing T)
+# ==============================================================================
+# Goal: Show that as TIME increases, the variance of estimates decreases and 
+# means converge to truth.
+# ==============================================================================
+
+if(RUN_CONSISTENCY){
+  
+  # 1. Define Time Windows to test
+  # We will simulate independent realizations of length T = 10, 30, 50, 100
+  time_windows <- c(5, 10, 20, 50) 
+  N_SIMS_CONSISTENCY <- 20 # Keep small for demonstration, increase for paper
+  
+  # Parameters (Standard/Stable regime)
+  params_true <- list(mu = 5, beta_overall = 1.0, K = 0.5, beta_edges = 1.0)
+  
+  # Setup Cluster
+  cl <- make_cluster(N_CORES)
+  clusterExport(cl, c("params_true", "PMF_mark_BA", "cond_intensity", 
+                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet"))
+  
+  # Storage for results
+  consistency_results <- data.frame()
+  
+  print("Starting Consistency Study...")
+  
+  for(curr_time in time_windows){
+    print(paste0("Simulating and Fitting for Time Window T = ", curr_time))
+    
+    # Export current time to cluster
+    clusterExport(cl, "curr_time", envir = environment())
+    
+    # Parallel Simulation & Fitting Loop
+    res_list <- parLapply(cl, 1:N_SIMS_CONSISTENCY, function(i){
+      
+      # A. Simulate
+      sim_res <- tryCatch({
+        sim_hawkesGrowthNet(params = params_true,
+                            time_window = c(0, curr_time),
+                            PMF_mark = PMF_mark_BA,
+                            cond_intensity = cond_intensity,
+                            hashed_edges = TRUE,
+                            mu_multiplier = 3,
+                            verbose = FALSE)
+      }, error = function(e) return(NULL))
+      
+      if(is.null(sim_res)) return(NULL)
+      
+      # B. Fit
+      # Randomized init to test robustness
+      params_init <- list(mu = runif(1, 1, 10), 
+                          beta_overall = runif(1, 0.5, 2),
+                          K = runif(1, 0.1, 0.9), 
+                          beta_edges = runif(1, 0.5, 2))
+      
+      fit_res <- tryCatch({
+        fit_hawkesGrowthNet(params_init = params_init,
+                            time_window = c(0, curr_time),
+                            mark_filtration = sim_res$net,
+                            PMF_mark = PMF_mark_BA,
+                            maxit = 1000,
+                            grad = FALSE, 
+                            cache_intensity = FALSE, # Disable cache for BA safety
+                            verbose = FALSE)
+      }, error = function(e) return(NULL))
+      
+      if(is.null(fit_res)) return(NULL)
+      
+      # Return row
+      return(data.frame(
+        sim_id = i,
+        time_window = curr_time,
+        param = names(fit_res$fit$par),
+        estimate = as.numeric(fit_res$fit$par),
+        true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
+      ))
+    })
+    
+    # Bind results
+    res_df <- do.call(rbind, res_list)
+    consistency_results <- rbind(consistency_results, res_df)
+  }
+  
+  stopCluster(cl)
+  
+  # ==========================
+  # Visualization
+  # ==========================
+  # Calculate Bias and RMSE
+  summary_stats <- consistency_results %>%
+    group_by(time_window, param) %>%
+    summarise(
+      mean_est = mean(estimate),
+      sd_est = sd(estimate),
+      rmse = sqrt(mean((estimate - true_value)^2)),
+      true_val = mean(true_value)
+    )
+  
+  print(summary_stats)
+  
+  # Plot 1: Boxplots of convergence
+  p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.5, fill="lightblue") +
+    geom_jitter(width=0.2, alpha=0.3) +
+    geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size=1) +
+    facet_wrap(~param, scales = "free_y") +
+    labs(title = "Parameter Consistency vs Time Window (T)",
+         subtitle = "Red dashed line indicates true parameter value",
+         x = "Time Window Length (T)",
+         y = "Parameter Estimate") +
+    theme_minimal()
+  
+  print(p_cons)
+  
+  # Plot 2: RMSE decay (The "Getting Better" plot)
+  p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    facet_wrap(~param, scales = "free_y") +
+    labs(title = "RMSE Decay as Data Increases",
+         x = "Time Window Length (T)",
+         y = "Root Mean Squared Error") +
+    theme_bw()
+  
+  print(p_rmse)
+}
+
+# ==============================================================================
+# STUDY 2: Explosive Regime Analysis
+# ==============================================================================
+# Goal: Set beta_overall and beta_edges -> 0.
+# 1. beta_overall -> 0 means the memory of the process never decays. 
+#    If K > 0, the integral of intensity diverges (Explosive / Super-critical).
+# 2. beta_edges -> 0 means the preferential attachment logic considers ALL past
+#    nodes equally (no time decay on degree relevance).
+# ==============================================================================
+
+if(RUN_EXPLOSIVE){
+  
+  # Define Explosive Parameters
+  # Low beta with K close to beta (or K > beta) causes criticality/explosion
+  params_explosive <- list(
+    mu = 2,
+    beta_overall = 0.05, # Very slow decay (Long memory)
+    K = 0.1,             # Branching ratio n* = K/beta = 2 (Super-critical > 1)
+    beta_edges = 0.01    # Degrees from ancient history define attachment just as much as recent
+  )
+  
+  # Compare with Stable Parameters
+  params_stable <- list(
+    mu = 2,
+    beta_overall = 2.0,
+    K = 0.5,             # Branching ratio n* = 0.25 (Sub-critical < 1)
+    beta_edges = 1.0
+  )
+  
+  print("Simulating Explosive Regime...")
+  
+  # Simulate Explosive
+  # Note: simulation might get very slow as N grows, use small window
+  sim_exp <- sim_hawkesGrowthNet(params = params_explosive,
+                                 time_window = c(0, 50), # Longer window to show curve
+                                 PMF_mark = PMF_mark_BA,
+                                 cond_intensity = cond_intensity,
+                                 hashed_edges = TRUE,
+                                 verbose = TRUE, # Watch it grow
+                                 mu_multiplier = 10) # Need high bound for explosive
+  
+  print("Simulating Stable Regime...")
+  sim_stable <- sim_hawkesGrowthNet(params = params_stable,
+                                    time_window = c(0, 50),
+                                    PMF_mark = PMF_mark_BA,
+                                    cond_intensity = cond_intensity,
+                                    hashed_edges = TRUE,
+                                    verbose = FALSE,
+                                    mu_multiplier = 5)
+  
+  # ==========================
+  # Visualization: Cumulative Events
+  # ==========================
+  df_exp <- data.frame(t = sim_exp$events$t, 
+                       N = 1:length(sim_exp$events$t), 
+                       Type = "Explosive (Low Beta)")
+  
+  df_stable <- data.frame(t = sim_stable$events$t, 
+                          N = 1:length(sim_stable$events$t), 
+                          Type = "Stable (High Beta)")
+  
+  df_compare <- rbind(df_exp, df_stable)
+  
+  p_expl <- ggplot(df_compare, aes(x = t, y = N, color = Type)) +
+    geom_line(size = 1.2) +
+    labs(title = "Explosive vs Stable Process Dynamics",
+         subtitle = "Explosive: Beta -> 0 (Infinite Memory) | Stable: Beta >> 0",
+         x = "Time",
+         y = "Cumulative Number of Events (N)") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  print(p_expl)
+  
+  # ==========================
+  # Visualization: Network Structure Impact
+  # ==========================
+  # When beta_edges is low, ancient nodes (the first ones) accumulate massive degree
+  # because their 'weight' never decays. This creates "Super Hubs" (Star-like).
+  
+  op <- par(mfrow=c(1,2))
+  
+  # Plot Stable Network
+  plot(sim_stable$net, main="Stable Network\n(Recent Activity Matters)", 
+       vertex.cex = 0.5, edge.col="gray")
+  
+  # Plot Explosive Network
+  # We expect the oldest nodes (ID 1, 2, 3) to have disproportionately high degree
+  plot(sim_exp$net, main="Explosive/Memory Network\n(History Never Dies)", 
+       vertex.cex = 0.5, edge.col="gray")
+  
+  par(op)
+  
+  # Check max degree
+  max_deg_stable <- max(degree(sim_stable$net))
+  max_deg_exp <- max(degree(sim_exp$net))
+  
+  print(paste("Max Degree Stable:", max_deg_stable))
+  print(paste("Max Degree Explosive:", max_deg_exp))
 }

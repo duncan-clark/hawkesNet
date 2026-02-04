@@ -27,7 +27,6 @@ cond_intensity <- function(new_net,
                            new_edge_hash = NULL,
                            times = NULL,
                            ...) {
-  
   tmp <- PMF_mark(time = t,
                   params = params,
                   mark_filtration = mark_filtration,
@@ -35,7 +34,6 @@ cond_intensity <- function(new_net,
                   generate_mark = FALSE,
                   new_edge_hash = new_edge_hash,
                   ...)
-  
   if (is.null(times)) times <- get_times(mark_filtration)
   tt <- times$times
   tt <- tt[tt < t]
@@ -50,23 +48,35 @@ cond_intensity <- function(new_net,
   log_result0 <- log_mark_density0 + log(params$mu + params$K * sum(decays0))
   result0 <- exp(log_result0)
   
-  # Build a *tiny* closure: capture only diffs + log_density_func
-  func <- local({
-    diffs_local <- diffs
-    ldf_local   <- log_density_func  # mark log-density function only
-    
-    function(params) {
-      decays <- exp(-params$beta_overall * diffs_local)
-      exp(ldf_local(params) + log(params$mu + params$K * sum(decays)))
-    }
-  })
+  # ========================
+  # 1. Create the 'tiny' environment first
+  # Using emptyenv() as parent is safest for "tiny", but baseenv() is needed 
+  # for functions like exp() and log() to work inside the closure.
+  e_tiny <- new.env(parent = baseenv()) 
   
-  # Force the environment to contain ONLY what we intend.
-  # (Note: baseenv() parent means only base functions are found by default.)
-  e_new <- new.env(parent = baseenv())
-  e_new$diffs_local <- environment(func)$diffs_local
-  e_new$ldf_local   <- environment(func)$ldf_local
-  environment(func) <- e_new
+  # 2. Manually assign ONLY what you need
+  e_tiny$diffs_local <- diffs
+  e_tiny$ldf_local   <- log_density_func
+  
+  # 3. Define the function
+  # Note: We define it normally, then swap the environment.
+  func_template <- function(params) {
+    # --- START DEBUG ---
+    # 1. Get the environment where variables like 'diffs_local' should live
+    #    (This is the parent of the current execution environment)
+    enclosure <- parent.env(environment())
+    # --- END DEBUG ---
+    # Explicitly using the variables expected in e_tiny
+    decays <- exp(-params$beta_overall * diffs_local)
+    
+    # Note: logic checks out, baseenv contains exp/log/sum
+    exp(ldf_local(params) + log(params$mu + params$K * sum(decays)))
+  }
+  
+  # 4. Attach the tiny environment
+  func <- func_template
+  environment(func) <- e_tiny
+  # ==============================
   
   # Optional: sanity check what it captured (comment out in production)
   # stopifnot(identical(ls(environment(func)), c("diffs_local","ldf_local")))
@@ -360,7 +370,6 @@ loglik_hawkesGrowthNet = function(params,
       }else{
         model <- NULL
       }
-      
       intensity <- cond_intensity(new_net = current_net,
                                   t = times[i],
                                   mark_filtration = current_net,
@@ -373,7 +382,6 @@ loglik_hawkesGrowthNet = function(params,
                   func = intensity$func
                   ))
     }
-    
     if("cores" %in% names(list(...))){
       if(verbose){
         print(paste0("using ",list(...)$cores," cores on ",length(times), " objects for cond intensity list first calculation"))
@@ -389,14 +397,13 @@ loglik_hawkesGrowthNet = function(params,
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
     }else{
-      browser()
       t1 <- proc.time()
-      intens_list <- lapply(1:length(times),intens_func)
+      intens_list <- lapply(seq_along(times),function(i){
+        intens_func(i)})
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
       print(paste0("intens list took ", round((proc.time()-t1)[3],2)," seconds"))
     }
-
   }else{
     t1 <- proc.time()
     intens_vec <- numeric(length(intens_funcs))
@@ -466,7 +473,7 @@ loglik_hawkesGrowthNet = function(params,
   if(verbose){
     print(paste0("this iteration of loglik took ", round(t[3],2)," seconds"))
   }
-
+  
   return(list(loglik = loglik,
               intens_funcs = intens_funcs,
               grads = grads))
@@ -502,6 +509,7 @@ fit_hawkesGrowthNet <- function(params_init,
                                 parscale = NULL,
                                 get_hessian = FALSE,
                                 fixed_params = NULL,
+                                cache_intensity = TRUE,
                                 ...){
   params_init_old <- params_init
   if(!is.null(fixed_params)){
@@ -515,75 +523,107 @@ fit_hawkesGrowthNet <- function(params_init,
     parscale <- rep(1, length(flat_params))
   }
   
-  optim_func <- function(params,...){
-    param_vec <- params
-    params <- relist(params,skeleton = params_init)
-    params[fixed_params] <- params_init_old[fixed_params]
-    
-    result <- loglik_hawkesGrowthNet(params = params,
-                                     time_window = time_window,
-                                     mark_filtration = mark_filtration,
-                                     PMF_mark = PMF_mark,
-                                     ...)
-
-    # =================
-    # USE numDERIV TO DEBUG !
-    # =================
-    wrapper <- function(x,...){
-      x <- relist(x, skeleton = params_init)
-      return(loglik_hawkesGrowthNet(params = x,
-                                    ...)$loglik)
-    }
-
-    # numgrad <- grad(func = wrapper,
-    #                 x    = param_vec,
-    #                 time_window = time_window,  # or whatever your data is
-    #                 events      = events,
-    #                 PMF_mark    = PMF_mark,
-    #                 ...)
-    #
-    # print("Numeric gradient vs analytic gradient:")
-    # print(numgrad)
-    #print("analytic gradient")
-    #print(unlist(result$grads))
-
-    # print("params are:")
-    # print(params)
-    # print("Loglik is :")
-    # print(result$loglik)
-    # print("Grads are:")
-    # print(result$grads)
-    return(list(value = result$loglik,
-                #grad = numgrad
-                grad = unlist(result$grads)
-    ))
-  }
-
-  fn_wrapper <- function(par,...) {
-    res <- optim_func(par, ...)
-    return(res$value)
-  }
-  gr_wrapper <- function(par, ...) {
-    res <- optim_func(par, ...)
-
-    return(res$grad)
-  }
+  # ==================
+  # Deprecated 
+  # ==================
+  
+  # optim_func <- function(params,...){
+  #   param_vec <- params
+  #   params <- relist(params,skeleton = params_init)
+  #   params[fixed_params] <- params_init_old[fixed_params]
+  #   
+  #   result <- loglik_hawkesGrowthNet(params = params,
+  #                                    time_window = time_window,
+  #                                    mark_filtration = mark_filtration,
+  #                                    PMF_mark = PMF_mark,
+  #                                    ...)
+  # 
+  #   # =================
+  #   # USE numDERIV TO DEBUG !
+  #   # =================
+  #   wrapper <- function(x,...){
+  #     x <- relist(x, skeleton = params_init)
+  #     return(loglik_hawkesGrowthNet(params = x,
+  #                                   ...)$loglik)
+  #   }
+  # 
+  #   # numgrad <- grad(func = wrapper,
+  #   #                 x    = param_vec,
+  #   #                 time_window = time_window,  # or whatever your data is
+  #   #                 events      = events,
+  #   #                 PMF_mark    = PMF_mark,
+  #   #                 ...)
+  #   #
+  #   # print("Numeric gradient vs analytic gradient:")
+  #   # print(numgrad)
+  #   #print("analytic gradient")
+  #   #print(unlist(result$grads))
+  # 
+  #   # print("params are:")
+  #   # print(params)
+  #   # print("Loglik is :")
+  #   # print(result$loglik)
+  #   # print("Grads are:")
+  #   # print(result$grads)
+  #   return(list(value = result$loglik,
+  #               #grad = numgrad
+  #               grad = unlist(result$grads)
+  #   ))
+  # }
+  # 
+  # fn_wrapper <- function(par,...) {
+  #   res <- optim_func(par, ...)
+  #   return(res$value)
+  # }
+  # gr_wrapper <- function(par, ...) {
+  #   res <- optim_func(par, ...)
+  # 
+  #   return(res$grad)
+  # }
   t<-proc.time()
   
   # pre-calculate the param -> conditonal intensity mapping
   # since the observation never changes - not need to do expensive network processes every iteration
   # then param -> likelihood should be very fast
-  init_lik <- loglik_hawkesGrowthNet(params = params_init_old,
+  # 1. Pre-calculate ONLY if cache_intensity is TRUE
+  if(cache_intensity){
+    print("Pre-calculating intensity closures (Fast Mode)...")
+    init_lik <- loglik_hawkesGrowthNet(params = params_init_old,
                                      time_window = time_window,
                                      mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
                                      ...)
+    cached_funcs <- init_lik$intens_funcs
+  } else {
+    print("Caching disabled (Safe Mode) ...")
+    cached_funcs <- NULL
+    init_lik <- NULL
+  }
+  optim_func <- function(params, ...){
+    params_curr <- relist(params, skeleton = params_init)
+    # 2. Re-inject the fixed parameters from the backup (params_init_old)
+    #    to reconstruct the full parameter list required by the loglik function.
+    if (!is.null(fixed_params)) {
+      for (k in fixed_params) {
+        params_curr[[k]] <- params_init_old[[k]]
+      }
+    }
+    
+    
+    print(params_curr)
+    
+    # 2. Pass NULL to intens_funcs if caching is disabled
+    # This forces loglik_hawkesGrowthNet to rebuild the density from scratch
+    result <- loglik_hawkesGrowthNet(params = params_curr,
+                                     time_window = time_window,
+                                     mark_filtration = mark_filtration,
+                                     PMF_mark = PMF_mark,
+                                     intens_funcs = cached_funcs, # Pass NULL if disabled
+                                     ...)
+    return(result$loglik)
+  }
   fit <- optim(par = unlist(params_init),
-               fn = fn_wrapper,
-               # gr = gr_wrapper,
-               gr = NULL,
-               # method = 'BFGS',
-               # method = 'CG',
+               fn = optim_func,
                method = "Nelder-Mead",
                control = list(fnscale = -1,
                               trace=trace,
@@ -592,7 +632,6 @@ fit_hawkesGrowthNet <- function(params_init,
                               parscale = parscale,
                               abstol = NULL),
                hessian = get_hessian,
-               intens_funcs = init_lik$intens_funcs,
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
   

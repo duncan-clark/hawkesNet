@@ -36,7 +36,6 @@ PMF_mark_BA <- function(time,
   }
   last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
   new_net <- last_net
-  
 
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
@@ -73,15 +72,17 @@ PMF_mark_BA <- function(time,
   
   if(!is.null(last_net) && (last_net %n% 'n' > 2)){
     times <- get.vertex.attribute(last_net, "time")
-    degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
+    node_degrees <- degree(last_net)
+    degs <- node_degrees * exp(-params$beta_edges * (time - times))
     total_deg <- sum(degs)
     
-    if(total_deg == 0){
+    if(total_deg == 0 || is.na(total_deg)){
       probs <- rep(1, length(heads))
     } else {
       probs <- degs[heads] / total_deg
     }
   } else {
+    node_degrees <- NULL
     probs <- rep(1, length(heads))
   }
   
@@ -97,11 +98,70 @@ PMF_mark_BA <- function(time,
     log_mark_density <- sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark]))
     mark_density <- exp(log_mark_density)
   } else {
+    in_mark <- rep(1, length(heads))
     log_mark_density <- 0
     mark_density <- 1
   }
+  
+  # 1. Define the lightweight log-density function for BA
+  log_density_func_light <- function(params) {
+    # BA Logic:
+    # If using BA, the edge probabilities are often just based on degrees 
+    # and the beta_edges decay, calculated inside the main function.
+    # RE-CALCULATING this efficiently inside a closure is tricky because 
+    # BA depends on the full graph history (degrees), not just change stats.
+    
+    # IF you stored the calculated 'probs' and 'in_mark' relative to the specific 
+    # edge set at 'time', you can use them here *assuming params don't change degrees*.
+    # But usually, 'beta_edges' changes the degrees.
+    
+    # CRITICAL NOTE: Implementing a fast recalculation for BA inside a closure 
+    # is harder than CS because you need the degrees of the whole network.
+    # For now, if you just need it to run with *fixed* probs (approximate) 
+    # or if you are only optimizing params that don't change structure:
+    if(!is.null(node_degrees)){
+      degs <- node_degrees * exp(-params$beta_edges * (time - times))
+      total_deg <- sum(degs)
+      if(is.na(total_deg) || total_deg == 0){
+        return(0)
+      }else {
+        probs <- degs[heads] / total_deg
+      }
+      return(sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark])))
+    }else{
+      return(0)
+    }
+  }
+  
+  # 2. Capture the environment 
+  # (You need 'probs' and 'in_mark' to be captured)
+  environment(log_density_func_light) <- list2env(
+    list(
+      heads = heads,
+      time = time,
+      times = times,
+      node_degrees = node_degrees,
+      in_mark = in_mark
+    ), 
+    parent = baseenv()
+  )
+  
+  # 3. Define the wrapper
+  density_func_light <- function(params) {
+    exp(log_density_func_light(params))
+  }
+  
+  # 4. Link wrapper to the log function
+  # CRITICAL: You must include 'log_density_func_light' in the environment!
+  environment(density_func_light) <- list2env(
+    list(log_density_func_light = log_density_func_light), 
+    parent = baseenv()
+  )
 
   if(generate_mark){
+    # use latest mark as baseline:
+    last_net <- mark
+    times <- get.vertex.attribute(last_net, "time")
     if(!is.null(last_net) && (last_net %n% 'n') > 2){
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
@@ -127,7 +187,6 @@ PMF_mark_BA <- function(time,
         tails <- tails[!in_old_net]
         heads <- heads[!in_old_net]
       }
-      
       degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
       total_deg <- sum(degs)
       
@@ -159,6 +218,7 @@ PMF_mark_BA <- function(time,
         network::add.edges(mark_sample, 2, 1) # Force the first edge to create a seed
       }
       set.vertex.attribute(mark_sample,"time",c(times,time))
+      
       mark_sample_density <- 1
       log_mark_sample_density <- 0
     }
@@ -171,7 +231,10 @@ PMF_mark_BA <- function(time,
   return(list(
     mark_density = mark_density,
     log_mark_density = log_mark_density,
+    density_func = density_func_light,
+    log_density_func = log_density_func_light,
     edge_probs = probs,
+    # mark sample:
     mark_sample = mark_sample,
     mark_sample_density = exp(log_mark_sample_density),
     log_mark_sample_density = log_mark_sample_density

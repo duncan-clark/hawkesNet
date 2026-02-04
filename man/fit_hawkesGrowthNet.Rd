@@ -16,6 +16,7 @@ fit_hawkesGrowthNet(
   parscale = NULL,
   get_hessian = FALSE,
   fixed_params = NULL,
+  cache_intensity = TRUE,
   ...
 )
 }

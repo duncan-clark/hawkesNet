@@ -173,10 +173,8 @@ compensator_temporal_hawkes <- function(params,
 #' @description
 #' @param realiz list with elements, n,lon,lat,t
 #' @param windowT vector with elements, start,end
-#' @param windowS os.win
 #' @param hawkes_par list with elements,   mu,alpha,beta,K
-#' @param zero_background_region os.win
-ks_test_pval <- function(realiz,
+ks_test_pval_temporal <- function(realiz,
                          windowT,
                          hawkes_par,
                          kernel = c("exp", "powerlaw")
