@@ -17,8 +17,8 @@ library(hawkesGrowthNet)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-INVESTIGATE = FALSE
-SIMULATE = TRUE
+INVESTIGATE <- FALSE
+SIMULATE <- TRUE
 PAPER_OUTPUT = TRUE
 RUN_EXPLOSIVE <- TRUE
 RUN_CONSISTENCY <- TRUE
@@ -35,7 +35,7 @@ TRUNCATION  = 100
 DEBUG = FALSE
 MAX_ITER = 2000
 
-N_SIMS = 100
+N_SIMS = 21
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
@@ -69,7 +69,6 @@ make_cluster <- function(N_CORES){
   ))
   return(cl)
 }
-
 
 if(SIMULATE){
   # make the cluster:
@@ -127,8 +126,8 @@ if(SIMULATE){
         trace = 0,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        get_hessian = TRUE,
-        fixed_params = c("K")
+        get_hessian = TRUE#,
+        # fixed_params = c("K")
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
@@ -520,8 +519,6 @@ if(INVESTIGATE){
   
 }
 
-
-
 # ==============================================================================
 # STUDY 1: Consistency Analysis (Sliding Window / Increasing T)
 # ==============================================================================
@@ -533,11 +530,15 @@ if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
   # We will simulate independent realizations of length T = 10, 30, 50, 100
-  time_windows <- c(5, 10, 20, 50) 
+  time_windows <- c(5, 10, 20, 50,100) 
   N_SIMS_CONSISTENCY <- 20 # Keep small for demonstration, increase for paper
   
   # Parameters (Standard/Stable regime)
-  params_true <- list(mu = 5, beta_overall = 1.0, K = 0.5, beta_edges = 1.0)
+  params_true <- list(mu = 10,
+                      beta_overall = 1,
+                      K = 0.5,
+                      beta_edges = 1
+                      )
   
   # Setup Cluster
   cl <- make_cluster(N_CORES)

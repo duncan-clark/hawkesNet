@@ -8,10 +8,10 @@ library(pbapply)
 library(parallel)
 library(doParallel)
 library(R.utils)
-library(ernm)
 library(network)
 library(sna)
 library(hash)
+library(ernm)
 library(hawkesGrowthNet)
 
 # ===================================================
@@ -20,10 +20,10 @@ library(hawkesGrowthNet)
 TIME <- 10
 params <- list(mu = 10,
                beta_overall = 2,
-               K = 1,
+               K = 0.5,
                beta_edges = 1,
                node_lambda = 1,
-               CS_params = c(-7,2,0.2,-0.1)
+               CS_params = c(-6.7,2,0.1,-0.1)
                )
 TRUNCATION  = 100
 INVESTIGATE = FALSE
@@ -32,7 +32,7 @@ PAPER_OUTPUT = TRUE
 DEBUG = FALSE
 MAX_ITER = 2000
 
-N_SIMS <- 100
+N_SIMS <- 1000
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
@@ -109,7 +109,7 @@ if(SIMULATE){
   fits <- NULL
   params_init <- list(mu = 10,
                       beta_overall = 1,
-                      K = 1,
+                      K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
@@ -279,6 +279,11 @@ if(PAPER_OUTPUT){
   })
   mean(marked_p_vals)
   mean(temp_p_vals)
+  
+  # Do a LOLOG fit a on a single sim for comparison:
+  library(lolog)
+  lolog_fit <- lolog(sims[[1]]$net ~ edges + absDiff("time") + triangles + star(c(2,3)))
+  summary(lolog_fit)
 }
 
 if(INVESTIGATE){
