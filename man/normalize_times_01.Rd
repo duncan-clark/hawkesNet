@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{normalize_times_01}
 \alias{normalize_times_01}
-\title{Normalize node + edge "time" attributes to \link{0, 1}}
+\title{Normalize node + edge "time" attributes to \verb{[0, 1]}}
 \usage{
 normalize_times_01(net, attr = "time", keep_na = TRUE, constant_value = 0)
 }
@@ -20,5 +20,5 @@ The network with normalized times.
 }
 \description{
 Uses get_times() to compute the global min/max across BOTH node and edge times,
-then rescales vertex and edge "time" attributes into \link{0, 1}.
+then rescales vertex and edge "time" attributes into \verb{[0, 1]}.
 }

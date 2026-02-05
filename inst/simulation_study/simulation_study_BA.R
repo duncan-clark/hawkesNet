@@ -1,4 +1,11 @@
 # This script fits a LOLOG style model and a BA model to messaging data:
+#
+# RUNTIME ESTIMATE (16 cores, cluster):
+#   Main study (SIMULATE):  N_SIMS=14  sim+fit ~5-10 min total.
+#   Consistency:            5 windows x 100 reps = 500 (sim+fit) pairs;
+#                            ~3-5 min per run average -> 500*4/16 ~ 2-3.5 h.
+#   Explosive:               2 sims only, T=5 -> ~2-5 min.
+#   Total (all blocks):      ~2.5-4 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 16).
 
 library(spatstat)
 library(ggplot2)
@@ -23,7 +30,8 @@ PAPER_OUTPUT = TRUE
 RUN_EXPLOSIVE <- TRUE
 RUN_CONSISTENCY <- TRUE
 
-TIME <- 10
+TIME <- 25
+# gives ~ 600 events
 params <- list(mu = 10,
                beta_overall = 1,
                K = 0.5,
@@ -35,7 +43,7 @@ TRUNCATION  = 100
 DEBUG = FALSE
 MAX_ITER = 2000
 
-N_SIMS = 21
+N_SIMS = 14
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
@@ -44,7 +52,6 @@ make_cluster <- function(N_CORES){
   # setup the cluster:
   cl <- makeCluster(N_CORES)
   registerDoParallel(cl)
-  estimatedparams<-list()
   # export libraries to cluster:
   clusterEvalQ(cl, {
     library(spatstat)
@@ -151,6 +158,8 @@ if(SIMULATE){
     )
     return(fit)
   })
+  stopCluster(cl)
+  cl <- NULL
   saveRDS(list(sims=sims,
                fits = fits,
                temp_hawkes_fits = temp_hawkes_fits,
@@ -158,129 +167,8 @@ if(SIMULATE){
                params_init = params_init
                ),
           file = "results_BA.RDS")
-  stopCluster(cl)
   print("Simulating and fitting took:")
-  print((t - proc.time())[3])
-}
-
-if(PAPER_OUTPUT){
-  
-  results_BA <- readRDS("results_BA.RDS")
-  sims <- results_BA$sims
-  fits <- results_BA$fits
-  temp_hawkes_fits <- results_BA$temp_hawkes_fits
-  
-  # ==========================
-  # Network Descriptive Stats
-  # ==========================
-  # make the ESP graphs
-  net_stats <- do.call(rbind,lapply(sims,function(s){
-    net <- s$net
-    degs <- ernm::calculateStatistics(net ~ degree(0:20,"in"))
-    esps <- ernm::calculateStatistics(net ~ esp(0:20))
-    
-    tmp <- as.data.frame(cbind(c(degs,esps),
-                               rep(0:20,times = 2),
-                               c(rep("degree",21),rep("esp",21))
-    ))
-    rownames(tmp) <- NULL
-    
-    return(tmp)
-  }))
-  names(net_stats) <- c("value","var","type")
-  net_stats$value <- as.numeric(net_stats$value)
-  net_stats$var <- as.numeric(net_stats$var)
-  net_stats <- net_stats[net_stats$var <=15,]
-  # Ensure 'var' is ordered as a factor
-  net_stats <- net_stats %>%
-    mutate(var = factor(var, levels = sort(unique(var))))
-  
-  # make the boxplots
-  deg_plot <- ggplot(net_stats[net_stats$type == "degree",],aes(x = var,y = value)) +
-    geom_boxplot() +
-    labs(title = "Degree Distribution",
-         x = "Degree",
-         y = "Value")+
-    theme_minimal()
-  deg_plot
-  
-  # esp plot:
-  esp_plot <- ggplot(net_stats[net_stats$type == "esp",],aes(x = var,y = value)) +
-    geom_boxplot() +
-    labs(title = "ESP Distribution",
-         x = "ESP",
-         y = "Value")+
-    theme_minimal()
-  esp_plot
-  
-  # mean degree :
-  mean_degs <- sapply(sims,function(s){
-    mean(degree(s$net,gmode = "graph"))
-  })
-  mean_deg_df <- data.frame(mean_deg = mean_degs)
-  hist(mean_deg_df$mean_deg,
-       main = "Histogram of Mean Degrees",
-       xlab = "Mean Degree",
-       breaks = 10)
-  vlines <- mean(mean_deg_df$mean_deg)
-  abline(v = vlines, col = "red", lwd = 2)
-  
-  # ==========================
-  # RESULTS TABLE
-  # ==========================
-  # get mean and sd of parameters from fits:
-  keep <- which(sapply(fits,function(x){length(x)!=0 & x$fit$convergence==0 & !any(x$fit$par > 100) & !any(x$fit$par[2] >10)}))
-  paste0("keeping ",length(keep), " of ", N_SIMS," fits")
-  
-  estims <- do.call(rbind,lapply(fits[keep],function(x){
-    return(as.data.frame(t(x$fit$par),names = names(x$fit$par)))
-  }))
-  
-  params_vec <- unlist(params)
-  params_vec <- params_vec[names(params_vec) %in% colnames(estims)]
-  params_init_vec <- unlist(params_init)
-  params_init_vec <- params_init_vec[names(params_init_vec) %in% colnames(estims)]
-  
-  
-  results <- data.frame(mean = colMeans(estims),
-                        sd = apply(estims,2,sd),
-                        true = params_vec,
-                        init = params_init_vec)
-  print(results)
-  estims
-  
-  # ==========================
-  # KS TEST Table
-  # ==========================
-  # With true params:
-  comps <- lapply(sims,function(x){
-    compensators_hawkesGrowthNet(params = params,
-                                 mark_filtration = x$net,
-                                 time_window = c(0,TIME)
-    )
-  })
-  marked_p_vals <- mapply(sims[keep],lapply(1:length(fits[keep]),function(x){fits[keep][[x]]$fit$par}),FUN = function(x,y){
-    times <- get_times(x$net)$times
-    ks_test_pval_temporal(realiz = data.frame(t = times,
-                                              n = rep(length(times),length(times))),
-                          windowT = c(0,TIME),
-                          hawkes_par = y
-    )
-  })
-  
-  temp_p_vals <- mapply(sims,temp_hawkes_fits,FUN = function(x,y){
-    ks_test_pval_temporal(realiz = data.frame(t = x$events$t,
-                                              n = rep(x$events$n,length(x$events$t))),
-                          windowT = c(0,TIME),
-                          hawkes_par = y$par
-                          
-    )
-  })
-  
-  # need to investigate this! - expect higher pvals for true model
-  # LOOK INTO PARAMETIZATION OF K !
-  mean(marked_p_vals)
-  mean(temp_p_vals)
+  print((proc.time()-t)[3])
 }
 
 if(INVESTIGATE){
@@ -529,9 +417,8 @@ if(INVESTIGATE){
 if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
-  # We will simulate independent realizations of length T = 10, 30, 50, 100
-  time_windows <- c(5, 10, 20, 50,100) 
-  N_SIMS_CONSISTENCY <- 20 # Keep small for demonstration, increase for paper
+  time_windows <- c(5, 10, 20, 50,100)
+  N_SIMS_CONSISTENCY <- 100
   
   # Parameters (Standard/Stable regime)
   params_true <- list(mu = 10,
@@ -586,14 +473,17 @@ if(RUN_CONSISTENCY){
                             PMF_mark = PMF_mark_BA,
                             maxit = 1000,
                             grad = FALSE, 
-                            cache_intensity = FALSE, # Disable cache for BA safety
+                            cache_intensity = TRUE,
                             verbose = FALSE)
       }, error = function(e) return(NULL))
+    
+      keep <- (length(fit_res$fit)!=0 & fit_res$fit$convergence==0 & !any(fit_res$fit$par > 100) & !any(fit_res$fit$par[2] >10))
       
       if(is.null(fit_res)) return(NULL)
       
       # Return row
       return(data.frame(
+        keep = keep,
         sim_id = i,
         time_window = curr_time,
         param = names(fit_res$fit$par),
@@ -608,24 +498,30 @@ if(RUN_CONSISTENCY){
   }
   
   stopCluster(cl)
-  
+
   # ==========================
   # Visualization
   # ==========================
-  # Calculate Bias and RMSE
+  prop_keep <- consistency_results %>%
+    group_by(time_window,param) %>%
+    summarise(prop_keep = sum(keep)/N_SIMS_CONSISTENCY)
+  print(prop_keep)
+  
+  # Calculate Bias and RMSE (use all runs; keep filter commented)
   summary_stats <- consistency_results %>%
+    # filter(keep==TRUE) %>%
     group_by(time_window, param) %>%
     summarise(
       mean_est = mean(estimate),
       sd_est = sd(estimate),
       rmse = sqrt(mean((estimate - true_value)^2)),
-      true_val = mean(true_value)
+      true_val = mean(true_value),
     )
   
   print(summary_stats)
   
-  # Plot 1: Boxplots of convergence
-  p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +
+  # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
+  p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep==TRUE)
     geom_boxplot(outlier.shape = NA, alpha = 0.5, fill="lightblue") +
     geom_jitter(width=0.2, alpha=0.3) +
     geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size=1) +
@@ -666,35 +562,37 @@ if(RUN_EXPLOSIVE){
   # Define Explosive Parameters
   # Low beta with K close to beta (or K > beta) causes criticality/explosion
   params_explosive <- list(
-    mu = 2,
-    beta_overall = 0.05, # Very slow decay (Long memory)
-    K = 0.1,             # Branching ratio n* = K/beta = 2 (Super-critical > 1)
-    beta_edges = 0.01    # Degrees from ancient history define attachment just as much as recent
+    mu = 10,
+    beta_overall = 0.1, # Very slow decay (Long memory)
+    K = 0.99,             # Branching ratio n* = K/beta = 2 (Super-critical > 1)
+    beta_edges = 0.1    # Degrees from ancient history define attachment just as much as recent
   )
   
   # Compare with Stable Parameters
   params_stable <- list(
-    mu = 2,
+    mu = 10,
     beta_overall = 2.0,
     K = 0.5,             # Branching ratio n* = 0.25 (Sub-critical < 1)
     beta_edges = 1.0
   )
-  
+
   print("Simulating Explosive Regime...")
+  
+  T_explode <- 5
   
   # Simulate Explosive
   # Note: simulation might get very slow as N grows, use small window
   sim_exp <- sim_hawkesGrowthNet(params = params_explosive,
-                                 time_window = c(0, 50), # Longer window to show curve
+                                 time_window = c(0, T_explode), # Longer window to show curve
                                  PMF_mark = PMF_mark_BA,
                                  cond_intensity = cond_intensity,
                                  hashed_edges = TRUE,
-                                 verbose = TRUE, # Watch it grow
-                                 mu_multiplier = 10) # Need high bound for explosive
+                                 verbose = FALSE,
+                                 mu_multiplier = 50) # Need high bound for explosive
   
   print("Simulating Stable Regime...")
   sim_stable <- sim_hawkesGrowthNet(params = params_stable,
-                                    time_window = c(0, 50),
+                                    time_window = c(0, T_explode),
                                     PMF_mark = PMF_mark_BA,
                                     cond_intensity = cond_intensity,
                                     hashed_edges = TRUE,
@@ -704,20 +602,19 @@ if(RUN_EXPLOSIVE){
   # ==========================
   # Visualization: Cumulative Events
   # ==========================
-  df_exp <- data.frame(t = sim_exp$events$t, 
-                       N = 1:length(sim_exp$events$t), 
-                       Type = "Explosive (Low Beta)")
-  
-  df_stable <- data.frame(t = sim_stable$events$t, 
-                          N = 1:length(sim_stable$events$t), 
-                          Type = "Stable (High Beta)")
+  df_exp <- data.frame(t = sim_exp$events$t,
+                       N = seq_len(length(sim_exp$events$t)),
+                       Type = "Explosive (K ~ 1)")
+
+  df_stable <- data.frame(t = sim_stable$events$t,
+                          N = seq_len(length(sim_stable$events$t)),
+                          Type = "Stable (K ~ 0.25)")
   
   df_compare <- rbind(df_exp, df_stable)
   
   p_expl <- ggplot(df_compare, aes(x = t, y = N, color = Type)) +
     geom_line(size = 1.2) +
     labs(title = "Explosive vs Stable Process Dynamics",
-         subtitle = "Explosive: Beta -> 0 (Infinite Memory) | Stable: Beta >> 0",
          x = "Time",
          y = "Cumulative Number of Events (N)") +
     theme_minimal() +
@@ -750,4 +647,135 @@ if(RUN_EXPLOSIVE){
   
   print(paste("Max Degree Stable:", max_deg_stable))
   print(paste("Max Degree Explosive:", max_deg_exp))
+}
+
+# ==============================================================================
+# Save full state at end for re-hydration (main + consistency + explosive if run)
+# ==============================================================================
+save_list <- list()
+if(exists("sims") && !is.null(sims)){
+  save_list$sims <- sims
+  save_list$fits <- fits
+  save_list$temp_hawkes_fits <- temp_hawkes_fits
+  save_list$params <- params
+  save_list$params_init <- params_init
+  save_list$TIME <- TIME
+  save_list$N_SIMS <- N_SIMS
+}
+if(exists("consistency_results")){
+  save_list$consistency_results <- consistency_results
+  save_list$summary_stats <- summary_stats
+  save_list$p_cons <- p_cons
+  save_list$p_rmse <- p_rmse
+  save_list$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
+  save_list$time_windows <- time_windows
+}
+if(exists("sim_exp")){
+  save_list$sim_exp <- sim_exp
+  save_list$sim_stable <- sim_stable
+  save_list$df_compare <- df_compare
+  save_list$p_expl <- p_expl
+  save_list$max_deg_stable <- max_deg_stable
+  save_list$max_deg_exp <- max_deg_exp
+}
+saveRDS(save_list, "results_BA_full.RDS")
+print("Saved full state to results_BA_full.RDS")
+
+# ==============================================================================
+# PAPER OUTPUT (at end: main study + consistency + explosive)
+# Re-hydrate from results_BA_full.RDS and produce all figures/tables.
+# ==============================================================================
+if(PAPER_OUTPUT){
+  dat <- readRDS("results_BA_full.RDS")
+  list2env(dat, envir = .GlobalEnv)
+
+  # ---------- Main study output ----------
+  if(!is.null(dat$sims)){
+    # Network Descriptive Stats
+    net_stats <- do.call(rbind, lapply(sims, function(s){
+      net <- s$net
+      degs <- ernm::calculateStatistics(net ~ degree(0:20,"in"))
+      esps <- ernm::calculateStatistics(net ~ esp(0:20))
+      tmp <- as.data.frame(cbind(c(degs,esps), rep(0:20, times = 2), c(rep("degree",21), rep("esp",21))))
+      rownames(tmp) <- NULL
+      return(tmp)
+    }))
+    names(net_stats) <- c("value","var","type")
+    net_stats$value <- as.numeric(net_stats$value)
+    net_stats$var <- as.numeric(net_stats$var)
+    net_stats <- net_stats[net_stats$var <= 15,]
+    net_stats <- net_stats %>% mutate(var = factor(var, levels = sort(unique(var))))
+
+    deg_plot <- ggplot(net_stats[net_stats$type == "degree",], aes(x = var, y = value)) +
+      geom_boxplot() + labs(title = "Degree Distribution", x = "Degree", y = "Value") + theme_minimal()
+    print(deg_plot)
+    esp_plot <- ggplot(net_stats[net_stats$type == "esp",], aes(x = var, y = value)) +
+      geom_boxplot() + labs(title = "ESP Distribution", x = "ESP", y = "Value") + theme_minimal()
+    print(esp_plot)
+
+    mean_degs <- sapply(sims, function(s) mean(degree(s$net, gmode = "graph")))
+    mean_deg_df <- data.frame(mean_deg = mean_degs)
+    hist(mean_deg_df$mean_deg, main = "Histogram of Mean Degrees", xlab = "Mean Degree", breaks = 10)
+    abline(v = mean(mean_deg_df$mean_deg), col = "red", lwd = 2)
+
+    # Results table
+    keep <- which(sapply(fits, function(x){ length(x) != 0 & x$fit$convergence == 0 & !any(x$fit$par > 100) & !any(x$fit$par[2] > 10) }))
+    print(paste0("keeping ", length(keep), " of ", length(fits), " fits"))
+    estims <- do.call(rbind, lapply(seq_along(keep), function(i){
+      sim_idx <- keep[i]
+      est_df <- as.data.frame(t(fits[[sim_idx]]$fit$par), names = names(fits[[sim_idx]]$fit$par))
+      est_df$sim_id <- sim_idx
+      return(est_df)
+    }))
+    params_vec <- unlist(params)[names(params) %in% colnames(estims)]
+    params_init_vec <- unlist(params_init)[names(params_init) %in% colnames(estims)]
+    par_estim <- estims[, -dim(estims)[2]]
+    results <- data.frame(mean = colMeans(par_estim), sd = apply(par_estim, 2, sd), true = params_vec[colnames(par_estim)], init = params_init_vec[colnames(par_estim)])
+    print(results)
+
+    estim_long <- data.frame(param = rep(colnames(par_estim), each = nrow(par_estim)), estimate = c(as.matrix(par_estim)))
+    ref_lines <- data.frame(param = colnames(par_estim), true = as.numeric(results["true",]), init = as.numeric(results["init",]))
+    p_est_dist <- ggplot(estim_long, aes(x = estimate)) +
+      geom_histogram(bins = 20, fill = "lightblue", alpha = 0.7) +
+      geom_vline(data = ref_lines, aes(xintercept = true), color = "red", linetype = "dashed", linewidth = 1) +
+      geom_vline(data = ref_lines, aes(xintercept = init), color = "darkgreen", linetype = "dotted", linewidth = 1) +
+      facet_wrap(~param, scales = "free") +
+      labs(title = "Distribution of parameter estimates (BA)", subtitle = "Red dashed = true; green dotted = init", x = "Estimate") + theme_minimal()
+    print(p_est_dist)
+
+    comps <- lapply(sims, function(x) compensators_hawkesGrowthNet(params = params, mark_filtration = x$net, time_window = c(0, TIME)))
+    marked_p_vals <- mapply(seq_along(keep), FUN = function(i){
+      sim_idx <- keep[i]
+      sim <- sims[[sim_idx]]
+      fit_par <- fits[[sim_idx]]$fit$par
+      times <- get_times(sim$net)$times
+      ks_test_pval_temporal(realiz = data.frame(t = times, n = rep(length(times), length(times))), windowT = c(0, TIME), hawkes_par = fit_par)
+    })
+    temp_p_vals <- mapply(sims, temp_hawkes_fits, FUN = function(x,y){
+      ks_test_pval_temporal(realiz = data.frame(t = x$events$t, n = rep(x$events$n, length(x$events$t))), windowT = c(0, TIME), hawkes_par = y$par)
+    })
+    print(mean(marked_p_vals))
+    print(mean(temp_p_vals))
+  }
+
+  
+  # ---------- Consistency study output ----------
+  if(!is.null(dat$consistency_results)){
+    prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+    print(prop_keep)
+    print(summary_stats)
+    print(p_cons)
+    print(p_rmse)
+  }
+
+  # ---------- Explosive study output ----------
+  if(!is.null(dat$sim_exp)){
+    print(p_expl)
+    op <- par(mfrow = c(1, 2))
+    plot(sim_stable$net, main = "Stable Network\n(Recent Activity Matters)", vertex.cex = 0.5, edge.col = "gray")
+    plot(sim_exp$net, main = "Explosive/Memory Network\n(History Never Dies)", vertex.cex = 0.5, edge.col = "gray")
+    par(op)
+    print(paste("Max Degree Stable:", max_deg_stable))
+    print(paste("Max Degree Explosive:", max_deg_exp))
+  }
 }

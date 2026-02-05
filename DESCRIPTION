@@ -1,10 +1,10 @@
 Package: hawkesGrowthNet
-Title: Simulate and fit maximulikelihood for hawkesian network growth models
-Version: 0.0
+Title: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models
+Version: 0.0.1
 Authors@R: 
     person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
-Description: Simulate and fit maximum likelihood for hawkesian network growth models
-License: `use_mit_license()`
+Description: Simulate and fit maximum likelihood for Hawkesian network growth models.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
@@ -13,6 +13,11 @@ Depends:
 Imports:
     Rcpp,
     ernm,
+    hash,
     sna,
     network,
     data.table
+Suggests:
+    testthat (>= 3.0.0),
+    networkDynamic,
+    animation

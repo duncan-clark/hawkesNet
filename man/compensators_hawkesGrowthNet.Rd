@@ -2,17 +2,20 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{compensators_hawkesGrowthNet}
 \alias{compensators_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Compensators (integrated intensity) for the Hawkes growth model}
 \usage{
 compensators_hawkesGrowthNet(params, time_window, mark_filtration)
 }
 \arguments{
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List of parameters.}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric \code{c(t0, t1)}.}
 
-\item{mark_filtration}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Observed network.}
+}
+\value{
+Numeric vector of compensator values at each event time.
 }
 \description{
-FUNCTION_DESCRIPTION
+Compensators (integrated intensity) for the Hawkes growth model
 }

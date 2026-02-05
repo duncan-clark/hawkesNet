@@ -2,7 +2,7 @@
 % Please edit documentation in R/mark_PMF.R
 \name{PMF_mark_BA}
 \alias{PMF_mark_BA}
-\title{FUNCTION_TITLE}
+\title{Mark PMF for Barabási–Albert-style (degree-weighted) attachment}
 \usage{
 PMF_mark_BA(
   time,
@@ -18,33 +18,23 @@ PMF_mark_BA(
 )
 }
 \arguments{
-\item{time}{PARAM_DESCRIPTION}
+\item{time}{Current event time.}
 
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List with \code{beta_edges} (and optionally \code{beta_overall}, \code{K}, \code{mu}).}
 
-\item{mark_filtration}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Observed network up to \code{time}.}
 
-\item{mark}{PARAM_DESCRIPTION, Default: NULL}
+\item{mark}{Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
 
-\item{generate_mark}{PARAM_DESCRIPTION, Default: FALSE}
+\item{generate_mark}{If \code{TRUE}, also sample a new edge (default \code{FALSE}).}
 
-\item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
+\item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Probability mass function for the mark (new edge) given the filtration; uses degree-weighted attachment with exponential time decay.
 }
 \seealso{
 \code{\link[network]{network}}, \code{\link[network]{add.vertices}}

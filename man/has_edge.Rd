@@ -2,30 +2,20 @@
 % Please edit documentation in R/utils.R
 \name{has_edge}
 \alias{has_edge}
-\title{FUNCTION_TITLE}
+\title{Check whether an edge exists in a hash-backed edge set}
 \usage{
 has_edge(i, j, edge_hash)
 }
 \arguments{
-\item{i}{PARAM_DESCRIPTION}
+\item{i}{Vertex index (head).}
 
-\item{j}{PARAM_DESCRIPTION}
+\item{j}{Vertex index (tail).}
 
-\item{edge_hash}{PARAM_DESCRIPTION}
+\item{edge_hash}{A \code{hash} object (from package \pkg{hash}) with keys of the form \code{"i-j"}.}
 }
 \value{
-OUTPUT_DESCRIPTION
+Logical: \code{TRUE} if the edge (i, j) is in the hash.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Check whether an edge exists in a hash-backed edge set
 }

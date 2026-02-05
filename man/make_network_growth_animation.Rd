@@ -2,32 +2,35 @@
 % Please edit documentation in R/utils.R
 \name{make_network_growth_animation}
 \alias{make_network_growth_animation}
-\title{FUNCTION_TITLE}
+\title{Create an animation of network growth over time}
 \usage{
 make_network_growth_animation(net_list, times, adjust = 10, file = NULL)
 }
 \arguments{
-\item{net_list}{PARAM_DESCRIPTION}
+\item{net_list}{List of \code{network} objects (one per event time).}
 
-\item{times}{PARAM_DESCRIPTION}
+\item{times}{Numeric vector of event times, same length as \code{net_list}.}
 
-\item{adjust}{PARAM_DESCRIPTION, Default: 10}
+\item{adjust}{Scaling factor for animation timing (default 10).}
 
-\item{file}{PARAM_DESCRIPTION, Default: NULL}
+\item{file}{Optional character path to save the animation as a video file.}
 }
 \value{
-OUTPUT_DESCRIPTION
+A \code{networkDynamic} object (from package \pkg{networkDynamic}).
 }
 \description{
-FUNCTION_DESCRIPTION
+Builds a dynamic network from a list of network snapshots and optional video file.
+This function is central for visualizing how the network grows with Hawkes process events.
 }
 \details{
-DETAILS
+Requires the suggested packages \pkg{networkDynamic} and \pkg{animation} to be installed.
+Install with \code{install.packages(c("networkDynamic", "animation"))}.
+The animation displays the network at each event time; if \code{file} is provided,
+\code{animation::saveVideo} is used to write a video file.
 }
 \examples{
 \dontrun{
-if(interactive()){
- #EXAMPLE1
- }
+nets <- list(network::network(2, directed = FALSE))
+make_network_growth_animation(nets, times = 0, file = "growth.mp4")
 }
 }

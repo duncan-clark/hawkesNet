@@ -1,22 +1,15 @@
-# roxgen documentation
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param time PARAM_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
-#' @param mark PARAM_DESCRIPTION, Default: NULL
-#' @param generate_mark PARAM_DESCRIPTION, Default: FALSE
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @seealso
-#'  \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
+#' Mark PMF for Barabási–Albert-style (degree-weighted) attachment
+#'
+#' Probability mass function for the mark (new edge) given the filtration; uses degree-weighted attachment with exponential time decay.
+#'
+#' @param time Current event time.
+#' @param params List with \code{beta_edges} (and optionally \code{beta_overall}, \code{K}, \code{mu}).
+#' @param mark_filtration Observed network up to \code{time}.
+#' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
+#' @param generate_mark If \code{TRUE}, also sample a new edge (default \code{FALSE}).
+#' @param new_edge_hash Optional hash of existing edges for fast lookup.
+#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
+#' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
 #' @export
 #' @importFrom network network add.vertices
@@ -63,8 +56,8 @@ PMF_mark_BA <- function(time,
   
   # only consider edges that were not already in the old network
   if(!is.null(last_net)){
-    in_old_net <- sapply(1:length(heads),function(i){
-      length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+    in_old_net <- sapply(seq_along(heads), function(i) {
+      length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
     })
     tails <- tails[!in_old_net]
     heads <- heads[!in_old_net]
@@ -88,7 +81,7 @@ PMF_mark_BA <- function(time,
   
   if(!is.null(mark) && length(probs) !=0 && (last_net %n% 'n' > 2)){
     if(is.null(new_edge_hash)){
-      in_mark <- sapply(1:length(heads),function(i){
+      in_mark <- sapply(seq_along(heads), function(i) {
         length(get.edgeIDs(mark, heads[i], tails[i])) != 0
       })
     } else {
@@ -181,8 +174,8 @@ PMF_mark_BA <- function(time,
       
       # only consider edges that are not in the old net
       if(!is.null(last_net)){
-        in_old_net <- sapply(1:length(heads),function(i){
-          length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+        in_old_net <- sapply(seq_along(heads), function(i) {
+          length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
         })
         tails <- tails[!in_old_net]
         heads <- heads[!in_old_net]
@@ -241,30 +234,21 @@ PMF_mark_BA <- function(time,
   ))
 }
 
-# roxgen documentation
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param time PARAM_DESCRIPTION
-#' @param params PARAM_DESCRIPTION
-#' @param mark_filtration PARAM_DESCRIPTION
-#' @param mark PARAM_DESCRIPTION, Default: NULL
-#' @param generate_mark PARAM_DESCRIPTION, Default: FALSE
-#' @param new_edge_hash PARAM_DESCRIPTION, Default: NULL
-#' @param formula_RHS PARAM_DESCRIPTION
-#' @param grad PARAM_DESCRIPTION, Default: FALSE
-#' @param truncation if truncation = 1, only consider edges from new nodes to old nodes,
-#' truncation = k considers edges from k time steps before the new nodes to the old nodes:
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
-#'  }
-#' }
-#' @seealso
-#'  \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
-#'  \code{\link[ernm]{as.BinaryNet}}
+#' Mark PMF for change statistic (ERGM-style) attachment
+#'
+#' Probability mass function for the mark using an ERNM/ERGM-style model with change statistics and optional truncation.
+#'
+#' @param time Current event time.
+#' @param params List including \code{node_lambda}, \code{CS_params}, and optionally \code{beta_edges}, \code{K}, etc.
+#' @param mark_filtration Observed network up to \code{time}.
+#' @param mark Optional network at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
+#' @param generate_mark If \code{TRUE}, sample a new edge (default \code{FALSE}).
+#' @param new_edge_hash Optional hash of existing edges for fast lookup.
+#' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).
+#' @param grad If \code{TRUE}, compute gradient (default \code{FALSE}).
+#' @param truncation Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.
+#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
+#' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
 #' @rdname PMF_mark_CS
 #' @export
 #' @importFrom network network add.vertices
@@ -318,9 +302,9 @@ PMF_mark_CS <- function(time,
   heads <- poss_edges[,2]
 
   # only consider edges that were not already in the old network
-  if(!is.null(last_net) & length(heads)!=0){
-    in_old_net <- sapply(1:length(heads),function(i){
-      length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+  if(!is.null(last_net) & length(heads) != 0){
+    in_old_net <- sapply(seq_along(heads), function(i) {
+      length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
     })
     tails <- tails[!in_old_net]
     heads <- heads[!in_old_net]
@@ -385,8 +369,8 @@ PMF_mark_CS <- function(time,
   
   if(!is.null(mark) & !is.null(probs)){
     if(is.null(new_edge_hash)){
-      in_mark <- sapply(1:length(heads),function(i){
-        length(get.edgeIDs(mark, heads[i],tails[i])) !=0
+      in_mark <- sapply(seq_along(heads), function(i) {
+        length(get.edgeIDs(mark, heads[i], tails[i])) != 0
       })
     }else{
       in_mark <- has_edge(heads,tails,new_edge_hash)
@@ -579,8 +563,8 @@ PMF_mark_CS <- function(time,
 
       # only consider edges that are not in the old net
       if(!is.null(last_net)){
-        in_old_net <- sapply(1:length(heads),function(i){
-          length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+        in_old_net <- sapply(seq_along(heads), function(i) {
+          length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
         })
         tails <- tails[!in_old_net]
         heads <- heads[!in_old_net]
@@ -609,7 +593,7 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
-      diffs <- sapply(1:length(tails),function(i){
+      diffs <- sapply(seq_along(tails), function(i) {
         node_times[tails[i]] - node_times[heads[i]]
       })
       # factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))

@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{fit_hawkesGrowthNet}
 \alias{fit_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Fit the Hawkes network growth model by maximum likelihood}
 \usage{
 fit_hawkesGrowthNet(
   params_init,
@@ -21,33 +21,35 @@ fit_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{params_init}{PARAM_DESCRIPTION}
+\item{params_init}{List of initial parameter values.}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric \code{c(t0, t1)}.}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Observed network.}
 
-\item{maxit}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Mark PMF function.}
 
-\item{trace}{PARAM_DESCRIPTION, Default: 0}
+\item{maxit}{Maximum number of iterations for the optimizer.}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{trace}{Trace level (default 0).}
 
-\item{events}{PARAM_DESCRIPTION}
+\item{REPORT}{Reporting interval for \code{optim} (default 10).}
+
+\item{reltol}{Relative convergence tolerance (default 1e-8).}
+
+\item{parscale}{Scale vector for parameters (default all 1).}
+
+\item{get_hessian}{If \code{TRUE}, return Hessian in the fit object.}
+
+\item{fixed_params}{Character vector of parameter names to hold fixed.}
+
+\item{cache_intensity}{If \code{TRUE}, cache intensity functions (default \code{TRUE}).}
+
+\item{...}{Passed to \code{loglik_hawkesGrowthNet} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{fit} (output of \code{optim}) and \code{intens_funcs}.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Fit the Hawkes network growth model by maximum likelihood
 }

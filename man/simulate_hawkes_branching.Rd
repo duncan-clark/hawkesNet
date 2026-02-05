@@ -14,12 +14,12 @@ Typically K < 1 for a subcritical process.}
 
 \item{beta}{Numeric > 0. Decay rate of the exponential triggering kernel.}
 
-\item{T}{Numeric > 0. Maximum time horizon. Events are restricted to \link{0, T}.}
+\item{T}{Numeric > 0. Maximum time horizon. Events are restricted to}
 
 \item{seed}{Optional. Set an integer random seed for reproducibility. Default: \code{NULL}.}
 }
 \value{
-A numeric vector of sorted event times within \link{0, T}.
+A numeric vector of sorted event times within \verb{[0, T]}.
 }
 \description{
 Generate event times from a Hawkes process with exponential triggering kernel
@@ -34,11 +34,11 @@ using a branching (cluster) representation:
 \strong{Algorithm}:
 \enumerate{
 \item Draw background events (immigrants) from a Poisson(\eqn{\mu \times T}) process
-and place them uniformly in \link{0, T}.
+and place them uniformly in \verb{[0, T]}.
 \item For each event at time \eqn{t_p}, draw \eqn{N_p \sim \mathrm{Poisson}(K)} children.
 Each child's time is \eqn{t_c = t_p + \Delta}, where \eqn{\Delta \sim \mathrm{Exp}(\beta)}.
 Keep only those \eqn{t_c \le T}.
-\item Each child then serves as a parent to further offspring, recursively, until no new events fall in \link{0,T}.
+\item Each child then serves as a parent to further offspring, recursively, until no new events fall in \verb{[0,T]}.
 }
 
 This method gives the same distribution as a Hawkes process with intensity

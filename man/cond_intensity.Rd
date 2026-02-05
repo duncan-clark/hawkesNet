@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{cond_intensity}
 \alias{cond_intensity}
-\title{FUNCTION_TITLE}
+\title{Conditional intensity for Hawkes network growth model}
 \usage{
 cond_intensity(
   new_net,
@@ -16,33 +16,25 @@ cond_intensity(
 )
 }
 \arguments{
-\item{new_net}{PARAM_DESCRIPTION}
+\item{new_net}{Current network (mark) state.}
 
-\item{t}{PARAM_DESCRIPTION}
+\item{t}{Current time.}
 
-\item{mark_filtration}{PARAM_DESCRIPTION, Default: NULL}
+\item{mark_filtration}{Observed network filtration (history).}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Mark PMF function (e.g. \code{PMF_mark_BA} or \code{PMF_mark_CS}).}
 
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List of parameters (\code{mu}, \code{beta_overall}, \code{K}, etc.).}
 
-\item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
+\item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{times}{Optional precomputed event times; if \code{NULL}, taken from \code{mark_filtration}.}
+
+\item{...}{Arguments passed to \code{PMF_mark}.}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{result} (intensity value), \code{func} (function for gradient), and optional debug fields.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Evaluates the conditional intensity at time \code{t} given the mark (network) and past events.
 }

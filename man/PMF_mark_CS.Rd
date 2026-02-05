@@ -2,7 +2,7 @@
 % Please edit documentation in R/mark_PMF.R
 \name{PMF_mark_CS}
 \alias{PMF_mark_CS}
-\title{FUNCTION_TITLE}
+\title{Mark PMF for change statistic (ERGM-style) attachment}
 \usage{
 PMF_mark_CS(
   time,
@@ -22,42 +22,30 @@ PMF_mark_CS(
 )
 }
 \arguments{
-\item{time}{PARAM_DESCRIPTION}
+\item{time}{Current event time.}
 
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List including \code{node_lambda}, \code{CS_params}, and optionally \code{beta_edges}, \code{K}, etc.}
 
-\item{mark_filtration}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Observed network up to \code{time}.}
 
-\item{mark}{PARAM_DESCRIPTION, Default: NULL}
+\item{mark}{Optional network at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
 
-\item{generate_mark}{PARAM_DESCRIPTION, Default: FALSE}
+\item{generate_mark}{If \code{TRUE}, sample a new edge (default \code{FALSE}).}
 
-\item{new_edge_hash}{PARAM_DESCRIPTION, Default: NULL}
+\item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
 
-\item{formula_RHS}{PARAM_DESCRIPTION}
+\item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).}
 
-\item{grad}{PARAM_DESCRIPTION, Default: FALSE}
+\item{grad}{If \code{TRUE}, compute gradient (default \code{FALSE}).}
 
-\item{truncation}{if truncation = 1, only consider edges from new nodes to old nodes,
-truncation = k considers edges from k time steps before the new nodes to the old nodes:}
+\item{truncation}{Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Probability mass function for the mark using an ERNM/ERGM-style model with change statistics and optional truncation.
 }
 \seealso{
-\code{\link[network]{network}}, \code{\link[network]{add.vertices}}
-\code{\link[ernm]{as.BinaryNet}}
+\code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
 }

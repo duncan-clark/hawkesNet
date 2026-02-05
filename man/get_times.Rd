@@ -2,26 +2,18 @@
 % Please edit documentation in R/utils.R
 \name{get_times}
 \alias{get_times}
-\title{FUNCTION_TITLE}
+\title{Get event times from a network}
 \usage{
 get_times(net, time_name = "time")
 }
 \arguments{
-\item{net}{PARAM_DESCRIPTION}
+\item{net}{A \code{network} object with \code{time} attribute on vertices and edges.}
+
+\item{time_name}{Character; name of the time attribute (default \code{"time"}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{node_times}, \code{edge_times}, and \code{times} (sorted unique).
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Extracts vertex and edge \code{time} attributes and returns a sorted unique vector of all event times.
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{loglik_hawkesGrowthNet}
 \alias{loglik_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Log-likelihood for the Hawkes network growth model}
 \usage{
 loglik_hawkesGrowthNet(
   params,
@@ -17,35 +17,30 @@ loglik_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List of parameters.}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric \code{c(t0, t1)}.}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{mark_filtration}{Observed network (filtration).}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Mark PMF function.}
 
-\item{events}{PARAM_DESCRIPTION}
+\item{edge_hash_list}{Optional list of edge hashes per event (for internal use).}
 
-\item{use_hashing}{PARAM_DESCRIPTION, Default: TRUE}
+\item{verbose}{Print timing (default \code{FALSE}).}
+
+\item{do_grad}{Compute gradients (default \code{FALSE}).}
+
+\item{intens_funcs}{Precomputed intensity functions (for fitting).}
+
+\item{...}{Passed to \code{cond_intensity} / \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{loglik} and optionally \code{grads}, \code{intens_funcs}.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Computes the log-likelihood and optional gradients for a given parameter vector and observed network.
 }
 \seealso{
-\code{\link[network]{as.edgelist}}
-\code{\link[hash]{hash}}
+\code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
 }

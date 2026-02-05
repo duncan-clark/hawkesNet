@@ -2,33 +2,23 @@
 % Please edit documentation in R/utils.R
 \name{events_to_net}
 \alias{events_to_net}
-\title{FUNCTION_TITLE}
+\title{Convert an event list (edge additions over time) to a network}
 \usage{
 events_to_net(events_list, net = NULL, directed = F)
 }
 \arguments{
-\item{events_list}{PARAM_DESCRIPTION}
+\item{events_list}{List with components \code{i} (head vertex indices), \code{j} (tail), and optionally \code{t} (times).}
 
-\item{net}{PARAM_DESCRIPTION, Default: NULL}
+\item{net}{Optional starting \code{network} object; if \code{NULL}, one is created.}
 
-\item{directed}{PARAM_DESCRIPTION, Default: F}
+\item{directed}{Logical; whether the network is directed (default \code{FALSE}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+A \code{network} object with vertices and edges from \code{events_list}.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Builds a \code{network} object by applying edge events in order; optionally starts from an existing network.
 }
 \seealso{
-\code{\link[network]{network}}, \code{\link[network]{attribute.methods}}, \code{\link[network]{add.vertices}}
+\code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[network]{set.edge.attribute}}
 }

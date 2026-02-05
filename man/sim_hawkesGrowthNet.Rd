@@ -2,7 +2,7 @@
 % Please edit documentation in R/hawkesGrowthNet.R
 \name{sim_hawkesGrowthNet}
 \alias{sim_hawkesGrowthNet}
-\title{FUNCTION_TITLE}
+\title{Simulate a Hawkes-driven network growth process}
 \usage{
 sim_hawkesGrowthNet(
   params,
@@ -18,43 +18,32 @@ sim_hawkesGrowthNet(
 )
 }
 \arguments{
-\item{params}{PARAM_DESCRIPTION}
+\item{params}{List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).}
 
-\item{time_window}{PARAM_DESCRIPTION}
+\item{time_window}{Numeric vector \code{c(t0, t1)}.}
 
-\item{PMF_mark}{PARAM_DESCRIPTION}
+\item{PMF_mark}{Mark PMF function (e.g. \code{PMF_mark_BA} or \code{PMF_mark_CS}).}
 
-\item{cond_intensity}{PARAM_DESCRIPTION}
+\item{cond_intensity}{Conditional intensity function (e.g. \code{cond_intensity}).}
 
-\item{hashed_edges}{PARAM_DESCRIPTION, Default: F}
+\item{hashed_edges}{If \code{TRUE}, use a hash for edge lookup (default \code{FALSE}).}
 
-\item{verbose}{PARAM_DESCRIPTION, Default: F}
+\item{verbose}{Print progress (default \code{FALSE}).}
 
-\item{mu_multiplier}{PARAM_DESCRIPTION, Default: 10}
+\item{mu_multiplier}{Multiplier for thinning upper bound (default 10).}
 
-\item{joint_accept}{PARAM_DESCRIPTION, Default: F}
+\item{joint_accept}{Logical (default \code{FALSE}); joint acceptance for mark and time.}
 
-\item{n_mark_sample}{PARAM_DESCRIPTION, Default: NULL}
+\item{n_mark_sample}{Optional number of mark samples per proposal.}
 
-\item{...}{PARAM_DESCRIPTION}
+\item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+List with \code{events}, \code{net}, \code{accept_probs}.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
 }
 \seealso{
-\code{\link[network]{as.edgelist}}
-\code{\link[hash]{hash}}
+\code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
 }

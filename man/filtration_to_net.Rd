@@ -2,30 +2,20 @@
 % Please edit documentation in R/utils.R
 \name{filtration_to_net}
 \alias{filtration_to_net}
-\title{FUNCTION_TITLE}
+\title{Extract the filtration (subnetwork) at or before a given time}
 \usage{
 filtration_to_net(net, t, equals = FALSE)
 }
 \arguments{
-\item{net}{PARAM_DESCRIPTION}
+\item{net}{A \code{network} object with vertex and edge attribute \code{time}.}
 
-\item{t}{PARAM_DESCRIPTION}
+\item{t}{Numeric; cutoff time.}
 
-\item{equals}{PARAM_DESCRIPTION, Default: FALSE}
+\item{equals}{If \code{FALSE}, also remove edges/vertices with time exactly equal to \code{t} (default \code{FALSE}).}
 }
 \value{
-OUTPUT_DESCRIPTION
+The filtered \code{network} object.
 }
 \description{
-FUNCTION_DESCRIPTION
-}
-\details{
-DETAILS
-}
-\examples{
-\dontrun{
-if(interactive()){
- #EXAMPLE1
- }
-}
+Removes edges and vertices with time greater than \code{t}; optionally excludes those exactly at \code{t}.
 }
