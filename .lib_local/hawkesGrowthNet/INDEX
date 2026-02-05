@@ -1,0 +1,42 @@
+CollegeMsg              CollegeMsg messaging network data
+PMF_mark_BA             Mark PMF for
+                        Barab<c3><a1>si<e2><80><93>Albert-style
+                        (degree-weighted) attachment
+PMF_mark_CS             Mark PMF for change statistic (ERGM-style)
+                        attachment
+compensator_temporal_hawkes
+                        Compensator for Temporal Hawkes Process
+compensators_hawkesGrowthNet
+                        Compensators (integrated intensity) for the
+                        Hawkes growth model
+cond_intensity          Conditional intensity for Hawkes network growth
+                        model
+events_to_net           Convert an event list (edge additions over
+                        time) to a network
+filtration_to_net       Extract the filtration (subnetwork) at or
+                        before a given time
+fit_hawkesGrowthNet     Fit the Hawkes network growth model by maximum
+                        likelihood
+fit_temporal_hawkes     Fit Temporal Hawkes Process
+get_times               Get event times from a network
+has_edge                Check whether an edge exists in a hash-backed
+                        edge set
+ht09_contact_list       Hypertext 2009 contact list (temporal edges)
+ks_test_pval_hawkesGrowthNet
+                        Kolmogorov-Smirnov test p-value for time
+                        rescaling (Hawkes growth model)
+ks_test_pval_temporal   KS Test for Temporal Hawkes Process
+loglik_hawkesGrowthNet
+                        Log-likelihood for the Hawkes network growth
+                        model
+loglik_temporal_hawkes
+                        Log-likelihood for Temporal Hawkes Process with
+                        KDE Background
+make_network_growth_animation
+                        Create an animation of network growth over time
+normalize_times_01      Normalize node + edge "time" attributes to [0,
+                        1]
+sim_hawkesGrowthNet     Simulate a Hawkes-driven network growth process
+simulate_hawkes_branching
+                        Simulate a univariate Hawkes process (branching
+                        structure)

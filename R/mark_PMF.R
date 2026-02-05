@@ -12,7 +12,6 @@
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
 #' @export
-#' @importFrom network network add.vertices
 PMF_mark_BA <- function(time,
                         params,
                         mark_filtration,
@@ -67,16 +66,21 @@ PMF_mark_BA <- function(time,
     times <- get.vertex.attribute(last_net, "time")
     node_degrees <- degree(last_net)
     degs <- node_degrees * exp(-params$beta_edges * (time - times))
+    degs[is.na(degs) | is.nan(degs)] <- 0
     total_deg <- sum(degs)
-    
-    if(total_deg == 0 || is.na(total_deg)){
-      probs <- rep(1, length(heads))
+    if (total_deg <= 0 || !is.finite(total_deg)) {
+      probs <- rep(1 / length(heads), length(heads))
     } else {
       probs <- degs[heads] / total_deg
     }
+    probs[is.na(probs) | is.nan(probs)] <- 0
+    probs[probs < 0] <- 0
+    probs[probs > 1] <- 1
+    if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
   } else {
     node_degrees <- NULL
     probs <- rep(1, length(heads))
+    times <- numeric(0)  # not used when node_degrees is NULL; avoids missing 'times' in closure env
   }
   
   if(!is.null(mark) && length(probs) !=0 && (last_net %n% 'n' > 2)){
@@ -88,7 +92,9 @@ PMF_mark_BA <- function(time,
       in_mark <- has_edge(heads, tails, new_edge_hash)
     }
     
-    log_mark_density <- sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark]))
+    p_in <- pmax(probs[in_mark], .Machine$double.eps)
+    p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
+    log_mark_density <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
     mark_density <- exp(log_mark_density)
   } else {
     in_mark <- rep(1, length(heads))
@@ -114,13 +120,17 @@ PMF_mark_BA <- function(time,
     # or if you are only optimizing params that don't change structure:
     if(!is.null(node_degrees)){
       degs <- node_degrees * exp(-params$beta_edges * (time - times))
+      degs[is.na(degs) | is.nan(degs)] <- 0
       total_deg <- sum(degs)
-      if(is.na(total_deg) || total_deg == 0){
-        return(0)
-      }else {
-        probs <- degs[heads] / total_deg
-      }
-      return(sum(log(probs[in_mark])) + sum(log(1 - probs[!in_mark])))
+      if (!is.finite(total_deg) || total_deg <= 0) return(0)
+      probs <- degs[heads] / total_deg
+      probs[is.na(probs) | is.nan(probs)] <- 0
+      probs[probs < 0] <- 0
+      probs[probs > 1] <- 1
+      if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
+      p_in <- pmax(probs[in_mark], .Machine$double.eps)
+      p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
+      return(sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE))
     }else{
       return(0)
     }
@@ -181,22 +191,24 @@ PMF_mark_BA <- function(time,
         heads <- heads[!in_old_net]
       }
       degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
+      degs[is.na(degs) | is.nan(degs)] <- 0
       total_deg <- sum(degs)
-      
-      if(total_deg == 0){
-        probs <- rep(1, length(heads))
+      if (total_deg <= 0 || !is.finite(total_deg)) {
+        probs <- rep(1 / length(heads), length(heads))
       } else {
         probs <- degs[heads] / total_deg
       }
-      
-      if(any(is.na(probs))){
-        browser()
-      }
-      
+      if (any(is.na(probs) | is.nan(probs))) warning("PMF_mark_BA: NA/NaN probs replaced with 0; check degree/time/params.")
+      probs[is.na(probs) | is.nan(probs)] <- 0
+      probs[probs < 0] <- 0
+      probs[probs > 1] <- 1
+      if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
       add <- runif(length(probs)) < probs
+      add[is.na(add)] <- FALSE
       network::add.edges(mark_sample, heads[add], tails[add])
-      
-      log_mark_sample_density <- sum(log(probs[add])) + sum(log(1 - probs[!add]))
+      p_add <- pmax(probs[add], .Machine$double.eps)
+      p_not <- pmax(1 - probs[!add], .Machine$double.eps)
+      log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) + sum(log(p_not), na.rm = TRUE)
       mark_sample_density <- exp(log_mark_sample_density)
     }else{
       if(is.null(last_net)){
@@ -251,8 +263,6 @@ PMF_mark_BA <- function(time,
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
 #' @rdname PMF_mark_CS
 #' @export
-#' @importFrom network network add.vertices
-#' @importFrom ernm as.BinaryNet
 PMF_mark_CS <- function(time,
                         params,
                         mark_filtration,
@@ -268,6 +278,7 @@ PMF_mark_CS <- function(time,
                         max_node_time = NULL,
                         ...
 ){
+  eps <- 1e-10  # used for probability clamping and safe log (CS safety)
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
   }
@@ -339,6 +350,16 @@ PMF_mark_CS <- function(time,
       probs <- apply(change_stats, 1, function(c){
         1/(1+exp(-sum(c*params$CS_params)))
       })
+      # --- Safety: sanitize probs after logistic (suggestions 1 & 9) ---
+      if (any(!is.finite(probs))) {
+        warning("PMF_mark_CS: NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")
+        probs[!is.finite(probs)] <- 0
+      }
+      probs <- pmin(pmax(probs, eps), 1 - eps)
+      if (length(probs) > 0L && all(probs <= eps)) {
+        warning("PMF_mark_CS: all edge probs effectively zero after logistic; using uniform probs.")
+        probs[] <- 1 / length(probs)
+      }
       # use either node times or last node activity:
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
@@ -347,9 +368,28 @@ PMF_mark_CS <- function(time,
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
+      # --- Safety: sanitize diffs/factor before multiplying probs (suggestion 2 & 9) ---
+      if (any(!is.finite(diffs))) {
+        warning("PMF_mark_CS: non-finite time diffs in density path; replacing with 0.")
+        diffs[!is.finite(diffs)] <- 0
+      }
       factor <- exp(-params$beta_edges*(diffs))
+      if (any(!is.finite(factor))) {
+        warning("PMF_mark_CS: non-finite decay factor in density path; replacing with 1.")
+        factor[!is.finite(factor)] <- 1
+      }
       probs <- probs * factor
-      
+      # --- Safety: sanitize probs after factor (suggestion 3 & 9) ---
+      if (any(!is.finite(probs))) {
+        warning("PMF_mark_CS: NA/NaN/Inf in edge probs after decay factor; replacing with 0 before clamp.")
+        probs[!is.finite(probs)] <- 0
+      }
+      probs <- pmin(pmax(probs, eps), 1 - eps)
+      if (length(probs) > 0L && all(probs <= eps)) {
+        warning("PMF_mark_CS: all edge probs effectively zero after decay; using uniform probs.")
+        probs[] <- 1 / length(probs)
+      }
+
       if(length(probs)==0){
         in_mark <- logical(0)
         probs <- NULL
@@ -385,9 +425,21 @@ PMF_mark_CS <- function(time,
       if(time >max_node_time){
         node_dens <- 0
       }else{
-        node_dens <- log(stats::dpois(new_nodes-old_nodes,params$node_lambda))
+        dval <- stats::dpois(new_nodes-old_nodes, params$node_lambda)
+        if (!is.finite(dval) || dval <= 0) {
+          warning("PMF_mark_CS: degenerate node count density (dpois=0 or non-finite); using large negative log-density.")
+          node_dens <- -1e10
+        } else {
+          node_dens <- log(dval)
+        }
       }
-      log_mark_density <- sum(log(probs[in_mark])) + sum(log(1-probs[!in_mark])) + node_dens
+      # --- Safety: safe log with clamped probs (suggestion 4) ---
+      p_in <- pmax(probs[in_mark], eps, na.rm = TRUE)
+      p_out <- pmax(1 - probs[!in_mark], eps, na.rm = TRUE)
+      if (any(!is.finite(p_in)) || any(!is.finite(p_out))) {
+        warning("PMF_mark_CS: non-finite probs in log_mark_density; using epsilon for log.")
+      }
+      log_mark_density <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE) + node_dens
       mark_density <- exp(log_mark_density)
       
       if(grad){
@@ -481,10 +533,12 @@ PMF_mark_CS <- function(time,
     
     if (anyNA(p)) return(NA_real_)
     log_edge_part <- sum(log(p[in_mark])) + sum(log1p(-p[!in_mark]))
+    # --- Safety: handle dpois=0 or non-finite in closure (suggestion 8) ---
     node_dens <- if (!is.null(max_node_time) && time > max_node_time) {
       0
     } else {
-      log(stats::dpois(new_nodes - old_nodes, params$node_lambda))
+      dval <- stats::dpois(new_nodes - old_nodes, params$node_lambda)
+      if (!is.finite(dval) || dval <= 0) -1e10 else log(dval)
     }
     log_edge_part + node_dens
   }
@@ -492,12 +546,22 @@ PMF_mark_CS <- function(time,
   # Decide if you’re in the same degenerate branch as the direct computation
   degenerate_edges <- is.null(probs) || length(probs) == 1L
   
+  # --- Safety: sanitize diffs for closure (suggestion 10) ---
+  diffs_for_closure <- if (exists("diffs", inherits = FALSE)) {
+    d <- diffs
+    if (any(!is.finite(d))) {
+      warning("PMF_mark_CS: non-finite diffs passed to log_density_func closure; replacing with 0.")
+      d[!is.finite(d)] <- 0
+    }
+    d
+  } else numeric(0)
+  
   # Now *force* a tiny environment (no local needed)
   environment(log_density_func_light) <- list2env(
     list(
       change_stats     = change_stats,
       in_mark          = in_mark,
-      diffs            = if (exists("diffs", inherits = FALSE)) diffs else numeric(0),
+      diffs            = diffs_for_closure,
       new_nodes        = new_nodes,
       old_nodes        = old_nodes,
       time             = time,
@@ -579,7 +643,17 @@ PMF_mark_CS <- function(time,
       probs <- apply(change_stats, 1, function(c){
         1/(1+exp(-sum(c*params$CS_params)))
       })
-      
+      # --- Safety: sanitize probs after logistic in generate_mark (suggestions 1 & 9) ---
+      if (any(!is.finite(probs))) {
+        warning("PMF_mark_CS (generate_mark): NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")
+        probs[!is.finite(probs)] <- 0
+      }
+      probs <- pmin(pmax(probs, eps), 1 - eps)
+      if (length(probs) > 0L && all(probs <= eps)) {
+        warning("PMF_mark_CS (generate_mark): all edge probs effectively zero after logistic; using uniform probs.")
+        probs[] <- 1 / length(probs)
+      }
+
       # reset to when we did not add more edges
       #mark_sample <- old_new_net
       # logistic regression on change stats:
@@ -596,20 +670,54 @@ PMF_mark_CS <- function(time,
       diffs <- sapply(seq_along(tails), function(i) {
         node_times[tails[i]] - node_times[heads[i]]
       })
-      # factor <- params$eta + (1-params$eta)*exp(-params$beta_edges*(diffs))
+      # --- Safety: sanitize diffs/factor in generate_mark (suggestion 2 & 9) ---
+      if (any(!is.finite(diffs))) {
+        warning("PMF_mark_CS (generate_mark): non-finite time diffs; replacing with 0.")
+        diffs[!is.finite(diffs)] <- 0
+      }
       factor <- exp(-params$beta_edges*(diffs))
+      if (any(!is.finite(factor))) {
+        warning("PMF_mark_CS (generate_mark): non-finite decay factor; replacing with 1.")
+        factor[!is.finite(factor)] <- 1
+      }
       probs <- factor * probs
+      # --- Safety: sanitize probs after decay in generate_mark (suggestion 3 & 9) ---
+      if (any(!is.finite(probs))) {
+        warning("PMF_mark_CS (generate_mark): NA/NaN/Inf in edge probs after decay; replacing with 0 before clamp.")
+        probs[!is.finite(probs)] <- 0
+      }
+      probs <- pmin(pmax(probs, eps), 1 - eps)
+      if (length(probs) > 0L && all(probs <= eps)) {
+        warning("PMF_mark_CS (generate_mark): all edge probs effectively zero after decay; using uniform probs.")
+        probs[] <- 1 / length(probs)
+      }
 
       add <- runif(length(probs)) < probs
+      # --- Safety: no NA in add before add.edges (suggestion 5 & 9) ---
+      if (any(is.na(add))) {
+        warning("PMF_mark_CS (generate_mark): NA in edge add vector; treating as FALSE (do not add edge).")
+        add[is.na(add)] <- FALSE
+      }
       add.edges(mark_sample,
                 heads[add],
                 tails[add]
       )
       set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
-      mark_sample_density = prod(probs[add])*prod(1-probs[!add])*stats::dpois(new_nodes-old_nodes,params$node_lambda)
-      log_mark_sample_density <- sum(log(probs[add])) +
-                                 sum(log(1-probs[!add])) +
-                                 log(stats::dpois(new_nodes-old_nodes,params$node_lambda))
+      # --- Safety: safe log and dpois for sample density (suggestion 6 & 8) ---
+      dpois_val <- stats::dpois(new_nodes-old_nodes, params$node_lambda)
+      if (!is.finite(dpois_val) || dpois_val <= 0) {
+        warning("PMF_mark_CS (generate_mark): degenerate dpois for node count; using small positive value for density.")
+        dpois_val <- 1e-300
+      }
+      p_add <- pmax(probs[add], eps, na.rm = TRUE)
+      p_not <- pmax(1 - probs[!add], eps, na.rm = TRUE)
+      if (any(!is.finite(p_add)) || any(!is.finite(p_not))) {
+        warning("PMF_mark_CS (generate_mark): non-finite probs in log_mark_sample_density; using epsilon for log.")
+      }
+      mark_sample_density <- prod(p_add) * prod(p_not) * dpois_val
+      log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) +
+                                 sum(log(p_not), na.rm = TRUE) +
+                                 log(dpois_val)
       }else{
         if(is.null(last_net)){
           mark_sample <- network::network(matrix(1),directed = F)

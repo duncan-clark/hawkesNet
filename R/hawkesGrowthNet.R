@@ -106,8 +106,6 @@ cond_intensity <- function(new_net,
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
 #' @rdname sim_hawkesGrowthNet
 #' @export
-#' @importFrom network as.edgelist
-#' @importFrom hash hash
 sim_hawkesGrowthNet <- function(params,
                                 time_window,
                                 PMF_mark, # function that both generates new mark and calculates the density of existing mark
@@ -310,8 +308,6 @@ sim_hawkesGrowthNet <- function(params,
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
 #' @rdname loglik_hawkesGrowthNet
 #' @export
-#' @importFrom network as.edgelist
-#' @importFrom hash hash
 loglik_hawkesGrowthNet = function(params,
                                   time_window,
                                   mark_filtration,
@@ -411,7 +407,7 @@ loglik_hawkesGrowthNet = function(params,
   max_t <- max(times)
   pieces <- 1 - exp(-params$beta_overall * (tval - times))
   integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
-  loglik <- intens_sum - integral
+  loglik <- intens_sum - integral  # If you hit Browse[] here, clear RStudio breakpoints (Debug -> Clear All) or run undebug(loglik_hawkesGrowthNet)
   # print(paste0("integral is ",integral))
   # print(paste0("intens_sum is ",intens_sum))
   # print(paste0("trigger part of integral is  ",(1/params$beta_overall)*params$K*sum(pieces)))

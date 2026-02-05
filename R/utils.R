@@ -65,7 +65,7 @@ make_network_growth_animation <- function(net_list,
 #' @rdname has_edge
 #' @export
 has_edge <- function(i, j, edge_hash) {
-  existing_keys <- hash::keys(edge_hash)
+  existing_keys <- keys(edge_hash)
   keys_to_check <- paste(i, j, sep = "-")
   keys_to_check %in% existing_keys
 }
@@ -82,7 +82,6 @@ has_edge <- function(i, j, edge_hash) {
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[network]{set.edge.attribute}}
 #' @rdname events_to_net
 #' @export
-#' @importFrom network network set.vertex.attribute add.vertices set.edge.attribute
 events_to_net <- function(events_list,
                           net = NULL,
                           directed = F){

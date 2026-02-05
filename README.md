@@ -3,11 +3,28 @@
 [![R-CMD-check](https://github.com/duncan-clark/hawkesGrowthNet/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/duncan-clark/hawkesGrowthNet/actions/workflows/R-CMD-check.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+**New users:** try the minimal examples first — see [**Try the examples first**](#new-users-try-the-examples-first) below.
+
 **hawkesGrowthNet** is an R package that provides tools for simulating and analyzing networks that grow with **Hawkes process** arrival times.
 
 - Generate events under various Hawkesian network growth formulations
 - Estimate model parameters for hawkesGrowthNet models
 - Visualize network growth over time (see `make_network_growth_animation`; requires suggested packages `networkDynamic` and `animation`)
+
+---
+
+## New users: try the examples first
+
+Before running the full simulation studies, run the **minimal working examples** to simulate and fit one BA and one CS network (a few minutes total). From the package root in R or RStudio:
+
+```r
+# Install or load the package first (see Installation below)
+# Then, with working directory = package root:
+source("inst/examples/example_BA.R")   # BA (degree-weighted) model — ~1 min
+source("inst/examples/example_CS.R")   # CS (change-statistic) model — ~2 min
+```
+
+Details: **[inst/examples/README.md](inst/examples/README.md)**. For full studies (many replicates, SLURM), see **Running the simulation studies** below.
 
 ---
 

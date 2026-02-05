@@ -9,14 +9,14 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends: 
-    R (>= 3.5.0)
-Imports:
-    Rcpp,
+    R (>= 3.5.0),
+    data.table,
     ernm,
     hash,
-    sna,
     network,
-    data.table
+    sna
+Imports:
+    Rcpp
 Suggests:
     testthat (>= 3.0.0),
     networkDynamic,

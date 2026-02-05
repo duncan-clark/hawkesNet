@@ -1,0 +1,17 @@
+Package: hawkesGrowthNet
+Title: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth
+        Models
+Version: 0.0.1
+Authors@R: 
+    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
+Description: Simulate and fit maximum likelihood for Hawkesian network growth models.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends: R (>= 3.5.0), data.table, ernm, hash, network, sna
+Imports: Rcpp
+Suggests: testthat (>= 3.0.0), networkDynamic, animation
+Author: Duncan Clark [aut, cre]
+Maintainer: Duncan Clark <dac6@williams.edu>
+Built: R 4.4.1; ; 2026-02-05 22:52:24 UTC; unix
