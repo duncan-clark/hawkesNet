@@ -2,4 +2,6 @@
 .Rhistory
 .DS_Store
 .PNG
-cluster_output/
+# Ignore job logs; keep cluster_output/ in repo via .gitkeep
+cluster_output/*
+!cluster_output/.gitkeep
