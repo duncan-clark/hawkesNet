@@ -114,10 +114,8 @@ fits <- lapply(net_list,function(net){
                              PMF_mark = PMF_mark_CS,
                              formula_RHS = "edges + triangles + star(c(2,3))",
                              truncation = 100,
-                             grad = FALSE,
                              trace = 1,
                              verbose = TRUE,
-                             get_hessian = T,
                              maxit = 1000,
                              cores = N_CORES
   )

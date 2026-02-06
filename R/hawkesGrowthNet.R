@@ -10,7 +10,7 @@
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
 #' @param times Optional precomputed event times; if \code{NULL}, taken from \code{mark_filtration}.
 #' @param ... Arguments passed to \code{PMF_mark}.
-#' @return List with \code{result} (intensity value), \code{func} (function for gradient), and optional debug fields.
+#' @return List with \code{result} (intensity value), \code{func} (function to evaluate intensity at new params), and optional debug fields.
 #' @rdname cond_intensity
 #' @export
 cond_intensity <- function(new_net,
@@ -101,6 +101,7 @@ cond_intensity <- function(new_net,
 #' @param mu_multiplier Multiplier for thinning upper bound (default 10).
 #' @param joint_accept Logical (default \code{FALSE}); joint acceptance for mark and time.
 #' @param n_mark_sample Optional number of mark samples per proposal.
+#' @param stop_on_full_network If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
@@ -115,11 +116,13 @@ sim_hawkesGrowthNet <- function(params,
                                 mu_multiplier = 10,
                                 joint_accept = F,
                                 n_mark_sample = NULL,
+                                stop_on_full_network = TRUE, # if TRUE, stop when no candidate edges (full network); if FALSE, warn and continue with no new edges
                                 ... # to be past to PMF_mark
 
 
 ){
   t1 <- proc.time()
+  validate_point_process_params(params)
   # simulate the background points (can only simulate their times right now)
   mu <- params$mu
   theta <- params$theta
@@ -161,6 +164,7 @@ sim_hawkesGrowthNet <- function(params,
                               mark = NULL,
                               generate_mark = TRUE,
                               new_edge_hash = NULL,
+                              stop_on_full_network = stop_on_full_network,
                               ...)
       net <- mark_sample$mark_sample
       accept <- 1
@@ -175,6 +179,7 @@ sim_hawkesGrowthNet <- function(params,
                               generate_mark = TRUE,
                               generate_density = FALSE,
                               new_edge_hash = NULL,
+                              stop_on_full_network = stop_on_full_network,
                               ...)
       net <- mark_sample$mark_sample
       new_nodes <- (net %n% 'n') - (current_net %n% 'n')
@@ -204,6 +209,7 @@ sim_hawkesGrowthNet <- function(params,
                                     mark = NULL,
                                     generate_mark = TRUE,
                                     new_edge_hash = TRUE,
+                                    stop_on_full_network = stop_on_full_network,
                                     ...
             )
             net <- mark_sample$mark_sample
@@ -238,16 +244,7 @@ sim_hawkesGrowthNet <- function(params,
           )
           intensity <- tmp$lambda + tmp$kernel_sum
         }
-
-        mark_sample <- PMF_mark(time = current_event$time,
-                                params = params,
-                                mark_filtration = current_net,
-                                mark = NULL,
-                                generate_mark = TRUE,
-                                new_edge_hash = NULL,
-                                ...
-        )
-        net <- mark_sample$mark_sample
+        # Use the same proposed mark for acceptance and for updating (do not resample)
       }
 
       accept <- intensity/lambda
@@ -256,8 +253,8 @@ sim_hawkesGrowthNet <- function(params,
 
     # if we accept the point add it in
     if(verbose){
-      print(paste0("Number of edges proposed is ",length(net$mel)))
-      print(paste0("Number of nodes proposed is ",length(net$oel)))
+      print(paste0("Number of edges proposed is ", length(net$mel)))
+      print(paste0("Number of nodes proposed is ", net %n% "n"))
       print(paste0("accept prob is: ",accept))
       
       }
@@ -293,7 +290,7 @@ sim_hawkesGrowthNet <- function(params,
 
 #' Log-likelihood for the Hawkes network growth model
 #'
-#' Computes the log-likelihood and optional gradients for a given parameter vector and observed network.
+#' Computes the log-likelihood for a given parameter vector and observed network.
 #'
 #' @param params List of parameters.
 #' @param time_window Numeric \code{c(t0, t1)}.
@@ -301,10 +298,9 @@ sim_hawkesGrowthNet <- function(params,
 #' @param PMF_mark Mark PMF function.
 #' @param edge_hash_list Optional list of edge hashes per event (for internal use).
 #' @param verbose Print timing (default \code{FALSE}).
-#' @param do_grad Compute gradients (default \code{FALSE}).
 #' @param intens_funcs Precomputed intensity functions (for fitting).
 #' @param ... Passed to \code{cond_intensity} / \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}).
-#' @return List with \code{loglik} and optionally \code{grads}, \code{intens_funcs}.
+#' @return List with \code{loglik} and \code{intens_funcs}.
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
 #' @rdname loglik_hawkesGrowthNet
 #' @export
@@ -314,7 +310,6 @@ loglik_hawkesGrowthNet = function(params,
                                   PMF_mark,
                                   edge_hash_list = NULL,
                                   verbose = FALSE,
-                                  do_grad = FALSE,
                                   intens_funcs = NULL,
                                   ...
 ){
@@ -322,8 +317,7 @@ loglik_hawkesGrowthNet = function(params,
   # don't allow negative parameters in first 2
   if(any(sapply(params[1:min(length(params),4)],function(x){x<0}))){
     return(list(loglik = -(10**(100)),
-                grads = rep(0,length(params)))
-    )
+                intens_funcs = NULL))
   }
   times <- get_times(mark_filtration)
   times <- times$times
@@ -411,48 +405,13 @@ loglik_hawkesGrowthNet = function(params,
   # print(paste0("integral is ",integral))
   # print(paste0("intens_sum is ",intens_sum))
   # print(paste0("trigger part of integral is  ",(1/params$beta_overall)*params$K*sum(pieces)))
-  # print(paste0("result is :",loglik))
-  # print(paste0("this iteration of loglik took ", round((proc.time()-t)[3],2)," seconds"))
-
-  # calcualte the gradients:
-
-  # kernel_sum <- sapply(intens_list,function(x){x$kernel_sum})
-  # decays <- lapply(intens_list,function(x){x$decays})
-  # diffs <- lapply(intens_list,function(x){x$diffs})
-  
-  grads <- list()
-  if(do_grad){
-    # hawkes_mu
-    grads$mu <- sum(1/(params$mu + params$K*kernel_sum)) - tval
-    # hawkes K
-    grads$K <-  sum(kernel_sum/(params$mu + params$K*kernel_sum)) -  (1/params$beta_overall)*sum(pieces)
-    # hawkes beta
-    grads$beta_overall <- sum(sapply(seq_along(decays), function(i){
-      (params$K * sum(-diffs[[i]]*decays[[i]])) / (params$mu + kernel_sum[i])
-    })) +
-      (-params$K)/(params$beta_overall**2) * ( length(kernel_sum) + sum((tval - times - 1/(params$beta_overall^2))*exp(-params$beta_overall*(tval-times))))
-    
-    # hawkes edge decay from mark generator:
-    decay_grads <- sapply(intens_list,function(x){x$decay_grad})
-    grads$beta_edges <- sum(decay_grads)
-    
-    # hawkes theta_params (from mark generator)
-    # get the mark PMF grads:
-    mark_grads <- lapply(intens_list,function(x){x$mark_grad})
-    grads$CS_params <- colSums(do.call(rbind,mark_grads))
-  }
-
-
-  # TODO fix the mark grad issues with simplification
-
   t<-proc.time() - t
   if(verbose){
     print(paste0("this iteration of loglik took ", round(t[3],2)," seconds"))
   }
   
   return(list(loglik = loglik,
-              intens_funcs = intens_funcs,
-              grads = grads))
+              intens_funcs = intens_funcs))
 }
 
 #' Fit the Hawkes network growth model by maximum likelihood
@@ -466,11 +425,10 @@ loglik_hawkesGrowthNet = function(params,
 #' @param REPORT Reporting interval for \code{optim} (default 10).
 #' @param reltol Relative convergence tolerance (default 1e-8).
 #' @param parscale Scale vector for parameters (default all 1).
-#' @param get_hessian If \code{TRUE}, return Hessian in the fit object.
 #' @param fixed_params Character vector of parameter names to hold fixed.
 #' @param cache_intensity If \code{TRUE}, cache intensity functions (default \code{TRUE}).
 #' @param ... Passed to \code{loglik_hawkesGrowthNet} (e.g. \code{truncation}, \code{formula_RHS}).
-#' @return List with \code{fit} (output of \code{optim}) and \code{intens_funcs}.
+#' @return List with \code{fit} (output of \code{optim}), \code{intens_funcs}, \code{fit_table} (parameter estimates and standard errors), and \code{hessian} (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @rdname fit_hawkesGrowthNet
 #' @export
 fit_hawkesGrowthNet <- function(params_init,
@@ -482,7 +440,6 @@ fit_hawkesGrowthNet <- function(params_init,
                                 REPORT = 10,
                                 reltol = 1e-8,
                                 parscale = NULL,
-                                get_hessian = FALSE,
                                 fixed_params = NULL,
                                 cache_intensity = TRUE,
                                 ...){
@@ -501,63 +458,6 @@ fit_hawkesGrowthNet <- function(params_init,
   # Validate that params match the mark PMF (required names and, for CS, CS_params length)
   validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)
   
-  # ==================
-  # Deprecated 
-  # ==================
-  
-  # optim_func <- function(params,...){
-  #   param_vec <- params
-  #   params <- relist(params,skeleton = params_init)
-  #   params[fixed_params] <- params_init_old[fixed_params]
-  #   
-  #   result <- loglik_hawkesGrowthNet(params = params,
-  #                                    time_window = time_window,
-  #                                    mark_filtration = mark_filtration,
-  #                                    PMF_mark = PMF_mark,
-  #                                    ...)
-  # 
-  #   # =================
-  #   # USE numDERIV TO DEBUG !
-  #   # =================
-  #   wrapper <- function(x,...){
-  #     x <- relist(x, skeleton = params_init)
-  #     return(loglik_hawkesGrowthNet(params = x,
-  #                                   ...)$loglik)
-  #   }
-  # 
-  #   # numgrad <- grad(func = wrapper,
-  #   #                 x    = param_vec,
-  #   #                 time_window = time_window,  # or whatever your data is
-  #   #                 events      = events,
-  #   #                 PMF_mark    = PMF_mark,
-  #   #                 ...)
-  #   #
-  #   # print("Numeric gradient vs analytic gradient:")
-  #   # print(numgrad)
-  #   #print("analytic gradient")
-  #   #print(unlist(result$grads))
-  # 
-  #   # print("params are:")
-  #   # print(params)
-  #   # print("Loglik is :")
-  #   # print(result$loglik)
-  #   # print("Grads are:")
-  #   # print(result$grads)
-  #   return(list(value = result$loglik,
-  #               #grad = numgrad
-  #               grad = unlist(result$grads)
-  #   ))
-  # }
-  # 
-  # fn_wrapper <- function(par,...) {
-  #   res <- optim_func(par, ...)
-  #   return(res$value)
-  # }
-  # gr_wrapper <- function(par, ...) {
-  #   res <- optim_func(par, ...)
-  # 
-  #   return(res$grad)
-  # }
   t<-proc.time()
   
   # pre-calculate the param -> conditonal intensity mapping
@@ -586,6 +486,7 @@ fit_hawkesGrowthNet <- function(params_init,
         params_curr[[k]] <- params_init_old[[k]]
       }
     }
+    if (!point_process_params_valid(params_curr)) return(-1e10)
     
     # 2. Pass NULL to intens_funcs if caching is disabled
     # This forces loglik_hawkesGrowthNet to rebuild the density from scratch
@@ -606,37 +507,44 @@ fit_hawkesGrowthNet <- function(params_init,
                               reltol = reltol,
                               parscale = parscale,
                               abstol = NULL),
-               hessian = get_hessian,
+               hessian = FALSE,
                ...)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
-  
-  # Numerically estimate Hessian at optimal params
-  # THIS IS GONNA TAKE FOREVER - NEED TO CODE UP GRADIENT!
-  # hessian_estimate <- numDeriv::hessian(
-  #   func = function(p) {
-  #     cat(sprintf("Parameters: %s\n",paste(round(p, 4), collapse = ", ")))
-  #     p <- relist(p, skeleton = params_init)
-  #     result <- -loglik_hawkesGrowthNet(params = p,
-  #                                       time_window = time_window,
-  #                                       mark_filtration = mark_filtration,
-  #                                       PMF_mark = PMF_mark,
-  #                                       ...)$loglik
-  #     cat(sprintf("  --> loglik: %f\n", -result))
-  #     
-  #     
-  #     return(result)
-  #   },
-  #   x = fit$par
-  # )
-  # 
-  # # Fisher information approximation is the negative Hessian at the optimum
-  # fisher_info <- hessian_estimate
-  # vcov_matrix <- solve(fisher_info)
-  
 
+  # Results table: estimate and standard error (from numerical Hessian)
+  par_names <- names(fit$par)
+  fit_table <- data.frame(
+    parameter = par_names,
+    estimate  = fit$par,
+    std.error = NA_real_,
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  hessian <- NULL
+  if (requireNamespace("numDeriv", quietly = TRUE)) {
+    neg_loglik <- function(p) -optim_func(p)
+    hessian <- tryCatch(
+      numDeriv::hessian(neg_loglik, fit$par),
+      error = function(e) NULL
+    )
+    if (!is.null(hessian)) {
+      vcov <- tryCatch(solve(hessian), error = function(e) NULL)
+      if (!is.null(vcov)) {
+        se <- sqrt(pmax(diag(vcov), 0))
+        fit_table$std.error <- se
+      }
+    }
+  }
+  message("Hawkes growth fit results:")
+  print(fit_table)
+  if (all(is.na(fit_table$std.error))) {
+    message("(Standard errors not available; install numDeriv for SEs.)")
+  }
   
-  return(list(fit=fit,
-              intens_funcs = init_lik$intens_funcs))
+  return(list(fit = fit,
+              intens_funcs = if (cache_intensity) init_lik$intens_funcs else cached_funcs,
+              fit_table = fit_table,
+              hessian = hessian))
 }
 
 

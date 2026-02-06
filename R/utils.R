@@ -322,6 +322,103 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
 }
 
 
+#' Check whether point process parameters are in valid regions
+#'
+#' Returns \code{FALSE} if any of \code{mu}, \code{beta_overall}, \code{K},
+#' \code{beta_edges}, \code{node_lambda} are present but not strictly positive
+#' and finite, or if \code{vertex_categorical} probabilities are not valid
+#' (non-negative, finite, sum to 1). Used internally by the likelihood optimizer
+#' to apply a penalty when parameters leave the valid region.
+#'
+#' @param params List of parameters (e.g. from \code{relist} or passed to \code{sim_hawkesGrowthNet}).
+#' @param eps Scalar rate/scale params must be \code{> eps}; probability vectors must have sum within \code{1 +/- eps} (default \code{1e-10}).
+#' @return \code{TRUE} if all present parameters are valid, \code{FALSE} otherwise.
+#' @noRd
+point_process_params_valid <- function(params, eps = 1e-10) {
+  if (is.null(params) || length(params) == 0) return(TRUE)
+  eps <- max(eps, .Machine$double.eps)
+  scalar_ok <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x > eps
+  if (!is.null(params$mu) && !scalar_ok(params$mu)) return(FALSE)
+  if (!is.null(params$beta_overall) && !scalar_ok(params$beta_overall)) return(FALSE)
+  if (!is.null(params$K) && !scalar_ok(params$K)) return(FALSE)
+  if (!is.null(params$beta_edges) && !scalar_ok(params$beta_edges)) return(FALSE)
+  if (!is.null(params$node_lambda) && !scalar_ok(params$node_lambda)) return(FALSE)
+  if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
+    for (attr_name in names(params$vertex_categorical)) {
+      p <- params$vertex_categorical[[attr_name]]
+      if (!is.numeric(p) || length(p) == 0L) return(FALSE)
+      if (any(!is.finite(p)) || any(p < 0)) return(FALSE)
+      s <- sum(p)
+      if (!is.finite(s) || s <= 0 || abs(s - 1) > eps) return(FALSE)
+    }
+  }
+  TRUE
+}
+
+#' Validate point process parameters and stop if invalid
+#'
+#' Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
+#' \code{node_lambda} are strictly positive and finite when present, and that
+#' \code{vertex_categorical} probabilities are non-negative, finite, and sum to 1.
+#' If any check fails, \code{stop()} is called with a message listing the problem.
+#'
+#' @param params List of parameters (e.g. passed to \code{sim_hawkesGrowthNet}).
+#' @param eps Scalar params must be \code{> eps}; probability sum tolerance (default \code{1e-10}).
+#' @return \code{invisible(params)} if valid.
+#' @export
+validate_point_process_params <- function(params, eps = 1e-10) {
+  if (is.null(params) || length(params) == 0) return(invisible(params))
+  eps <- max(eps, .Machine$double.eps)
+  msg <- character(0L)
+  scalar_check <- function(name, x) {
+    if (is.null(x)) return(invisible(NULL))
+    if (!is.numeric(x) || length(x) != 1L) {
+      msg <<- c(msg, paste0(name, " must be a numeric scalar"))
+      return(invisible(NULL))
+    }
+    if (!is.finite(x)) {
+      msg <<- c(msg, paste0(name, " must be finite (got ", x, ")"))
+      return(invisible(NULL))
+    }
+    if (x <= eps) {
+      msg <<- c(msg, paste0(name, " must be > ", eps, " (got ", x, ")"))
+      return(invisible(NULL))
+    }
+    invisible(NULL)
+  }
+  scalar_check("mu", params$mu)
+  scalar_check("beta_overall", params$beta_overall)
+  scalar_check("K", params$K)
+  scalar_check("beta_edges", params$beta_edges)
+  scalar_check("node_lambda", params$node_lambda)
+  if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
+    for (attr_name in names(params$vertex_categorical)) {
+      p <- params$vertex_categorical[[attr_name]]
+      if (!is.numeric(p) || length(p) == 0L) {
+        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must be a non-empty numeric vector"))
+        next
+      }
+      if (any(!is.finite(p))) {
+        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must have finite values"))
+        next
+      }
+      if (any(p < 0)) {
+        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must have non-negative probabilities"))
+        next
+      }
+      s <- sum(p)
+      if (!is.finite(s) || s <= 0 || abs(s - 1) > eps) {
+        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must sum to 1 (got ", s, ")"))
+      }
+    }
+  }
+  if (length(msg) > 0L) {
+    stop("Invalid point process parameters: ", paste(msg, collapse = "; "))
+  }
+  invisible(params)
+}
+
+
 # intensity_ggplot:
 pp_intensity_ggplot <- function(times,
                                 line_multiplier = 1,

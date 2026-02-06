@@ -17,7 +17,7 @@
 #' @param new_edge_hash Optional hash of existing edges
 #' @param times Precomputed times from get_times; if NULL, taken from mark_filtration
 #' @param ... Passed to PMF_mark (e.g. formula_RHS, truncation)
-#' @return List with result (intensity), func (gradient function), lambda, kernel_sum, decays, diffs
+#' @return List with result (intensity), func (function to evaluate intensity at new params), lambda, kernel_sum, decays, diffs
 #' @export
 cond_intensity_inhom <- function(new_net,
                                  t,
@@ -82,10 +82,9 @@ cond_intensity_inhom <- function(new_net,
 #' @param integral_bg Integral of background over time window
 #' @param edge_hash_list Optional
 #' @param verbose Print progress
-#' @param do_grad Compute gradients (currently not implemented for inhom)
 #' @param intens_funcs Pre-computed intensity closures (for caching)
 #' @param ... Passed to PMF_mark (formula_RHS, truncation, etc.)
-#' @return List with loglik, intens_funcs, grads (NULL if !do_grad)
+#' @return List with loglik, intens_funcs
 #' @noRd
 loglik_hawkesGrowthNet_inhom <- function(params,
                                          time_window,
@@ -95,7 +94,6 @@ loglik_hawkesGrowthNet_inhom <- function(params,
                                          integral_bg,
                                          edge_hash_list = NULL,
                                          verbose = FALSE,
-                                         do_grad = FALSE,
                                          intens_funcs = NULL,
                                          ...) {
   times <- get_times(mark_filtration)
@@ -165,8 +163,7 @@ loglik_hawkesGrowthNet_inhom <- function(params,
 
   list(
     loglik = loglik,
-    intens_funcs = intens_funcs,
-    grads = if (do_grad) list() else NULL
+    intens_funcs = intens_funcs
   )
 }
 
@@ -186,11 +183,10 @@ loglik_hawkesGrowthNet_inhom <- function(params,
 #' @param trace Trace level
 #' @param reltol Relative tolerance
 #' @param parscale Parameter scaling vector
-#' @param get_hessian Return Hessian from optim
 #' @param fixed_params Names of parameters to fix
 #' @param cache_intensity Pre-compute intensity closures for speed
 #' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.)
-#' @return List with fit (optim result), intens_funcs, params_init_old
+#' @return List with fit (optim result), intens_funcs, params_init_old, fit_table (parameter estimates and standard errors), and hessian (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @export
 fit_hawkesGrowthNet_inhom <- function(params_init,
                                       time_window,
@@ -202,7 +198,6 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
                                       trace = 0,
                                       reltol = 1e-8,
                                       parscale = NULL,
-                                      get_hessian = FALSE,
                                       fixed_params = NULL,
                                       cache_intensity = TRUE,
                                       ...) {
@@ -240,6 +235,7 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
     if (!is.null(fixed_params)) {
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
+    if (!point_process_params_valid(params_curr)) return(-1e10)
     result <- loglik_hawkesGrowthNet_inhom(
       params = params_curr,
       time_window = time_window,
@@ -258,15 +254,48 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
     fn = optim_func,
     method = "Nelder-Mead",
     control = list(fnscale = -1, trace = trace, maxit = maxit, reltol = reltol, parscale = parscale),
-    hessian = get_hessian,
+    hessian = FALSE,
     ...
   )
 
   message("Fitting (inhomogeneous) took ", round(proc.time()[3], 2), " seconds")
+
+  # Results table: estimate and standard error (from numerical Hessian)
+  par_names <- names(fit$par)
+  fit_table <- data.frame(
+    parameter = par_names,
+    estimate  = fit$par,
+    std.error = NA_real_,
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  hessian <- NULL
+  if (requireNamespace("numDeriv", quietly = TRUE)) {
+    neg_loglik <- function(p) -optim_func(p)
+    hessian <- tryCatch(
+      numDeriv::hessian(neg_loglik, fit$par),
+      error = function(e) NULL
+    )
+    if (!is.null(hessian)) {
+      vcov <- tryCatch(solve(hessian), error = function(e) NULL)
+      if (!is.null(vcov)) {
+        se <- sqrt(pmax(diag(vcov), 0))
+        fit_table$std.error <- se
+      }
+    }
+  }
+  message("Inhomogeneous fit results:")
+  print(fit_table)
+  if (all(is.na(fit_table$std.error))) {
+    message("(Standard errors not available; install numDeriv for SEs.)")
+  }
+
   list(
     fit = fit,
     intens_funcs = cached_funcs,
-    params_init_old = params_init_old
+    params_init_old = params_init_old,
+    fit_table = fit_table,
+    hessian = hessian
   )
 }
 

@@ -3,6 +3,7 @@
 export(PMF_mark_BA)
 export(PMF_mark_CS)
 export(compensator_temporal_hawkes)
+export(validate_point_process_params)
 export(compensators_hawkesGrowthNet)
 export(cond_intensity)
 export(cond_intensity_inhom)

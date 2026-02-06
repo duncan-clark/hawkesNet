@@ -129,11 +129,9 @@ if(SIMULATE){
         time_window = c(0, TIME),
         mark_filtration = x$net,
         PMF_mark = PMF_mark_BA,
-        grad = FALSE,
         trace = 0,
         maxit = MAX_ITER,
-        truncation = TRUNCATION,
-        get_hessian = TRUE#,
+        truncation = TRUNCATION
         # fixed_params = c("K")
       )
     }, error = function(e) {
@@ -339,12 +337,10 @@ if(INVESTIGATE){
                              time_window = c(0,TIME),
                              mark_filtration = results$net,
                              PMF_mark = PMF_mark_BA,
-                             grad = T,
                              trace = 1,
                              truncation = TRUNCATION,
                              maxit = 1000,
-                             verbose = TRUE,
-                             get_hessian = TRUE
+                             verbose = TRUE
   )
   print("results summary")
   data.frame(fit = fit$fit$par,
@@ -354,9 +350,7 @@ if(INVESTIGATE){
   print("model fit took:")
   print(proc.time()-t)
   
-  info <- fit$fit$hessian
-  std_err <- sqrt(diag(solve(-info)))
-  std_err
+  std_err <- if (!is.null(fit$hessian)) tryCatch(sqrt(diag(solve(fit$hessian))), error = function(e) rep(NA_real_, length(fit$fit$par))) else if (!is.null(fit$fit_table) && !all(is.na(fit$fit_table$std.error))) fit$fit_table$std.error else rep(NA_real_, length(fit$fit$par))
   print("results summary")
   data.frame(fit = fit$fit$par,
              sd = std_err,
@@ -387,9 +381,10 @@ if(INVESTIGATE){
                                   trace = 0,
                                   maxit = 1000
   )
-  fit$par
-  data.frame(fitted = fit$par,
-             se = diag(solve(-fit$hessian))
+  fit_temp$par
+  se_temp <- if (!is.null(fit_temp$hessian)) tryCatch(sqrt(diag(solve(-fit_temp$hessian))), error = function(e) rep(NA_real_, length(fit_temp$par))) else rep(NA_real_, length(fit_temp$par))
+  data.frame(fitted = fit_temp$par,
+             se = se_temp
   )
   
   # goodness of fit:
@@ -397,7 +392,7 @@ if(INVESTIGATE){
   KS_test_temp <- ks_test_pval_temporal(realiz = data.frame(t = times,
                                                             n = rep(length(times),length(times))),
                                         windowT = c(0,TIME),
-                                        hawkes_par = fit$par
+                                        hawkes_par = fit_temp$par
   )
   
   KS_test_net <- ks_test_pval_hawkesGrowthNet(params = params,
@@ -417,7 +412,7 @@ if(INVESTIGATE){
 if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 20, 50,100)
+  time_windows <- c(5, 10, 20, 50,100,200)
   N_SIMS_CONSISTENCY <- 50
   
   # Parameters (Standard/Stable regime)
@@ -472,7 +467,6 @@ if(RUN_CONSISTENCY){
                             mark_filtration = sim_res$net,
                             PMF_mark = PMF_mark_BA,
                             maxit = 1000,
-                            grad = FALSE, 
                             cache_intensity = TRUE,
                             verbose = FALSE)
       }, error = function(e) return(NULL))

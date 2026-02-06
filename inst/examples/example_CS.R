@@ -52,7 +52,6 @@ fit <- tryCatch(
     PMF_mark = PMF_mark_CS,
     formula_RHS = "edges + triangles + star(c(2,3))",
     maxit = 500,
-    grad = FALSE,
     truncation = TRUNCATION,
     fixed_params = c("K"),
     verbose = FALSE

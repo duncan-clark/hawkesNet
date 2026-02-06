@@ -129,7 +129,7 @@ message(sprintf("Network: %d events, %d nodes.", n_events, n_nodes))
 # =============================================================================
 time_window_01 <- c(0, 1)
 inhom_bg <- tryCatch(
-  hawkesGrowthNet::prepare_inhomogeneous_background(net_raw, time_attr = "time", bw = NULL, grid_n = 2048),
+  prepare_inhomogeneous_background(net_raw, time_attr = "time", bw = NULL, grid_n = 2048),
   error = function(e) { message("prepare_inhomogeneous_background failed: ", e$message); NULL }
 )
 fit_inhom <- NULL
@@ -153,11 +153,11 @@ p_scale_inhom <- c(
 if (!is.null(inhom_bg)) {
   message("Fitting CS model with inhomogeneous (KDE) background and vertex_categorical (gender)...")
   fit_inhom <- tryCatch(
-    hawkesGrowthNet::fit_hawkesGrowthNet_inhom(
+  fit_hawkesGrowthNet_inhom(
       params_init = params_init_inhom,
       time_window = time_window_01,
       mark_filtration = net_raw,
-      PMF_mark = hawkesGrowthNet::PMF_mark_CS,
+      PMF_mark = PMF_mark_CS,
       mu_vec = inhom_bg$mu_vec,
       integral_bg = inhom_bg$integral_bg,
       formula_RHS = "edges + triangles + star(c(2,3)) + nodeMix('gender')",
@@ -168,7 +168,6 @@ if (!is.null(inhom_bg)) {
       trace = 1,
       reltol = 1e-8,
       verbose = FALSE,
-      get_hessian = TRUE,
       fixed_params = c("K", "mu"),
       parscale = p_scale_inhom,
       cache_intensity = TRUE,
@@ -233,16 +232,17 @@ if (RUN_GOF && !is.null(fit_inhom)) {
   sim_nets <- list()
   for (i in seq_len(N_GOF)) {
     s <- tryCatch(
-      hawkesGrowthNet::sim_hawkesGrowthNet(
+      sim_hawkesGrowthNet(
         params = pfit,
         time_window = time_window_01,
-        PMF_mark = hawkesGrowthNet::PMF_mark_CS,
-        cond_intensity = hawkesGrowthNet::cond_intensity,
+        PMF_mark = PMF_mark_CS,
+        cond_intensity = cond_intensity,
         formula_RHS = "edges + triangles + star(c(2,3)) + nodeMix('gender')",
         truncation = TRUNCATION,
         hashed_edges = TRUE,
         verbose = FALSE,
-        mu_multiplier = 5
+        mu_multiplier = 5,
+        stop_on_full_network = FALSE
       ),
       error = function(e) NULL
     )
@@ -294,7 +294,12 @@ if (PAPER_OUTPUT) {
   message("Rehydrated; producing figures and tables.")
 
   if (!is.null(dat$fit_inhom)) {
-    print(fit_inhom$fit$par)
+    if (!is.null(dat$fit_inhom$fit_table)) {
+      message("Inhomogeneous fit: parameter estimates and standard errors")
+      print(dat$fit_inhom$fit_table)
+    } else {
+      print(fit_inhom$fit$par)
+    }
     if (exists("params_init_inhom") && !is.null(params_init_inhom$vertex_categorical)) {
       pfit <- relist(fit_inhom$fit$par, skeleton = params_init_inhom)
       if (!is.null(pfit$vertex_categorical$gender)) {

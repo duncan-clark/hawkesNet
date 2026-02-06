@@ -34,7 +34,6 @@ fit <- tryCatch(
     mark_filtration = sim$net,
     PMF_mark = PMF_mark_BA,
     maxit = 500,
-    grad = FALSE,
     truncation = 100,
     verbose = FALSE
   ),

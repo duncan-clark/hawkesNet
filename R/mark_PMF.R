@@ -18,7 +18,6 @@ PMF_mark_BA <- function(time,
                         mark = NULL,
                         generate_mark = FALSE,
                         generate_density = TRUE,
-                        grad = FALSE,
                         new_edge_hash = NULL,
                         truncation = NULL,
                         ...){
@@ -257,7 +256,6 @@ PMF_mark_BA <- function(time,
 #' @param generate_mark If \code{TRUE}, sample a new edge (default \code{FALSE}).
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
 #' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).
-#' @param grad If \code{TRUE}, compute gradient (default \code{FALSE}).
 #' @param truncation Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
 #' @param vertex_categorical Optional named list in \code{params}: for each discrete vertex attribute, a named
@@ -270,8 +268,12 @@ PMF_mark_BA <- function(time,
 normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
   if (is.null(probs) || length(probs) == 0) return(NULL)
   nms <- names(probs)
-  probs <- pmax(as.numeric(probs), eps)
-  probs <- probs / sum(probs)
+  probs <- as.numeric(probs)
+  probs[!is.finite(probs)] <- eps
+  probs <- pmax(probs, eps)
+  s <- sum(probs)
+  if (!is.finite(s) || s <= 0) return(NULL)
+  probs <- probs / s
   if (!is.null(nms)) names(probs) <- nms
   probs
 }
@@ -305,6 +307,7 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   # use the last net since stuff ight not be added til the end
   net <- filtration_to_net(mark_filtration, times[length(times)], equals = TRUE)
   nv <- network::network.size(net)
+  if (!is.finite(nv) || is.na(nv)) nv <- 0
   if (nv < 4) {
     network::add.vertices(net, 4 - nv)
     t0 <- if (nv > 0) (net %v% "time")[1] else times[1]
@@ -386,7 +389,6 @@ PMF_mark_CS <- function(time,
                         generate_density = TRUE,
                         new_edge_hash = NULL,
                         formula_RHS,
-                        grad = FALSE,
                         truncation = 1,
                         mark_decay = 'node_entrance',
                         model = NULL,
@@ -557,8 +559,6 @@ PMF_mark_CS <- function(time,
     if(length(probs)==1){
       log_mark_density <- 0
       mark_density <-1
-      mark_grad <- 0
-      decay_grad <- 0
     }else{
       if(time >max_node_time){
         node_dens <- 0
@@ -596,46 +596,9 @@ PMF_mark_CS <- function(time,
       }
       log_mark_density <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE) + node_dens
       mark_density <- exp(log_mark_density)
-      
-      if(grad){
-        # get the mark grad:
-        probs_grads <- lapply(change_stats,function(c){
-          (-c)*exp(-sum(c*params$CS_params))/((1+exp(-sum(c*params$CS_params)))^2)}
-        )
-        e <- in_mark*1
-        derivs <- mapply(probs_grads,probs,in_mark,FUN = function(dp,p,e){
-          tmp <- e*p^(e-1)*(1-p)^(1-e) - (1-e)*p^e*(1-p)^(-e)
-          tmp <- dp*tmp
-          tmp <- sign(tmp)*exp(log(abs(tmp)) - log(p))
-          return(tmp)
-        },SIMPLIFY =F)
-        # get devided by the right prob:
-        derivs <- do.call(rbind,derivs)
-        mark_grad <- colSums(derivs)
-        
-        # get the mark grad:
-        decay_grads <- -(time-times)*exp(-params$beta_edges*(time - times))
-        e <- in_mark*1
-        derivs <- mapply(decay_grads,probs,in_mark,FUN = function(dp,p,e){
-          tmp <- e*p^(e-1)*(1-p)^(1-e) - (1-e)*p^e*(1-p)^(-e)
-          tmp <- dp*tmp
-          tmp <- sign(tmp)*exp(log(abs(tmp)) - log(p))
-          return(tmp)
-        },SIMPLIFY =F)
-        # get devided by the right prob:
-        derivs <- do.call(rbind,derivs)
-        decay_grad <- colSums(derivs)
-      }else{
-        mark_grad <- 0
-        decay_grad <- 0
-      }
-      
-      
     }
   }else{
     mark_density <- 1
-    mark_grad <- 0
-    decay_grad <- 0
     mark_density_normalized <- NULL
     log_mark_density <- 0
   }
@@ -778,10 +741,14 @@ PMF_mark_CS <- function(time,
         if(time > max_node_time){
           new_nodes <- 0
         }else{
-          new_nodes <- rpois(1,params$node_lambda)
+          lam <- params$node_lambda
+          if (!is.finite(lam) || lam < 0) lam <- 0
+          new_nodes <- rpois(1, lam)
         }
       }
-      mark_sample <- network::add.vertices(mark_sample,new_nodes)
+      new_nodes <- as.integer(round(new_nodes))
+      if (!is.finite(new_nodes) || new_nodes < 0) new_nodes <- 0L
+      mark_sample <- network::add.vertices(mark_sample, new_nodes)
       # if(mark_sample %n% 'n' > 4){
       #   browser()
       # }
@@ -793,6 +760,7 @@ PMF_mark_CS <- function(time,
           p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
           if (is.null(p)) next
           levs <- names(p)
+          if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs
           existing <- if (attr_name %in% network::list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
           if (new_nodes > 0) {
             sampled <- sample(levs, size = new_nodes, replace = TRUE, prob = p)
@@ -844,12 +812,35 @@ PMF_mark_CS <- function(time,
       }
 
       # reset to when we did not add more edges
-      #mark_sample <- old_new_net
       # logistic regression on change stats:
-      if(length(change_stats) == 0){
-      stop("these parameters result ixn full networks - you probably don't want this")
-      }
-
+      dot_list <- list(...)
+      stop_on_full_network <- if ("stop_on_full_network" %in% names(dot_list)) dot_list$stop_on_full_network else TRUE
+      if (length(change_stats) == 0) {
+        if (stop_on_full_network) {
+          stop("these parameters result in full networks - you probably don't want this")
+        }
+        warning("PMF_mark_CS (generate_mark): no candidate edges (full network); returning mark with no new edges (stop_on_full_network = FALSE).")
+        if (new_nodes == 0) {
+          mark_sample <- network::add.vertices(mark_sample, 1)
+          network::set.vertex.attribute(mark_sample, "time", c(mark_sample %v% "time", time))
+          vcat <- params$vertex_categorical
+          if (!is.null(vcat) && is.list(vcat)) {
+            for (attr_name in names(vcat)) {
+              p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+              if (is.null(p)) next
+              levs <- names(p)
+              if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs))
+              names(p) <- levs
+              nv <- network::network.size(mark_sample)
+              existing <- if (attr_name %in% network::list.vertex.attributes(mark_sample)) (mark_sample %v% attr_name)[seq_len(nv - 1)] else rep(levs[1L], nv - 1)
+              sampled_one <- sample(levs, size = 1L, replace = TRUE, prob = p)
+              network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled_one))
+            }
+          }
+        }
+        mark_sample_density <- 1
+        log_mark_sample_density <- 0
+      } else {
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
       }
@@ -923,6 +914,7 @@ PMF_mark_CS <- function(time,
       log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) +
                                  sum(log(p_not), na.rm = TRUE) +
                                  log(dpois_val) + log_multinomial_sample
+      }
       }else{
         if(is.null(last_net)){
           mark_sample <- network::network(matrix(1),directed = F)
@@ -941,6 +933,7 @@ PMF_mark_CS <- function(time,
             p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
             if (is.null(p)) next
             levs <- names(p)
+            if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs
             existing <- if (attr_name %in% network::list.vertex.attributes(mark_sample)) (mark_sample %v% attr_name)[seq_len(length(times))] else rep(levs[1L], length(times))
             sampled_one <- sample(levs, size = 1L, replace = TRUE, prob = p)
             network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled_one))
@@ -962,8 +955,6 @@ PMF_mark_CS <- function(time,
     density_func = density_func_light,
     log_density_func = log_density_func_light,
     edge_probs = probs,
-    mark_grad = mark_grad,
-    decay_grad = decay_grad,
     # mark_sample
     mark_sample = mark_sample,
     mark_sample_density = mark_sample_density,
