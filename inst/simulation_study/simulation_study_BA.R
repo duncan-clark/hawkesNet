@@ -118,7 +118,7 @@ if(SIMULATE){
   params_init <- list(mu = 0.1,
                       beta_overall = 0.1,
                       beta_edges = 0.1,
-                      K = 0.1,
+                      K = 0.1
                       )
   clusterExport(cl, c("params_init"))
   t1 <- proc.time()
