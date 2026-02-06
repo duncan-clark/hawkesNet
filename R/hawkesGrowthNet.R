@@ -498,6 +498,9 @@ fit_hawkesGrowthNet <- function(params_init,
     parscale <- rep(1, length(flat_params))
   }
   
+  # Validate that params match the mark PMF (required names and, for CS, CS_params length)
+  validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)
+  
   # ==================
   # Deprecated 
   # ==================

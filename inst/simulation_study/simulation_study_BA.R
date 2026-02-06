@@ -43,7 +43,7 @@ TRUNCATION  = 100
 DEBUG = FALSE
 MAX_ITER = 2000
 
-N_SIMS = 14
+N_SIMS = 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 SEED <- 01267
@@ -118,7 +118,7 @@ if(SIMULATE){
   params_init <- list(mu = 0.1,
                       beta_overall = 0.1,
                       beta_edges = 0.1,
-                      K = params$K
+                      K = 0.1,
                       )
   clusterExport(cl, c("params_init"))
   t1 <- proc.time()
@@ -418,7 +418,7 @@ if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
   time_windows <- c(5, 10, 20, 50,100)
-  N_SIMS_CONSISTENCY <- 100
+  N_SIMS_CONSISTENCY <- 50
   
   # Parameters (Standard/Stable regime)
   params_true <- list(mu = 10,
@@ -621,6 +621,25 @@ if(RUN_EXPLOSIVE){
     theme(legend.position = "bottom")
   
   print(p_expl)
+
+  # ==========================
+  # Node growth over time (number of nodes at each event time)
+  # ==========================
+  node_times_exp <- sim_exp$net %v% "time"
+  node_times_stable <- sim_stable$net %v% "time"
+  n_nodes_exp <- sapply(sim_exp$events$t, function(t) sum(node_times_exp <= t))
+  n_nodes_stable <- sapply(sim_stable$events$t, function(t) sum(node_times_stable <= t))
+  df_nodes_exp <- data.frame(t = sim_exp$events$t, N_nodes = n_nodes_exp, Type = "Explosive (K ~ 1)")
+  df_nodes_stable <- data.frame(t = sim_stable$events$t, N_nodes = n_nodes_stable, Type = "Stable (K ~ 0.25)")
+  df_nodes_compare <- rbind(df_nodes_exp, df_nodes_stable)
+  p_node_growth <- ggplot(df_nodes_compare, aes(x = t, y = N_nodes, color = Type)) +
+    geom_line(size = 1.2) +
+    labs(title = "Node Growth Over Time: Explosive vs Stable (BA)",
+         x = "Time",
+         y = "Number of Nodes") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  print(p_node_growth)
   
   # ==========================
   # Visualization: Network Structure Impact
@@ -675,6 +694,8 @@ if(exists("sim_exp")){
   save_list$sim_stable <- sim_stable
   save_list$df_compare <- df_compare
   save_list$p_expl <- p_expl
+  save_list$df_nodes_compare <- df_nodes_compare
+  save_list$p_node_growth <- p_node_growth
   save_list$max_deg_stable <- max_deg_stable
   save_list$max_deg_exp <- max_deg_exp
 }
@@ -771,6 +792,7 @@ if(PAPER_OUTPUT){
   # ---------- Explosive study output ----------
   if(!is.null(dat$sim_exp)){
     print(p_expl)
+    if(!is.null(dat$p_node_growth)) print(p_node_growth)
     op <- par(mfrow = c(1, 2))
     plot(sim_stable$net, main = "Stable Network\n(Recent Activity Matters)", vertex.cex = 0.5, edge.col = "gray")
     plot(sim_exp$net, main = "Explosive/Memory Network\n(History Never Dies)", vertex.cex = 0.5, edge.col = "gray")
