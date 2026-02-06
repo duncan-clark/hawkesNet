@@ -1,0 +1,305 @@
+# =============================================================================
+# HawkesGrowthNet with inhomogeneous background rate (KDE)
+# =============================================================================
+# Replaces constant mu with time-varying mu(t) from KDE. Intensity:
+# lambda(t) = mu(t) + K * sum(decays). Integral: int_0^T mu(s) ds + (1/beta)*K*sum(pieces).
+# =============================================================================
+
+#' Conditional intensity at one event time with inhomogeneous background
+#'
+#' Same as cond_intensity but uses mu_at_t (scalar) instead of params$mu.
+#' @param new_net Network state at current time
+#' @param t Current event time
+#' @param mark_filtration Full mark filtration
+#' @param PMF_mark Mark PMF function (e.g. PMF_mark_CS)
+#' @param params Parameter list (beta_overall, K, CS_params, etc.; mu not used)
+#' @param mu_at_t Scalar background rate at time t (e.g. from KDE)
+#' @param new_edge_hash Optional hash of existing edges
+#' @param times Precomputed times from get_times; if NULL, taken from mark_filtration
+#' @param ... Passed to PMF_mark (e.g. formula_RHS, truncation)
+#' @return List with result (intensity), func (gradient function), lambda, kernel_sum, decays, diffs
+#' @export
+cond_intensity_inhom <- function(new_net,
+                                 t,
+                                 mark_filtration = NULL,
+                                 PMF_mark,
+                                 params,
+                                 mu_at_t,
+                                 new_edge_hash = NULL,
+                                 times = NULL,
+                                 ...) {
+  tmp <- PMF_mark(time = t,
+                  params = params,
+                  mark_filtration = mark_filtration,
+                  mark = new_net,
+                  generate_mark = FALSE,
+                  new_edge_hash = new_edge_hash,
+                  ...)
+  if (is.null(times)) times <- get_times(mark_filtration)
+  tt <- times$times
+  tt <- tt[tt < t]
+  diffs <- t - tt
+
+  log_mark_density0 <- tmp$log_mark_density
+  log_density_func  <- tmp$log_density_func
+
+  decays0 <- exp(-params$beta_overall * diffs)
+  log_result0 <- log_mark_density0 + log(mu_at_t + params$K * sum(decays0))
+  result0 <- exp(log_result0)
+
+  e_tiny <- new.env(parent = baseenv())
+  e_tiny$diffs_local <- diffs
+  e_tiny$ldf_local   <- log_density_func
+  e_tiny$mu_at_t     <- mu_at_t
+
+  func_template <- function(params) {
+    decays <- exp(-params$beta_overall * diffs_local)
+    exp(ldf_local(params) + log(mu_at_t + params$K * sum(decays)))
+  }
+  func <- func_template
+  environment(func) <- e_tiny
+
+  list(
+    result = result0,
+    func   = func,
+    lambda = mu_at_t,
+    kernel_sum = params$K * sum(decays0),
+    decays = decays0,
+    diffs  = diffs
+  )
+}
+
+
+#' Log-likelihood for HawkesGrowthNet with inhomogeneous background
+#'
+#' mu_vec: length(times) vector of background rate at each event time.
+#' integral_bg: scalar, integral of mu(s) from 0 to time_window[2].
+#' @param params Parameter list (relist format)
+#' @param time_window c(t0, t1)
+#' @param mark_filtration Network with vertex/edge times
+#' @param PMF_mark Mark PMF function
+#' @param mu_vec Background rate at each event time (same length as times)
+#' @param integral_bg Integral of background over time window
+#' @param edge_hash_list Optional
+#' @param verbose Print progress
+#' @param do_grad Compute gradients (currently not implemented for inhom)
+#' @param intens_funcs Pre-computed intensity closures (for caching)
+#' @param ... Passed to PMF_mark (formula_RHS, truncation, etc.)
+#' @return List with loglik, intens_funcs, grads (NULL if !do_grad)
+#' @noRd
+loglik_hawkesGrowthNet_inhom <- function(params,
+                                         time_window,
+                                         mark_filtration,
+                                         PMF_mark,
+                                         mu_vec,
+                                         integral_bg,
+                                         edge_hash_list = NULL,
+                                         verbose = FALSE,
+                                         do_grad = FALSE,
+                                         intens_funcs = NULL,
+                                         ...) {
+  times <- get_times(mark_filtration)
+  times <- times$times
+
+  tval <- time_window[2] - time_window[1]
+  if (tval < max(times) - min(times)) {
+    stop("realization has points outside time window")
+  }
+
+  if (length(mu_vec) != length(times)) {
+    stop("mu_vec must have same length as event times")
+  }
+
+  if (is.null(intens_funcs)) {
+    times_precalc <- get_times(mark_filtration)
+    intens_func <- function(i) {
+      current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
+      if ("formula_RHS" %in% names(list(...))) {
+        model <- createCppModel(as.formula(paste("current_net ~ ", list(...)$formula_RHS)))
+      } else {
+        model <- NULL
+      }
+      intensity <- cond_intensity_inhom(
+        new_net = current_net,
+        t = times[i],
+        mark_filtration = current_net,
+        PMF_mark = PMF_mark,
+        params = params,
+        mu_at_t = mu_vec[i],
+        model = model,
+        times = times_precalc,
+        ...
+      )
+      list(result = intensity$result, func = intensity$func)
+    }
+
+    if ("cores" %in% names(list(...))) {
+      cores <- list(...)$cores
+      if (verbose) message("Using ", cores, " cores for intensity list")
+      if (requireNamespace("pbmcapply", quietly = TRUE)) {
+        intens_list <- pbmcapply::pbmclapply(
+          seq_along(times), intens_func,
+          mc.cores = cores, mc.preschedule = FALSE
+        )
+      } else {
+        intens_list <- lapply(seq_along(times), intens_func)
+      }
+    } else {
+      intens_list <- lapply(seq_along(times), intens_func)
+    }
+    intens_vec <- sapply(intens_list, function(x) x$result)
+    intens_funcs <- lapply(intens_list, function(x) x$func)
+  } else {
+    intens_vec <- numeric(length(intens_funcs))
+    for (i in seq_along(intens_funcs)) intens_vec[i] <- intens_funcs[[i]](params)
+  }
+
+  tmp <- intens_vec
+  if (any(is.na(tmp))) tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)], na.rm = TRUE) / 2
+  if (any(tmp <= 0)) tmp[tmp <= 0] <- min(tmp[tmp > 0]) / 2
+  intens_sum <- sum(log(tmp))
+
+  pieces <- 1 - exp(-params$beta_overall * (tval - times))
+  integral <- integral_bg + (1 / params$beta_overall) * params$K * sum(pieces)
+  loglik <- intens_sum - integral
+
+  list(
+    loglik = loglik,
+    intens_funcs = intens_funcs,
+    grads = if (do_grad) list() else NULL
+  )
+}
+
+
+#' Fit HawkesGrowthNet with inhomogeneous (KDE) background
+#'
+#' mu_vec and integral_bg come from prepare_inhomogeneous_background (which uses estimate_mu_kde).
+#' params_init can include mu but it is not used in the model.
+#'
+#' @param params_init List of initial parameters (same shape as for fit_hawkesGrowthNet)
+#' @param time_window c(t0, t1)
+#' @param mark_filtration Network with vertex/edge times
+#' @param PMF_mark Mark PMF (e.g. PMF_mark_CS)
+#' @param mu_vec Background rate at each event time (from prepare_inhomogeneous_background)
+#' @param integral_bg Integral of background over time window
+#' @param maxit Maximum iterations for Nelder-Mead
+#' @param trace Trace level
+#' @param reltol Relative tolerance
+#' @param parscale Parameter scaling vector
+#' @param get_hessian Return Hessian from optim
+#' @param fixed_params Names of parameters to fix
+#' @param cache_intensity Pre-compute intensity closures for speed
+#' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.)
+#' @return List with fit (optim result), intens_funcs, params_init_old
+#' @export
+fit_hawkesGrowthNet_inhom <- function(params_init,
+                                      time_window,
+                                      mark_filtration,
+                                      PMF_mark,
+                                      mu_vec,
+                                      integral_bg,
+                                      maxit,
+                                      trace = 0,
+                                      reltol = 1e-8,
+                                      parscale = NULL,
+                                      get_hessian = FALSE,
+                                      fixed_params = NULL,
+                                      cache_intensity = TRUE,
+                                      ...) {
+  params_init_old <- params_init
+  if (!is.null(fixed_params)) {
+    for (k in fixed_params) params_init[[k]] <- NULL
+  }
+
+  if (is.null(parscale)) {
+    flat <- unlist(params_init)
+    parscale <- rep(1, length(flat))
+  }
+
+  if (exists("validate_params_for_PMF", mode = "function")) {
+    validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)
+  }
+
+  cached_funcs <- NULL
+  if (cache_intensity) {
+    message("Pre-calculating intensity closures (inhomogeneous background)...")
+    init_lik <- loglik_hawkesGrowthNet_inhom(
+      params = params_init_old,
+      time_window = time_window,
+      mark_filtration = mark_filtration,
+      PMF_mark = PMF_mark,
+      mu_vec = mu_vec,
+      integral_bg = integral_bg,
+      ...
+    )
+    cached_funcs <- init_lik$intens_funcs
+  }
+
+  optim_func <- function(params, ...) {
+    params_curr <- relist(params, skeleton = params_init)
+    if (!is.null(fixed_params)) {
+      for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
+    }
+    result <- loglik_hawkesGrowthNet_inhom(
+      params = params_curr,
+      time_window = time_window,
+      mark_filtration = mark_filtration,
+      PMF_mark = PMF_mark,
+      mu_vec = mu_vec,
+      integral_bg = integral_bg,
+      intens_funcs = cached_funcs,
+      ...
+    )
+    result$loglik
+  }
+
+  fit <- optim(
+    par = unlist(params_init),
+    fn = optim_func,
+    method = "Nelder-Mead",
+    control = list(fnscale = -1, trace = trace, maxit = maxit, reltol = reltol, parscale = parscale),
+    hessian = get_hessian,
+    ...
+  )
+
+  message("Fitting (inhomogeneous) took ", round(proc.time()[3], 2), " seconds")
+  list(
+    fit = fit,
+    intens_funcs = cached_funcs,
+    params_init_old = params_init_old
+  )
+}
+
+
+#' Build mu_vec and integral_bg from mark_filtration (network) using KDE
+#'
+#' Returns mu_vec aligned with get_times(mark_filtration)$times for use in
+#' loglik_hawkesGrowthNet_inhom and fit_hawkesGrowthNet_inhom.
+#'
+#' @param mark_filtration Network with vertex and edge time attributes
+#' @param time_attr Name of the time attribute (default "time")
+#' @param bw Bandwidth for KDE; NULL = default
+#' @param grid_n Number of grid points for KDE
+#' @return List with mu_vec, integral_bg, times, mu_fit, Lambda_fun
+#' @export
+prepare_inhomogeneous_background <- function(mark_filtration, time_attr = "time", bw = NULL, grid_n = 2048) {
+  times_obj <- get_times(mark_filtration, time_name = time_attr)
+  times <- times_obj$times
+  times <- times[!is.na(times)]
+  if (length(times) < 5) stop("Need more event times for KDE")
+
+  windowT <- c(min(times), max(times))
+  mu_fit <- estimate_mu_kde(times, windowT = windowT, bw = bw, grid_n = grid_n)
+  Lambda_obj <- make_cumhaz_fun(mu_fit)
+  mu_vec_at_events <- mu_fit$mu_fun(times)
+  mu_vec_at_events <- pmax(mu_vec_at_events, 1e-12)
+  integral_bg <- Lambda_obj$Lambda_fun(windowT[2])
+
+  list(
+    mu_vec = mu_vec_at_events,
+    integral_bg = integral_bg,
+    times = times,
+    mu_fit = mu_fit,
+    Lambda_fun = Lambda_obj$Lambda_fun
+  )
+}
