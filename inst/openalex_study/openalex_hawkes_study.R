@@ -127,26 +127,28 @@ message(sprintf("Network: %d events, %d nodes.", n_events, n_nodes))
 # =============================================================================
 # 2. Inhomogeneous (KDE) + CS fit with vertex_categorical
 # =============================================================================
+FORMULA_RHS <- "edges + triangles + star(c(2,3)) + nodeMix('gender')"
 time_window_01 <- c(0, 1)
 inhom_bg <- tryCatch(
   prepare_inhomogeneous_background(net_raw, time_attr = "time", bw = NULL, grid_n = 2048),
   error = function(e) { message("prepare_inhomogeneous_background failed: ", e$message); NULL }
 )
 fit_inhom <- NULL
+# CS_params length must match number of change statistics from formula (ernm)
+exp_cs <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS)
+n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 5L
 params_init_inhom <- list(
   mu = 1,
   beta_overall = 1,
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-10, rep(0, 9)),
+  CS_params = c(-10, rep(0, n_cs - 1)),
   vertex_categorical = list(gender = c(male = 0.33, female = 0.33, unknown = 0.34))
 )
 p_scale_inhom <- c(
   beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-  CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.01,
-  CS_params5 = 0.1, CS_params6 = 0.1, CS_params7 = 0.1, CS_params8 = 0.1,
-  CS_params9 = 0.1, CS_params10 = 0.1,
+  setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs))),
   vertex_categorical.gender.male = 0.1, vertex_categorical.gender.female = 0.1,
   vertex_categorical.gender.unknown = 0.1
 )
@@ -160,7 +162,7 @@ if (!is.null(inhom_bg)) {
       PMF_mark = PMF_mark_CS,
       mu_vec = inhom_bg$mu_vec,
       integral_bg = inhom_bg$integral_bg,
-      formula_RHS = "edges + triangles + star(c(2,3)) + nodeMix('gender')",
+      formula_RHS = FORMULA_RHS,
       truncation = TRUNCATION,
       mark_decay = "activity",
       max_node_time = 1,
@@ -237,7 +239,7 @@ if (RUN_GOF && !is.null(fit_inhom)) {
         time_window = time_window_01,
         PMF_mark = PMF_mark_CS,
         cond_intensity = cond_intensity,
-        formula_RHS = "edges + triangles + star(c(2,3)) + nodeMix('gender')",
+        formula_RHS = FORMULA_RHS,
         truncation = TRUNCATION,
         hashed_edges = TRUE,
         verbose = FALSE,
