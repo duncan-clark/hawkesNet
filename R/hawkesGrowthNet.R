@@ -446,8 +446,22 @@ loglik_hawkesGrowthNet = function(params,
 
   max_t <- max(times)
   pieces <- 1 - exp(-params$beta_overall * (tval - times))
+  # Guard against division by zero or very small beta_overall
+  if (!is.finite(params$beta_overall) || params$beta_overall <= 0 || params$beta_overall < 1e-10) {
+    return(list(loglik = -1e10, intens_funcs = intens_funcs))
+  }
   integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
   loglik <- intens_sum - integral  # If you hit Browse[] here, clear RStudio breakpoints (Debug -> Clear All) or run undebug(loglik_hawkesGrowthNet)
+  
+  # Guard: ensure loglik is finite for L-BFGS-B
+  if (!is.finite(loglik) || !is.finite(intens_sum) || !is.finite(integral)) {
+    if (verbose) {
+      warning("loglik_hawkesGrowthNet: non-finite loglik detected. intens_sum=", intens_sum, 
+              ", integral=", integral, ", returning -1e10")
+    }
+    return(list(loglik = -1e10, intens_funcs = intens_funcs))
+  }
+  
   # print(paste0("integral is ",integral))
   # print(paste0("intens_sum is ",intens_sum))
   # print(paste0("trigger part of integral is  ",(1/params$beta_overall)*params$K*sum(pieces)))
@@ -545,15 +559,22 @@ fit_hawkesGrowthNet <- function(params_init,
     
     # 2. Pass NULL to intens_funcs if caching is disabled
     # This forces loglik_hawkesGrowthNet to rebuild the density from scratch
-    result <- do.call(loglik_hawkesGrowthNet, c(
-      list(params = params_curr,
-           time_window = time_window,
-           mark_filtration = mark_filtration,
-           PMF_mark = PMF_mark,
-           intens_funcs = cached_funcs),
-      dot_args
-    ))
-    return(result$loglik)
+    result <- tryCatch({
+      do.call(loglik_hawkesGrowthNet, c(
+        list(params = params_curr,
+             time_window = time_window,
+             mark_filtration = mark_filtration,
+             PMF_mark = PMF_mark,
+             intens_funcs = cached_funcs),
+        dot_args
+      ))
+    }, error = function(e) {
+      return(list(loglik = -1e10, intens_funcs = cached_funcs))
+    })
+    ll <- result$loglik
+    # Final guard: ensure return value is finite for L-BFGS-B
+    if (!is.finite(ll)) return(-1e10)
+    return(ll)
   }
   flat_par <- unlist(params_init)
   optim_args <- list(

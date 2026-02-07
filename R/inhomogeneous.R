@@ -153,9 +153,23 @@ loglik_hawkesGrowthNet_inhom <- function(params,
   if (any(tmp <= 0)) tmp[tmp <= 0] <- min(tmp[tmp > 0]) / 2
   intens_sum <- sum(log(tmp))
 
+  # Guard against division by zero or very small beta_overall
+  if (!is.finite(params$beta_overall) || params$beta_overall <= 0 || params$beta_overall < 1e-10) {
+    return(list(loglik = -1e10, intens_funcs = intens_funcs))
+  }
+  
   pieces <- 1 - exp(-params$beta_overall * (tval - times))
   integral <- integral_bg + (1 / params$beta_overall) * params$K * sum(pieces)
   loglik <- intens_sum - integral
+
+  # Guard: ensure loglik is finite for L-BFGS-B
+  if (!is.finite(loglik) || !is.finite(intens_sum) || !is.finite(integral)) {
+    if (verbose) {
+      warning("loglik_hawkesGrowthNet_inhom: non-finite loglik detected. intens_sum=", intens_sum,
+              ", integral=", integral, ", returning -1e10")
+    }
+    return(list(loglik = -1e10, intens_funcs = intens_funcs))
+  }
 
   list(
     loglik = loglik,
@@ -242,17 +256,24 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
     if (!point_process_params_valid(params_curr)) return(-1e10)
-    result <- do.call(loglik_hawkesGrowthNet_inhom, c(
-      list(params = params_curr,
-           time_window = time_window,
-           mark_filtration = mark_filtration,
-           PMF_mark = PMF_mark,
-           mu_vec = mu_vec,
-           integral_bg = integral_bg,
-           intens_funcs = cached_funcs),
-      dot_args
-    ))
-    result$loglik
+    result <- tryCatch({
+      do.call(loglik_hawkesGrowthNet_inhom, c(
+        list(params = params_curr,
+             time_window = time_window,
+             mark_filtration = mark_filtration,
+             PMF_mark = PMF_mark,
+             mu_vec = mu_vec,
+             integral_bg = integral_bg,
+             intens_funcs = cached_funcs),
+        dot_args
+      ))
+    }, error = function(e) {
+      return(list(loglik = -1e10, intens_funcs = cached_funcs))
+    })
+    ll <- result$loglik
+    # Final guard: ensure return value is finite for L-BFGS-B
+    if (!is.finite(ll)) return(-1e10)
+    ll
   }
 
   flat_par <- unlist(params_init)
