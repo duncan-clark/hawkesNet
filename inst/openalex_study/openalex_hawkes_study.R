@@ -30,7 +30,7 @@ MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 MAX_ITER <- 1000
-TRUNCATION <- 1000L
+TRUNCATION <- 250L
 N_GOF <- 50L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE

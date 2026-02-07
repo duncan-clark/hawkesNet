@@ -20,6 +20,7 @@ PMF_mark_BA <- function(time,
                         generate_density = TRUE,
                         new_edge_hash = NULL,
                         truncation = NULL,
+                        mark_decay = 'node_entrance',
                         ...){
   
   if(is.null(mark)){
@@ -41,12 +42,24 @@ PMF_mark_BA <- function(time,
     new_nodes <- 1
   }
 
-  # get the possible edges for the given truncation:
-  # if no nodes have been added then :
+  # get the possible edges: new nodes -> old nodes, with optional truncation
+  if (!is.null(truncation) && !is.null(last_net) && old_nodes > truncation) {
+    # Truncate which old nodes are considered as attachment targets
+    if (mark_decay == "activity") {
+      activity_times <- get_latest_times(last_net)
+      # Pick the truncation most recently active old nodes
+      ord <- order(activity_times[seq_len(old_nodes)], seq_len(old_nodes), decreasing = TRUE)
+      eligible_heads <- sort(ord[seq_len(min(truncation, old_nodes))])
+    } else {
+      # node_entrance: take the most recently entered old nodes
+      eligible_heads <- seq(max(1L, old_nodes - truncation + 1L), old_nodes)
+    }
+  } else {
+    eligible_heads <- seq_len(old_nodes)
+  }
   poss_tails <- ((old_nodes+1) : new_nodes)
   poss_tails <- poss_tails[poss_tails>0]
-  poss_heads <- 1:old_nodes
-  poss_heads <- poss_heads[poss_heads>0]
+  poss_heads <- eligible_heads[eligible_heads > 0]
   poss_edges <- expand.grid(poss_tails,poss_heads)
   poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
   tails <- poss_edges[,1]
@@ -172,10 +185,21 @@ PMF_mark_BA <- function(time,
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
       new_nodes <- mark_sample %n% 'n'
       
+      # Truncate which old nodes are attachment targets (same logic as density path)
+      if (!is.null(truncation) && old_nodes > truncation) {
+        if (mark_decay == "activity") {
+          activity_times <- get_latest_times(last_net)
+          ord <- order(activity_times[seq_len(old_nodes)], seq_len(old_nodes), decreasing = TRUE)
+          eligible_heads <- sort(ord[seq_len(min(truncation, old_nodes))])
+        } else {
+          eligible_heads <- seq(max(1L, old_nodes - truncation + 1L), old_nodes)
+        }
+      } else {
+        eligible_heads <- seq_len(old_nodes)
+      }
       poss_tails <- (old_nodes+1) : (new_nodes)
       poss_tails <- poss_tails[poss_tails>0]
-      poss_heads <- 1:old_nodes
-      poss_heads <- poss_heads[poss_heads>0]
+      poss_heads <- eligible_heads[eligible_heads > 0]
       poss_edges <- expand.grid(poss_tails,poss_heads)
       poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
       tails <- poss_edges[,1]
@@ -443,6 +467,51 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
   invisible(TRUE)
 }
 
+#' Compute candidate edges for truncation
+#'
+#' When \code{mark_decay = "node_entrance"} (default), selects the most recently
+#' *entered* nodes (by index). When \code{mark_decay = "activity"}, selects
+#' the most recently *active* nodes (latest edge or entry time).
+#'
+#' @param net Network to compute candidates from.
+#' @param new_nodes Total number of nodes in the current mark.
+#' @param old_nodes Number of nodes before this event.
+#' @param truncation Maximum number of nodes to consider.
+#' @param mark_decay Either \code{"node_entrance"} or \code{"activity"}.
+#' @return List with \code{tails} and \code{heads} integer vectors.
+#' @noRd
+get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay) {
+  n <- max(new_nodes, old_nodes)
+  if (n == 0) return(list(tails = integer(0), heads = integer(0)))
+
+  if (mark_decay == "activity" && !is.null(net) && (net %n% 'n') > 0) {
+    # Select the truncation most recently active nodes
+    activity_times <- get_latest_times(net)
+    # Include any new nodes (they get time = current event time, already set on net)
+    # Rank nodes by activity time (most recent first); break ties by index (higher = newer)
+    node_ids <- seq_len(n)
+    ord <- order(activity_times[seq_len(n)], node_ids, decreasing = TRUE)
+    active_nodes <- sort(ord[seq_len(min(truncation, n))])
+    # All pairs among active nodes
+    if (length(active_nodes) < 2) return(list(tails = integer(0), heads = integer(0)))
+    poss_edges <- expand.grid(active_nodes, active_nodes)
+    poss_edges <- poss_edges[poss_edges[, 1] > poss_edges[, 2], , drop = FALSE]
+    tails <- poss_edges[, 1]
+    heads <- poss_edges[, 2]
+  } else {
+    # Default: node_entrance -- use index-based window (original behavior)
+    poss_tails <- (old_nodes - truncation):(new_nodes)
+    poss_tails <- poss_tails[poss_tails > 0]
+    poss_heads <- (new_nodes - truncation - 1):new_nodes
+    poss_heads <- poss_heads[poss_heads > 0]
+    poss_edges <- expand.grid(poss_tails, poss_heads)
+    poss_edges <- poss_edges[poss_edges[, 1] > poss_edges[, 2], , drop = FALSE]
+    tails <- poss_edges[, 1]
+    heads <- poss_edges[, 2]
+  }
+  list(tails = tails, heads = heads)
+}
+
 #' Mark probability mass function using Change Statistics (CS/ERNM)
 #'
 #' @rdname PMF_mark_CS
@@ -485,15 +554,9 @@ PMF_mark_CS <- function(time,
     new_nodes <- 1
   }
   # get the possible edges for the given truncation:
-  # if no nodes have been added then :
-  poss_tails <- (old_nodes - truncation) : (new_nodes)
-  poss_tails <- poss_tails[poss_tails>0]
-  poss_heads <- (new_nodes - truncation-1):new_nodes
-  poss_heads <- poss_heads[poss_heads>0]
-  poss_edges <- expand.grid(poss_tails,poss_heads)
-  poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
-  tails <- poss_edges[,1]
-  heads <- poss_edges[,2]
+  cands <- get_truncated_candidates(new_net, new_nodes, old_nodes, truncation, mark_decay)
+  tails <- cands$tails
+  heads <- cands$heads
 
   # only consider edges that were not already in the old network
   if(!is.null(last_net) & length(heads) != 0){
@@ -842,15 +905,10 @@ PMF_mark_CS <- function(time,
       }
       new_size <- mark_sample %n% 'n'
       
-      # get new poss edges
-      poss_tails <- (old_nodes - truncation) : (new_size)
-      poss_tails <- poss_tails[poss_tails>0]
-      poss_heads <- (new_size - truncation-1):new_size
-      poss_heads <- poss_heads[poss_heads>0]
-      poss_edges <- expand.grid(poss_tails,poss_heads)
-      poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
-      tails <- poss_edges[,1]
-      heads <- poss_edges[,2]
+      # get new poss edges (truncation based on mark_decay)
+      cands <- get_truncated_candidates(mark_sample, new_size, old_nodes, truncation, mark_decay)
+      tails <- cands$tails
+      heads <- cands$heads
 
       # only consider edges that are not in the old net
       if(!is.null(last_net)){
