@@ -4,6 +4,8 @@
 .PNG
 paper_dump
 *.RDS
+*.rds
+.lib_local/
 # Ignore job logs; keep cluster_output/ in repo via .gitkeep
 cluster_output/*
 !cluster_output/.gitkeep
