@@ -8,7 +8,6 @@
 # =============================================================================
 
 library(hawkesGrowthNet)
-library(pbmcapply)
 library(ggplot2)
 library(dplyr)
 library(network)

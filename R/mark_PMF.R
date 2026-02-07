@@ -443,6 +443,10 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
   invisible(TRUE)
 }
 
+#' Mark probability mass function using Change Statistics (CS/ERNM)
+#'
+#' @rdname PMF_mark_CS
+#' @export
 PMF_mark_CS <- function(time,
                         params,
                         mark_filtration,

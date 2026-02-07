@@ -407,7 +407,7 @@ loglik_hawkesGrowthNet = function(params,
       }
       print("starting intens list calculation")
       t <- proc.time()
-      intens_list <- pbmclapply(rev(seq_along(times)),
+      intens_list <- pbmcapply::pbmclapply(rev(seq_along(times)),
                                 intens_func,
                                 mc.cores = cores,
                                 mc.preschedule=FALSE)

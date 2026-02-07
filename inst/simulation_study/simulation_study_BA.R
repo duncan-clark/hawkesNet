@@ -440,9 +440,7 @@ if(RUN_CONSISTENCY){
   cat("Setting up cluster...\n")
   t_cluster <- proc.time()
   cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("params_true", "PMF_mark_BA", "cond_intensity", 
-                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet",
-                      "N_CORES_INNER"))
+  clusterExport(cl, c("params_true", "N_CORES_INNER"))
   cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
   
   # Storage for results

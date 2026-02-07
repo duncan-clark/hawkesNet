@@ -4,7 +4,6 @@ library(sna)
 library(ernm)
 library(dplyr)
 library(parallel)
-library(pbmcapply)
 
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 MAX_ITER <- 5000
