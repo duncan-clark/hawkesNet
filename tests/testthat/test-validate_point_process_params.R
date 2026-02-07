@@ -69,14 +69,16 @@ test_that("validate_point_process_params errors when mu is not a scalar", {
   )
 })
 
-test_that("validate_point_process_params accepts valid vertex_categorical", {
+test_that("validate_point_process_params accepts valid vertex_categorical (n-1 parametrization)", {
+  # n-1 params: 2 levels, 1 param, sum < 1
   expect_invisible(validate_point_process_params(list(
     mu = 0.1, beta_overall = 1, K = 0.5,
-    vertex_categorical = list(attr1 = c(a = 0.5, b = 0.5))
+    vertex_categorical = list(attr1 = c(a = 0.4))
   )))
+  # 3 levels, 2 params, sum < 1
   expect_invisible(validate_point_process_params(list(
     mu = 0.1, beta_overall = 1, K = 0.5,
-    vertex_categorical = list(x = c(1, 0, 0))
+    vertex_categorical = list(x = c(a = 0.3, b = 0.3))
   )))
 })
 
@@ -84,23 +86,28 @@ test_that("validate_point_process_params errors when vertex_categorical has nega
   expect_error(
     validate_point_process_params(list(
       mu = 0.1, beta_overall = 1, K = 0.5,
-      vertex_categorical = list(attr1 = c(a = 0.7, b = -0.1, c = 0.4))
+      vertex_categorical = list(attr1 = c(a = 0.7, b = -0.1))
     )),
     "non-negative"
   )
 })
 
-test_that("validate_point_process_params errors when vertex_categorical does not sum to 1", {
-  expect_invisible(validate_point_process_params(list(
-    mu = 0.1, beta_overall = 1, K = 0.5,
-    vertex_categorical = list(attr1 = c(a = 0.5, b = 0.5))
-  )))
+test_that("validate_point_process_params errors when vertex_categorical sum >= 1 (n-1)", {
+  # sum == 1 is invalid (reference level would get 0)
+  expect_error(
+    validate_point_process_params(list(
+      mu = 0.1, beta_overall = 1, K = 0.5,
+      vertex_categorical = list(attr1 = c(a = 0.5, b = 0.5))
+    )),
+    "sum in \\(0, 1\\)"
+  )
+  # sum > 1 is invalid
   expect_error(
     validate_point_process_params(list(
       mu = 0.1, beta_overall = 1, K = 0.5,
       vertex_categorical = list(attr1 = c(a = 0.5, b = 0.6))
     )),
-    "sum to 1"
+    "sum in \\(0, 1\\)"
   )
 })
 

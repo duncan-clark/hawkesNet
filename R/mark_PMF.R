@@ -278,6 +278,49 @@ normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
   probs
 }
 
+#' Expand n-1 vertex categorical probabilities to full n probabilities
+#'
+#' Given n-1 probabilities for the first n-1 levels and a vector of all n level
+#' names (last is the reference), returns a named vector of length n where the
+#' last level gets probability \code{1 - sum(p_n1)}.
+#'
+#' @param p_n1 Named numeric vector of length n-1 (probabilities for non-reference levels).
+#' @param level_names Character vector of all n level names; the last element is the reference level.
+#' @param eps Small positive value used as floor for any probability (default 1e-10).
+#' @return Named numeric vector of length n summing to 1, or NULL if inputs are invalid.
+#' @export
+expand_vertex_categorical_probs <- function(p_n1, level_names, eps = 1e-10) {
+  if (is.null(p_n1) || length(p_n1) == 0) return(NULL)
+  if (is.null(level_names) || length(level_names) < 2L) return(NULL)
+  n <- length(level_names)
+  if (length(p_n1) != n - 1L) return(NULL)
+  p_ref <- 1 - sum(p_n1)
+  full <- c(as.numeric(p_n1), p_ref)
+  full <- pmax(full, eps)
+  names(full) <- level_names
+  full
+}
+
+#' Get level names for a vertex categorical attribute
+#'
+#' Retrieves the level names from \code{params$vertex_categorical_levels[[attr_name]]}.
+#' Falls back to the unique values observed on the network \code{mark} if available.
+#'
+#' @param params Parameter list (must contain \code{vertex_categorical_levels}).
+#' @param attr_name Name of the vertex attribute.
+#' @param mark Optional network object to fall back on for observed levels.
+#' @return Character vector of level names, or NULL.
+#' @noRd
+vertex_categorical_level_names <- function(params, attr_name, mark = NULL) {
+  if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
+    return(params$vertex_categorical_levels[[attr_name]])
+  }
+  if (!is.null(mark) && attr_name %in% network::list.vertex.attributes(mark)) {
+    return(sort(unique(mark %v% attr_name)))
+  }
+  NULL
+}
+
 #' Expected parameter names for PMF_mark_BA
 #'
 #' @return List with \code{required} (character vector of parameter names).
@@ -316,13 +359,16 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   if ("na" %in% network::list.vertex.attributes(net)) {
     delete.vertex.attribute(net, "na")
   }
+  CS_params_names <- NULL
   tryCatch({
     model <- createCppModel(as.formula(paste("net ~ ", formula_RHS)))
     model$setNetwork(as.BinaryNet(net))
     model$calculate()
-    CS_params_length <- length(model$statistics())
+    stats <- model$statistics()
+    CS_params_length <- length(stats)
+    CS_params_names <- names(stats)
   }, error = function(e) NULL)
-  list(required = required, CS_params_length = CS_params_length)
+  list(required = required, CS_params_length = CS_params_length, CS_params_names = CS_params_names)
 }
 
 #' Validate parameters for the given mark PMF
@@ -348,7 +394,7 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
   }
   if (identical(PMF_mark, PMF_mark_CS)) {
     formula_RHS <- list(...)$formula_RHS
-    exp_cs <- expected_params_PMF_mark_CS(mark_filtration, formula_RHS, ...)
+    exp_cs <- expected_params_PMF_mark_CS(mark_filtration, formula_RHS)
     missing <- setdiff(exp_cs$required, names(params))
     if (length(missing) > 0) {
       stop("PMF_mark_CS requires the following parameters: ", paste(missing, collapse = ", "))
@@ -364,15 +410,31 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
     }
     if (!is.null(params$vertex_categorical)) {
       if (!is.list(params$vertex_categorical)) {
-        stop("PMF_mark_CS: vertex_categorical must be a list of named numeric vectors")
+        stop("PMF_mark_CS: vertex_categorical must be a list of named numeric vectors (n-1 per attribute)")
+      }
+      if (is.null(params$vertex_categorical_levels) || !is.list(params$vertex_categorical_levels)) {
+        stop("PMF_mark_CS: when vertex_categorical is set, vertex_categorical_levels must be a list of level name vectors (e.g. list(gender = c('female', 'male', 'unknown'))); last level is reference")
       }
       for (attr_name in names(params$vertex_categorical)) {
         p <- params$vertex_categorical[[attr_name]]
         if (!is.numeric(p) || length(p) == 0) {
-          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must be a non-empty numeric vector")
+          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must be a non-empty numeric vector (n-1 parameters)")
         }
         if (is.null(names(p))) {
-          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must have names (level labels)")
+          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must have names (level labels for non-reference levels)")
+        }
+        levs <- params$vertex_categorical_levels[[attr_name]]
+        if (is.null(levs) || length(levs) < 2L) {
+          stop("PMF_mark_CS: vertex_categorical_levels$", attr_name, " must be a character vector of length >= 2 (last is reference)")
+        }
+        if (length(p) != length(levs) - 1L) {
+          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must have length ", length(levs) - 1L, " (n-1 for ", length(levs), " levels), got ", length(p))
+        }
+        if (!all(names(p) %in% levs)) {
+          stop("PMF_mark_CS: names of vertex_categorical$", attr_name, " must be in vertex_categorical_levels$", attr_name)
+        }
+        if (any(!is.finite(p)) || any(p < 0) || sum(p) >= 1) {
+          stop("PMF_mark_CS: vertex_categorical$", attr_name, " must be non-negative, finite, and sum < 1 (reference level gets 1 - sum)")
         }
       }
     }
@@ -463,7 +525,7 @@ PMF_mark_CS <- function(time,
             if (nv <= nm) {
               network::set.vertex.attribute(new_net, attr_name, g[seq_len(nv)])
             } else {
-              levs <- names(normalize_vertex_categorical_probs(vcat[[attr_name]]))
+              levs <- vertex_categorical_level_names(params, attr_name, mark)
               if (is.null(levs) || length(levs) == 0) levs <- "unknown"
               network::set.vertex.attribute(new_net, attr_name, c(g, rep(levs[1L], nv - nm)))
             }
@@ -578,7 +640,8 @@ PMF_mark_CS <- function(time,
         for (attr_name in names(vcat)) {
           if (attr_name %in% network::list.vertex.attributes(mark)) {
             observed_categorical[[attr_name]] <- (mark %v% attr_name)[(old_nodes + 1):new_nodes]
-            p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+            level_names <- vertex_categorical_level_names(params, attr_name, mark)
+            p <- expand_vertex_categorical_probs(vcat[[attr_name]], level_names, eps = eps)
             if (!is.null(p)) {
               idx <- match(observed_categorical[[attr_name]], names(p))
               idx[is.na(idx)] <- match("unknown", names(p))
@@ -662,13 +725,18 @@ PMF_mark_CS <- function(time,
       eps_cl <- 1e-10
       for (attr_name in names(observed_categorical)) {
         if (attr_name %in% names(vcat)) {
-          p_attr <- normalize_vertex_categorical_probs(vcat[[attr_name]], eps = eps_cl)
-          if (!is.null(p_attr)) {
-            obs <- observed_categorical[[attr_name]]
-            idx <- match(obs, names(p_attr))
-            idx[is.na(idx)] <- match("unknown", names(p_attr))
-            idx[is.na(idx)] <- 1L
-            node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps_cl)))
+          levs_attr <- level_names_by_attr[[attr_name]]
+          if (is.null(levs_attr) && !is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels))
+            levs_attr <- params$vertex_categorical_levels[[attr_name]]
+          if (!is.null(levs_attr)) {
+            p_attr <- expand_vertex_categorical_probs(vcat[[attr_name]], levs_attr, eps = eps_cl)
+            if (!is.null(p_attr)) {
+              obs <- observed_categorical[[attr_name]]
+              idx <- match(obs, names(p_attr))
+              idx[is.na(idx)] <- match("unknown", names(p_attr))
+              idx[is.na(idx)] <- 1L
+              node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps_cl)))
+            }
           }
         }
       }
@@ -689,8 +757,13 @@ PMF_mark_CS <- function(time,
     d
   } else numeric(0)
   
+  # Pre-compute level names per attribute for the closure
+  obs_cat <- if (exists("observed_categorical", inherits = FALSE)) observed_categorical else list()
+  level_names_by_attr <- list()
+  for (an in names(obs_cat)) level_names_by_attr[[an]] <- vertex_categorical_level_names(params, an, mark)
+  
   # Now *force* a tiny environment (no local needed).
-  # Include normalize_vertex_categorical_probs so the closure finds it when parent is baseenv() (e.g. when sourced).
+  # Include expand_vertex_categorical_probs so the closure finds it when parent is baseenv().
   environment(log_density_func_light) <- list2env(
     list(
       change_stats                    = change_stats,
@@ -701,24 +774,16 @@ PMF_mark_CS <- function(time,
       time                            = time,
       max_node_time                   = max_node_time,
       degenerate_edges                = degenerate_edges,
-      observed_categorical            = if (exists("observed_categorical", inherits = FALSE)) observed_categorical else list(),
-      normalize_vertex_categorical_probs = normalize_vertex_categorical_probs
+      observed_categorical            = obs_cat,
+      level_names_by_attr             = level_names_by_attr,
+      expand_vertex_categorical_probs = expand_vertex_categorical_probs
     ),
     parent = baseenv()
   )
   
-  density_func_light <- function(params){
-    log_density <- log_density_func_light(params)
-    exp(log_density)
-  }
-  
+  density_func_light <- function(params) exp(log_density_func_light(params))
   environment(density_func_light) <- list2env(
-    list(
-      change_stats = change_stats,
-      in_mark      = in_mark,
-      node_dens    = node_dens,
-      plogis = stats::plogis
-    ),
+    list(log_density_func_light = log_density_func_light),
     parent = baseenv()
   )
 
@@ -753,11 +818,12 @@ PMF_mark_CS <- function(time,
       #   browser()
       # }
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
-      # Set discrete vertex attributes for new nodes (sample from vertex_categorical)
+      # Set discrete vertex attributes for new nodes (sample from vertex_categorical; n-1 params)
       vcat <- params$vertex_categorical
       if (!is.null(vcat) && is.list(vcat)) {
         for (attr_name in names(vcat)) {
-          p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+          levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
+          p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
           if (is.null(p)) next
           levs <- names(p)
           if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs
@@ -826,7 +892,8 @@ PMF_mark_CS <- function(time,
           vcat <- params$vertex_categorical
           if (!is.null(vcat) && is.list(vcat)) {
             for (attr_name in names(vcat)) {
-              p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+              levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
+              p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
               if (is.null(p)) next
               levs <- names(p)
               if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs))
@@ -899,7 +966,8 @@ PMF_mark_CS <- function(time,
       if (!is.null(vcat) && is.list(vcat) && (new_size - old_nodes) > 0) {
         for (attr_name in names(vcat)) {
           if (attr_name %in% network::list.vertex.attributes(mark_sample)) {
-            p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+            levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
+            p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
             if (!is.null(p)) {
               obs <- (mark_sample %v% attr_name)[(old_nodes + 1):new_size]
               idx <- match(obs, names(p))
@@ -930,7 +998,8 @@ PMF_mark_CS <- function(time,
         vcat <- params$vertex_categorical
         if (!is.null(vcat) && is.list(vcat)) {
           for (attr_name in names(vcat)) {
-            p <- normalize_vertex_categorical_probs(vcat[[attr_name]])
+            levs <- vertex_categorical_level_names(params, attr_name, mark)
+            p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
             if (is.null(p)) next
             levs <- names(p)
             if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs

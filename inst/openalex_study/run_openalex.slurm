@@ -16,8 +16,21 @@
 #   OPENALEX_STRING=Hawkes
 #   OPENALEX_PAGES=50
 
+mkdir -p cluster_output
+
 module load R
 
-echo "Starting job at $(date)"
+echo "=========================================="
+echo "OpenAlex Hawkes Study"
+echo "Job ID:    $SLURM_JOB_ID"
+echo "Node:      $(hostname)"
+echo "CPUs:      $SLURM_CPUS_PER_TASK"
+echo "Memory:    $SLURM_MEM_PER_NODE MB"
+echo "Started:   $(date)"
+echo "=========================================="
+
 Rscript inst/openalex_study/openalex_hawkes_study.R
-echo "Finished job at $(date)"
+
+echo "=========================================="
+echo "Finished:  $(date)"
+echo "=========================================="

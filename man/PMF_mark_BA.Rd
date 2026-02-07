@@ -11,7 +11,6 @@ PMF_mark_BA(
   mark = NULL,
   generate_mark = FALSE,
   generate_density = TRUE,
-  grad = FALSE,
   new_edge_hash = NULL,
   truncation = NULL,
   ...

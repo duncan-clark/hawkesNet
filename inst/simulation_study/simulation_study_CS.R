@@ -45,6 +45,13 @@ MAX_ITER = 2000
 
 N_SIMS <- 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
+# Core allocation for consistency study:
+# N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
+# N_CORES_OUTER = parallel sim+fit workers (PSOCK cluster).
+# Total cores used = N_CORES_OUTER * N_CORES_INNER.
+# CS model benefits from inner parallelism (ERNM change stats are expensive).
+N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
+N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
 
 SEED <- 01267
 
@@ -138,7 +145,8 @@ if(SIMULATE){
         trace = 0,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        fixed_params = c("K")
+        fixed_params = c("K"),
+        method = "L-BFGS-B"
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
@@ -355,7 +363,8 @@ fit <- fit_hawkesGrowthNet(params_init = params_init,
                            trace = 1,
                            truncation = TRUNCATION,
                            maxit = 1000,
-                           verbose = TRUE
+                           verbose = TRUE,
+                           method = "L-BFGS-B"
                            )
 print("results summary")
 data.frame(fit = fit$fit$par,
@@ -432,7 +441,7 @@ KS_test_net <- ks_test_pval_hawkesGrowthNet(params = params,
 if(RUN_CONSISTENCY){
 
   # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 20, 50)
+  time_windows <- c(5, 10, 20, 30, 40, 50)
   N_SIMS_CONSISTENCY <- 50
 
   # Parameters (Standard/Stable regime) - CS model
@@ -443,24 +452,37 @@ if(RUN_CONSISTENCY){
                       node_lambda = 1,
                       CS_params = c(-6.7, 2, 0.1, -0.1))
 
-  # Setup Cluster
-  cl <- make_cluster(N_CORES)
+  # Setup Cluster — use N_CORES_OUTER workers, each fit gets N_CORES_INNER for intensity cache
+  t_consistency_total <- proc.time()
+  cat("=== Consistency Study (CS) ===\n")
+  cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
+  cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
+  cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
+      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+  cat("Setting up cluster...\n")
+  t_cluster <- proc.time()
+  cl <- make_cluster(N_CORES_OUTER)
   clusterExport(cl, c("params_true", "PMF_mark_CS", "cond_intensity",
-                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet", "TRUNCATION"))
+                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet", "TRUNCATION",
+                      "N_CORES_INNER"))
+  cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
 
   # Storage for results
   consistency_results <- data.frame()
 
-  print("Starting Consistency Study (CS model)...")
-
   for(curr_time in time_windows){
-    print(paste0("Simulating and Fitting for Time Window T = ", curr_time))
+    t_window <- proc.time()
+    cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
+        length(time_windows), ") ---\n")
 
     # Export current time to cluster
     clusterExport(cl, "curr_time", envir = environment())
 
     # Parallel Simulation & Fitting Loop
-    res_list <- parLapply(cl, 1:N_SIMS_CONSISTENCY, function(i){
+    cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
+        N_CORES_INNER, "inner cores...\n")
+    t_simfit <- proc.time()
+    res_list <- pblapply(1:N_SIMS_CONSISTENCY, cl = cl, FUN = function(i){
 
       # A. Simulate
       sim_res <- tryCatch({
@@ -478,12 +500,13 @@ if(RUN_CONSISTENCY){
       if(is.null(sim_res)) return(NULL)
 
       # B. Fit - CS options: formula_RHS, fixed_params = c("K")
-      params_init <- list(mu = runif(1, 1, 10),
-                          beta_overall = runif(1, 0.5, 3),
-                          K = 0.5,
-                          beta_edges = runif(1, 0.5, 2),
-                          node_lambda = runif(1, 0.5, 2),
-                          CS_params = c(-10, 0, 0, 0))
+      # Initialize near true params + small noise for better convergence
+      params_init <- list(mu = params_true$mu * exp(rnorm(1, 0, 0.2)),
+                          beta_overall = params_true$beta_overall * exp(rnorm(1, 0, 0.2)),
+                          K = params_true$K,
+                          beta_edges = params_true$beta_edges * exp(rnorm(1, 0, 0.2)),
+                          node_lambda = params_true$node_lambda * exp(rnorm(1, 0, 0.2)),
+                          CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5))
 
       fit_res <- tryCatch({
         fit_hawkesGrowthNet(params_init = params_init,
@@ -495,7 +518,9 @@ if(RUN_CONSISTENCY){
                             truncation = TRUNCATION,
                             cache_intensity = TRUE,
                             verbose = FALSE,
-                            fixed_params = c("K"))
+                            fixed_params = c("K"),
+                            cores = N_CORES_INNER,
+                            method = "L-BFGS-B")
       }, error = function(e) return(NULL))
 
       keep <- (length(fit_res$fit) != 0 & fit_res$fit$convergence == 0 &
@@ -513,13 +538,31 @@ if(RUN_CONSISTENCY){
         true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
       ))
     })
+    elapsed_simfit <- (proc.time() - t_simfit)[3]
 
     # Bind results
     res_df <- do.call(rbind, res_list)
+    n_success <- length(unique(res_df$sim_id))
+    n_fail <- N_SIMS_CONSISTENCY - n_success
     consistency_results <- rbind(consistency_results, res_df)
+
+    elapsed_window <- (proc.time() - t_window)[3]
+    cat("  Sim+fit:", round(elapsed_simfit, 1), "s |",
+        "Success:", n_success, "/", N_SIMS_CONSISTENCY,
+        "(", n_fail, "failed)\n")
+    cat("  Window total:", round(elapsed_window, 1), "s (",
+        round(elapsed_window / 60, 1), "min)\n")
+    elapsed_so_far <- (proc.time() - t_consistency_total)[3]
+    remaining_windows <- length(time_windows) - which(time_windows == curr_time)
+    cat("  Elapsed so far:", round(elapsed_so_far / 60, 1), "min |",
+        "Windows remaining:", remaining_windows, "\n")
   }
 
   stopCluster(cl)
+  elapsed_consistency <- (proc.time() - t_consistency_total)[3]
+  cat("\n=== Consistency Study (CS) complete ===\n")
+  cat("  Total time:", round(elapsed_consistency / 60, 1), "min (",
+      round(elapsed_consistency / 3600, 2), "h)\n")
 
   # ==========================
   # Visualization

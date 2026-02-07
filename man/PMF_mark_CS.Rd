@@ -21,8 +21,6 @@ normalize_vertex_categorical_probs(probs, eps = 1e-10)
 
 \item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).}
 
-\item{grad}{If \code{TRUE}, compute gradient (default \code{FALSE}).}
-
 \item{truncation}{Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.}
 
 \item{vertex_categorical}{Optional named list in \code{params}: for each discrete vertex attribute, a named

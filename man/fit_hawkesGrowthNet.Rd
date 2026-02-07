@@ -14,7 +14,6 @@ fit_hawkesGrowthNet(
   REPORT = 10,
   reltol = 1e-08,
   parscale = NULL,
-  get_hessian = FALSE,
   fixed_params = NULL,
   cache_intensity = TRUE,
   ...
@@ -39,8 +38,6 @@ fit_hawkesGrowthNet(
 
 \item{parscale}{Scale vector for parameters (default all 1).}
 
-\item{get_hessian}{If \code{TRUE}, return Hessian in the fit object.}
-
 \item{fixed_params}{Character vector of parameter names to hold fixed.}
 
 \item{cache_intensity}{If \code{TRUE}, cache intensity functions (default \code{TRUE}).}
@@ -48,7 +45,7 @@ fit_hawkesGrowthNet(
 \item{...}{Passed to \code{loglik_hawkesGrowthNet} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
-List with \code{fit} (output of \code{optim}) and \code{intens_funcs}.
+List with \code{fit} (output of \code{optim}), \code{intens_funcs}, \code{fit_table} (parameter estimates and standard errors), and \code{hessian} (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 }
 \description{
 Fit the Hawkes network growth model by maximum likelihood

@@ -327,11 +327,12 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
 #' Returns \code{FALSE} if any of \code{mu}, \code{beta_overall}, \code{K},
 #' \code{beta_edges}, \code{node_lambda} are present but not strictly positive
 #' and finite, or if \code{vertex_categorical} probabilities are not valid
-#' (non-negative, finite, sum to 1). Used internally by the likelihood optimizer
-#' to apply a penalty when parameters leave the valid region.
+#' (non-negative, finite, and sum < 1 so the reference level gets a positive
+#' probability). Uses the n-1 parametrization: user supplies n-1 probabilities
+#' and the last level's probability is \code{1 - sum(p)}.
 #'
 #' @param params List of parameters (e.g. from \code{relist} or passed to \code{sim_hawkesGrowthNet}).
-#' @param eps Scalar rate/scale params must be \code{> eps}; probability vectors must have sum within \code{1 +/- eps} (default \code{1e-10}).
+#' @param eps Scalar rate/scale params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{TRUE} if all present parameters are valid, \code{FALSE} otherwise.
 #' @noRd
 point_process_params_valid <- function(params, eps = 1e-10) {
@@ -349,7 +350,8 @@ point_process_params_valid <- function(params, eps = 1e-10) {
       if (!is.numeric(p) || length(p) == 0L) return(FALSE)
       if (any(!is.finite(p)) || any(p < 0)) return(FALSE)
       s <- sum(p)
-      if (!is.finite(s) || s <= 0 || abs(s - 1) > eps) return(FALSE)
+      # n-1 parametrization: sum must be < 1 (reference level gets 1 - sum)
+      if (!is.finite(s) || s <= 0 || s >= 1) return(FALSE)
     }
   }
   TRUE
@@ -359,11 +361,12 @@ point_process_params_valid <- function(params, eps = 1e-10) {
 #'
 #' Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
 #' \code{node_lambda} are strictly positive and finite when present, and that
-#' \code{vertex_categorical} probabilities are non-negative, finite, and sum to 1.
-#' If any check fails, \code{stop()} is called with a message listing the problem.
+#' \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
+#' finite, and sum to strictly less than 1 (so the reference level gets positive
+#' probability). If any check fails, \code{stop()} is called with a message.
 #'
 #' @param params List of parameters (e.g. passed to \code{sim_hawkesGrowthNet}).
-#' @param eps Scalar params must be \code{> eps}; probability sum tolerance (default \code{1e-10}).
+#' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{invisible(params)} if valid.
 #' @export
 validate_point_process_params <- function(params, eps = 1e-10) {
@@ -407,8 +410,9 @@ validate_point_process_params <- function(params, eps = 1e-10) {
         next
       }
       s <- sum(p)
-      if (!is.finite(s) || s <= 0 || abs(s - 1) > eps) {
-        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must sum to 1 (got ", s, ")"))
+      # n-1 parametrization: sum of n-1 probs must be < 1 (reference level gets 1 - sum)
+      if (!is.finite(s) || s <= 0 || s >= 1) {
+        msg <- c(msg, paste0("vertex_categorical$", attr_name, " must have sum in (0, 1) for n-1 parametrization (got ", s, ")"))
       }
     }
   }

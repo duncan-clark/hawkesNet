@@ -11,7 +11,6 @@ loglik_hawkesGrowthNet(
   PMF_mark,
   edge_hash_list = NULL,
   verbose = FALSE,
-  do_grad = FALSE,
   intens_funcs = NULL,
   ...
 )
@@ -29,17 +28,15 @@ loglik_hawkesGrowthNet(
 
 \item{verbose}{Print timing (default \code{FALSE}).}
 
-\item{do_grad}{Compute gradients (default \code{FALSE}).}
-
 \item{intens_funcs}{Precomputed intensity functions (for fitting).}
 
 \item{...}{Passed to \code{cond_intensity} / \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
-List with \code{loglik} and optionally \code{grads}, \code{intens_funcs}.
+List with \code{loglik} and \code{intens_funcs}.
 }
 \description{
-Computes the log-likelihood and optional gradients for a given parameter vector and observed network.
+Computes the log-likelihood for a given parameter vector and observed network.
 }
 \seealso{
 \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}

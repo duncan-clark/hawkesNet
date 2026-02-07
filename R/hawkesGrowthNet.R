@@ -1,3 +1,49 @@
+# Helper: build lower/upper bounds for L-BFGS-B from flattened parameter names.
+# Parameters whose base name is in `positive_params` get lower = eps; all others get -Inf.
+# Upper bounds: vertex_categorical params get upper = 1 - eps; all others get Inf.
+build_optim_bounds <- function(par_names, eps = 1e-6) {
+  positive_params <- c("mu", "beta_overall", "beta_edges", "K", "node_lambda")
+  lower <- rep(-Inf, length(par_names))
+  upper <- rep(Inf, length(par_names))
+  for (i in seq_along(par_names)) {
+    # Strip trailing digits for vector params (e.g. "CS_params1" -> "CS_params")
+    base_name <- sub("[0-9]+$", "", par_names[i])
+    # Also handle nested names like "vertex_categorical.gender1"
+    top_name <- strsplit(par_names[i], "\\.")[[1L]][1L]
+    if (base_name %in% positive_params || top_name %in% positive_params) {
+      lower[i] <- eps
+    }
+    if (top_name == "vertex_categorical") {
+      lower[i] <- eps
+      upper[i] <- 1 - eps
+    }
+  }
+  list(lower = lower, upper = upper)
+}
+
+# Helper: rename CS_params1, CS_params2, ... in a fit table to actual ERNM stat names
+# e.g. "CS_params1" -> "edges", "CS_params2" -> "triangles", etc.
+rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
+  formula_RHS <- dot_args$formula_RHS
+  if (is.null(formula_RHS) || is.null(mark_filtration)) return(fit_table)
+  exp_cs <- tryCatch(
+    expected_params_PMF_mark_CS(mark_filtration, formula_RHS),
+    error = function(e) NULL
+  )
+  if (is.null(exp_cs) || is.null(exp_cs$CS_params_names)) return(fit_table)
+  stat_names <- exp_cs$CS_params_names
+  n_cs <- length(stat_names)
+  # Build mapping: CS_params1 -> stat_names[1], etc.
+  old_names <- paste0("CS_params", seq_len(n_cs))
+  for (i in seq_len(n_cs)) {
+    idx <- which(fit_table$parameter == old_names[i])
+    if (length(idx) == 1L) {
+      fit_table$parameter[idx] <- stat_names[i]
+    }
+  }
+  fit_table
+}
+
 #' Conditional intensity for Hawkes network growth model
 #'
 #' Evaluates the conditional intensity at time \code{t} given the mark (network) and past events.
@@ -354,12 +400,12 @@ loglik_hawkesGrowthNet = function(params,
                   func = intensity$func
                   ))
     }
-    if("cores" %in% names(list(...))){
+    cores <- list(...)$cores
+    if(!is.null(cores) && is.numeric(cores) && cores > 1){
       if(verbose){
-        print(paste0("using ",list(...)$cores," cores on ",length(times), " objects for cond intensity list first calculation"))
+        print(paste0("using ",cores," cores on ",length(times), " objects for cond intensity list first calculation"))
       }
       print("starting intens list calculation")
-      cores <- list(...)$cores
       t <- proc.time()
       intens_list <- pbmclapply(rev(seq_along(times)),
                                 intens_func,
@@ -427,6 +473,9 @@ loglik_hawkesGrowthNet = function(params,
 #' @param parscale Scale vector for parameters (default all 1).
 #' @param fixed_params Character vector of parameter names to hold fixed.
 #' @param cache_intensity If \code{TRUE}, cache intensity functions (default \code{TRUE}).
+#' @param method Optimization method: \code{"Nelder-Mead"} (default, derivative-free) or
+#'   \code{"L-BFGS-B"} (gradient-based with box constraints; constrains mu, beta_overall,
+#'   beta_edges, K, node_lambda > 0 automatically).
 #' @param ... Passed to \code{loglik_hawkesGrowthNet} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{fit} (output of \code{optim}), \code{intens_funcs}, \code{fit_table} (parameter estimates and standard errors), and \code{hessian} (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @rdname fit_hawkesGrowthNet
@@ -442,6 +491,7 @@ fit_hawkesGrowthNet <- function(params_init,
                                 parscale = NULL,
                                 fixed_params = NULL,
                                 cache_intensity = TRUE,
+                                method = "Nelder-Mead",
                                 ...){
   params_init_old <- params_init
   if(!is.null(fixed_params)){
@@ -449,6 +499,9 @@ fit_hawkesGrowthNet <- function(params_init,
       params_init[[k]] <- NULL
     }
   }
+  # Strip vertex_categorical_levels (character metadata, not numeric parameters)
+  # so unlist() yields a purely numeric vector for optim.
+  params_init$vertex_categorical_levels <- NULL
   
   if (is.null(parscale)) {
     flat_params <- unlist(params_init)
@@ -477,10 +530,12 @@ fit_hawkesGrowthNet <- function(params_init,
     cached_funcs <- NULL
     init_lik <- NULL
   }
-  optim_func <- function(params, ...){
+  dot_args <- list(...)
+  optim_func <- function(params){
     params_curr <- relist(params, skeleton = params_init)
-    # 2. Re-inject the fixed parameters from the backup (params_init_old)
-    #    to reconstruct the full parameter list required by the loglik function.
+    # Restore vertex_categorical_levels from the original params (not optimized)
+    params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
+    # Re-inject the fixed parameters from the backup (params_init_old)
     if (!is.null(fixed_params)) {
       for (k in fixed_params) {
         params_curr[[k]] <- params_init_old[[k]]
@@ -490,25 +545,35 @@ fit_hawkesGrowthNet <- function(params_init,
     
     # 2. Pass NULL to intens_funcs if caching is disabled
     # This forces loglik_hawkesGrowthNet to rebuild the density from scratch
-    result <- loglik_hawkesGrowthNet(params = params_curr,
-                                     time_window = time_window,
-                                     mark_filtration = mark_filtration,
-                                     PMF_mark = PMF_mark,
-                                     intens_funcs = cached_funcs, # Pass NULL if disabled
-                                     ...)
+    result <- do.call(loglik_hawkesGrowthNet, c(
+      list(params = params_curr,
+           time_window = time_window,
+           mark_filtration = mark_filtration,
+           PMF_mark = PMF_mark,
+           intens_funcs = cached_funcs),
+      dot_args
+    ))
     return(result$loglik)
   }
-  fit <- optim(par = unlist(params_init),
-               fn = optim_func,
-               method = "Nelder-Mead",
-               control = list(fnscale = -1,
-                              trace=trace,
-                              maxit=maxit,
-                              reltol = reltol,
-                              parscale = parscale,
-                              abstol = NULL),
-               hessian = FALSE,
-               ...)
+  flat_par <- unlist(params_init)
+  optim_args <- list(
+    par = flat_par,
+    fn = optim_func,
+    method = method,
+    control = list(fnscale = -1,
+                   trace = trace,
+                   maxit = maxit,
+                   reltol = reltol,
+                   parscale = parscale),
+    hessian = TRUE
+  )
+  if (method == "L-BFGS-B") {
+    bounds <- build_optim_bounds(names(flat_par))
+    optim_args$lower <- bounds$lower
+    optim_args$upper <- bounds$upper
+    optim_args$control$REPORT <- REPORT
+  }
+  fit <- do.call(optim, optim_args)
   print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
 
   # Results table: estimate and standard error (from numerical Hessian)
@@ -520,21 +585,16 @@ fit_hawkesGrowthNet <- function(params_init,
     row.names = NULL,
     stringsAsFactors = FALSE
   )
-  hessian <- NULL
-  if (requireNamespace("numDeriv", quietly = TRUE)) {
-    neg_loglik <- function(p) -optim_func(p)
-    hessian <- tryCatch(
-      numDeriv::hessian(neg_loglik, fit$par),
-      error = function(e) NULL
-    )
-    if (!is.null(hessian)) {
-      vcov <- tryCatch(solve(hessian), error = function(e) NULL)
-      if (!is.null(vcov)) {
-        se <- sqrt(pmax(diag(vcov), 0))
-        fit_table$std.error <- se
-      }
-    }
+  hessian <- fit$hessian
+  # optim returns hessian of fn (loglik), which is negative definite at a maximum.
+  # The variance-covariance matrix is the inverse of the *negative* hessian (i.e. observed information).
+  vcov <- tryCatch(solve(-hessian), error = function(e) NULL)
+  if (!is.null(vcov)) {
+      se <- sqrt(pmax(diag(vcov), 0))
+      fit_table$std.error <- se
   }
+  # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
+  fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   message("Hawkes growth fit results:")
   print(fit_table)
   if (all(is.na(fit_table$std.error))) {

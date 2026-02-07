@@ -45,6 +45,12 @@ MAX_ITER = 2000
 
 N_SIMS = 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
+# Core allocation for consistency study:
+# N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
+# N_CORES_OUTER = parallel sim+fit workers (PSOCK cluster).
+# BA model is cheaper than CS, so fewer inner cores needed.
+N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
+N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
 
 SEED <- 01267
 
@@ -131,7 +137,8 @@ if(SIMULATE){
         PMF_mark = PMF_mark_BA,
         trace = 0,
         maxit = MAX_ITER,
-        truncation = TRUNCATION
+        truncation = TRUNCATION,
+        method = "L-BFGS-B"
         # fixed_params = c("K")
       )
     }, error = function(e) {
@@ -340,7 +347,8 @@ if(INVESTIGATE){
                              trace = 1,
                              truncation = TRUNCATION,
                              maxit = 1000,
-                             verbose = TRUE
+                             verbose = TRUE,
+                             method = "L-BFGS-B"
   )
   print("results summary")
   data.frame(fit = fit$fit$par,
@@ -412,7 +420,7 @@ if(INVESTIGATE){
 if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 20, 50,100,200)
+  time_windows <- c(5, 10, 25, 50,75,100,150,200,300,500)
   N_SIMS_CONSISTENCY <- 50
   
   # Parameters (Standard/Stable regime)
@@ -422,24 +430,37 @@ if(RUN_CONSISTENCY){
                       beta_edges = 1
                       )
   
-  # Setup Cluster
-  cl <- make_cluster(N_CORES)
+  # Setup Cluster — use N_CORES_OUTER workers, each fit gets N_CORES_INNER for intensity cache
+  t_consistency_total <- proc.time()
+  cat("=== Consistency Study (BA) ===\n")
+  cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
+  cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
+  cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
+      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+  cat("Setting up cluster...\n")
+  t_cluster <- proc.time()
+  cl <- make_cluster(N_CORES_OUTER)
   clusterExport(cl, c("params_true", "PMF_mark_BA", "cond_intensity", 
-                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet"))
+                      "sim_hawkesGrowthNet", "fit_hawkesGrowthNet",
+                      "N_CORES_INNER"))
+  cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
   
   # Storage for results
   consistency_results <- data.frame()
   
-  print("Starting Consistency Study...")
-  
   for(curr_time in time_windows){
-    print(paste0("Simulating and Fitting for Time Window T = ", curr_time))
+    t_window <- proc.time()
+    cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
+        length(time_windows), ") ---\n")
     
     # Export current time to cluster
     clusterExport(cl, "curr_time", envir = environment())
     
     # Parallel Simulation & Fitting Loop
-    res_list <- parLapply(cl, 1:N_SIMS_CONSISTENCY, function(i){
+    cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
+        N_CORES_INNER, "inner cores...\n")
+    t_simfit <- proc.time()
+    res_list <- pblapply(1:N_SIMS_CONSISTENCY, cl = cl, FUN = function(i){
       
       # A. Simulate
       sim_res <- tryCatch({
@@ -468,7 +489,9 @@ if(RUN_CONSISTENCY){
                             PMF_mark = PMF_mark_BA,
                             maxit = 1000,
                             cache_intensity = TRUE,
-                            verbose = FALSE)
+                            verbose = FALSE,
+                            cores = N_CORES_INNER,
+                            method = "L-BFGS-B")
       }, error = function(e) return(NULL))
     
       keep <- (length(fit_res$fit)!=0 & fit_res$fit$convergence==0 & !any(fit_res$fit$par > 100) & !any(fit_res$fit$par[2] >10))
@@ -485,13 +508,31 @@ if(RUN_CONSISTENCY){
         true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
       ))
     })
+    elapsed_simfit <- (proc.time() - t_simfit)[3]
     
     # Bind results
     res_df <- do.call(rbind, res_list)
+    n_success <- length(unique(res_df$sim_id))
+    n_fail <- N_SIMS_CONSISTENCY - n_success
     consistency_results <- rbind(consistency_results, res_df)
+    
+    elapsed_window <- (proc.time() - t_window)[3]
+    cat("  Sim+fit:", round(elapsed_simfit, 1), "s |",
+        "Success:", n_success, "/", N_SIMS_CONSISTENCY,
+        "(", n_fail, "failed)\n")
+    cat("  Window total:", round(elapsed_window, 1), "s (",
+        round(elapsed_window / 60, 1), "min)\n")
+    elapsed_so_far <- (proc.time() - t_consistency_total)[3]
+    remaining_windows <- length(time_windows) - which(time_windows == curr_time)
+    cat("  Elapsed so far:", round(elapsed_so_far / 60, 1), "min |",
+        "Windows remaining:", remaining_windows, "\n")
   }
   
   stopCluster(cl)
+  elapsed_consistency <- (proc.time() - t_consistency_total)[3]
+  cat("\n=== Consistency Study (BA) complete ===\n")
+  cat("  Total time:", round(elapsed_consistency / 60, 1), "min (",
+      round(elapsed_consistency / 3600, 2), "h)\n")
 
   # ==========================
   # Visualization

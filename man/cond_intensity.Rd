@@ -33,7 +33,7 @@ cond_intensity(
 \item{...}{Arguments passed to \code{PMF_mark}.}
 }
 \value{
-List with \code{result} (intensity value), \code{func} (function for gradient), and optional debug fields.
+List with \code{result} (intensity value), \code{func} (function to evaluate intensity at new params), and optional debug fields.
 }
 \description{
 Evaluates the conditional intensity at time \code{t} given the mark (network) and past events.

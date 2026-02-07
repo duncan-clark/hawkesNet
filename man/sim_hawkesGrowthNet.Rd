@@ -14,6 +14,7 @@ sim_hawkesGrowthNet(
   mu_multiplier = 10,
   joint_accept = F,
   n_mark_sample = NULL,
+  stop_on_full_network = TRUE,
   ...
 )
 }
@@ -35,6 +36,8 @@ sim_hawkesGrowthNet(
 \item{joint_accept}{Logical (default \code{FALSE}); joint acceptance for mark and time.}
 
 \item{n_mark_sample}{Optional number of mark samples per proposal.}
+
+\item{stop_on_full_network}{If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.}
 
 \item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }

@@ -131,17 +131,13 @@ loglik_hawkesGrowthNet_inhom <- function(params,
       list(result = intensity$result, func = intensity$func)
     }
 
-    if ("cores" %in% names(list(...))) {
-      cores <- list(...)$cores
+    cores <- list(...)$cores
+    if (!is.null(cores) && is.numeric(cores) && cores > 1 && requireNamespace("pbmcapply", quietly = TRUE)) {
       if (verbose) message("Using ", cores, " cores for intensity list")
-      if (requireNamespace("pbmcapply", quietly = TRUE)) {
-        intens_list <- pbmcapply::pbmclapply(
-          seq_along(times), intens_func,
-          mc.cores = cores, mc.preschedule = FALSE
-        )
-      } else {
-        intens_list <- lapply(seq_along(times), intens_func)
-      }
+      intens_list <- pbmcapply::pbmclapply(
+        seq_along(times), intens_func,
+        mc.cores = cores, mc.preschedule = FALSE
+      )
     } else {
       intens_list <- lapply(seq_along(times), intens_func)
     }
@@ -179,12 +175,15 @@ loglik_hawkesGrowthNet_inhom <- function(params,
 #' @param PMF_mark Mark PMF (e.g. PMF_mark_CS)
 #' @param mu_vec Background rate at each event time (from prepare_inhomogeneous_background)
 #' @param integral_bg Integral of background over time window
-#' @param maxit Maximum iterations for Nelder-Mead
+#' @param maxit Maximum iterations for optimizer
 #' @param trace Trace level
 #' @param reltol Relative tolerance
 #' @param parscale Parameter scaling vector
 #' @param fixed_params Names of parameters to fix
 #' @param cache_intensity Pre-compute intensity closures for speed
+#' @param method Optimization method: \code{"Nelder-Mead"} (default) or \code{"L-BFGS-B"}
+#'   (gradient-based with box constraints; constrains mu, beta_overall, beta_edges,
+#'   K, node_lambda > 0 automatically).
 #' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.)
 #' @return List with fit (optim result), intens_funcs, params_init_old, fit_table (parameter estimates and standard errors), and hessian (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @export
@@ -200,11 +199,15 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
                                       parscale = NULL,
                                       fixed_params = NULL,
                                       cache_intensity = TRUE,
+                                      method = "Nelder-Mead",
                                       ...) {
   params_init_old <- params_init
   if (!is.null(fixed_params)) {
     for (k in fixed_params) params_init[[k]] <- NULL
   }
+  # Strip vertex_categorical_levels (character metadata, not numeric parameters)
+  # so unlist() yields a purely numeric vector for optim.
+  params_init$vertex_categorical_levels <- NULL
 
   if (is.null(parscale)) {
     flat <- unlist(params_init)
@@ -230,33 +233,42 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
     cached_funcs <- init_lik$intens_funcs
   }
 
-  optim_func <- function(params, ...) {
+  dot_args <- list(...)
+  optim_func <- function(params) {
     params_curr <- relist(params, skeleton = params_init)
+    # Restore vertex_categorical_levels from the original params (not optimized)
+    params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
     if (!is.null(fixed_params)) {
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
     if (!point_process_params_valid(params_curr)) return(-1e10)
-    result <- loglik_hawkesGrowthNet_inhom(
-      params = params_curr,
-      time_window = time_window,
-      mark_filtration = mark_filtration,
-      PMF_mark = PMF_mark,
-      mu_vec = mu_vec,
-      integral_bg = integral_bg,
-      intens_funcs = cached_funcs,
-      ...
-    )
+    result <- do.call(loglik_hawkesGrowthNet_inhom, c(
+      list(params = params_curr,
+           time_window = time_window,
+           mark_filtration = mark_filtration,
+           PMF_mark = PMF_mark,
+           mu_vec = mu_vec,
+           integral_bg = integral_bg,
+           intens_funcs = cached_funcs),
+      dot_args
+    ))
     result$loglik
   }
 
-  fit <- optim(
-    par = unlist(params_init),
+  flat_par <- unlist(params_init)
+  optim_args <- list(
+    par = flat_par,
     fn = optim_func,
-    method = "Nelder-Mead",
+    method = method,
     control = list(fnscale = -1, trace = trace, maxit = maxit, reltol = reltol, parscale = parscale),
-    hessian = FALSE,
-    ...
+    hessian = TRUE
   )
+  if (method == "L-BFGS-B") {
+    bounds <- build_optim_bounds(names(flat_par))
+    optim_args$lower <- bounds$lower
+    optim_args$upper <- bounds$upper
+  }
+  fit <- do.call(optim, optim_args)
 
   message("Fitting (inhomogeneous) took ", round(proc.time()[3], 2), " seconds")
 
@@ -269,21 +281,18 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
     row.names = NULL,
     stringsAsFactors = FALSE
   )
-  hessian <- NULL
-  if (requireNamespace("numDeriv", quietly = TRUE)) {
-    neg_loglik <- function(p) -optim_func(p)
-    hessian <- tryCatch(
-      numDeriv::hessian(neg_loglik, fit$par),
-      error = function(e) NULL
-    )
-    if (!is.null(hessian)) {
-      vcov <- tryCatch(solve(hessian), error = function(e) NULL)
-      if (!is.null(vcov)) {
-        se <- sqrt(pmax(diag(vcov), 0))
-        fit_table$std.error <- se
-      }
+  hessian <- fit$hessian
+  if (!is.null(hessian)) {
+    # optim returns hessian of fn (loglik), which is negative definite at a maximum.
+    # The variance-covariance matrix is the inverse of the *negative* hessian (observed information).
+    vcov <- tryCatch(solve(-hessian), error = function(e) NULL)
+    if (!is.null(vcov)) {
+      se <- sqrt(pmax(diag(vcov), 0))
+      fit_table$std.error <- se
     }
   }
+  # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
+  fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   message("Inhomogeneous fit results:")
   print(fit_table)
   if (all(is.na(fit_table$std.error))) {
