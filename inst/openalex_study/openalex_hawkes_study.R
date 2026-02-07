@@ -30,7 +30,7 @@ MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 MAX_ITER <- 1000
-TRUNCATION <- 250L
+TRUNCATION <- 100L
 N_GOF <- 50L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
@@ -210,7 +210,7 @@ if (!is.null(inhom_bg)) {
       integral_bg = inhom_bg$integral_bg,
       formula_RHS = FORMULA_RHS,
       truncation = TRUNCATION,
-      mark_decay = "node_entrance",
+      mark_decay = "activity",
       max_node_time = 1,
       method = "L-BFGS-B",
       maxit = MAX_ITER,
