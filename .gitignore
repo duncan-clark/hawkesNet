@@ -3,6 +3,7 @@
 .DS_Store
 .PNG
 paper_dump
+*.RDS
 # Ignore job logs; keep cluster_output/ in repo via .gitkeep
 cluster_output/*
 !cluster_output/.gitkeep

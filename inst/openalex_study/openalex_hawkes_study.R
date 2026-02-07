@@ -396,8 +396,10 @@ save_list <- list(
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
 )
-saveRDS(save_list, file.path(PKG_ROOT, "inst", "openalex_study", "results_openalex_full.RDS"))
-cat("  Saved to inst/openalex_study/results_openalex_full.RDS\n\n")
+rds_path <- file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
+dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
+saveRDS(save_list, rds_path)
+cat("  Saved to", rds_path, "\n\n")
 
 # =============================================================================
 # 6. PAPER_OUTPUT: rehydrate and produce figures/tables
@@ -405,7 +407,7 @@ cat("  Saved to inst/openalex_study/results_openalex_full.RDS\n\n")
 if (PAPER_OUTPUT) {
   cat("--- Step 6: Paper output (figures & tables) ---\n")
   t_step <- proc.time()
-  dat <- readRDS(file.path(PKG_ROOT, "inst", "openalex_study", "results_openalex_full.RDS"))
+  dat <- readRDS(file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS"))
   list2env(dat, envir = .GlobalEnv)
   cat("  Rehydrated; producing figures and tables.\n")
 
