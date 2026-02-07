@@ -4,7 +4,7 @@
 #SBATCH --error=cluster_output/CS_sim_%j.err
 #SBATCH --time=50:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=25
+#SBATCH --cpus-per-task=50
 #SBATCH --mem=32G
 
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
