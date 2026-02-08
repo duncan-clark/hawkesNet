@@ -260,6 +260,18 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   if (!is.null(params_init$vertex_categorical)) {
     if (is.null(pfit$vertex_categorical)) {
       pfit$vertex_categorical <- params_init$vertex_categorical
+    } else {
+      # Repair vertex_categorical parameters (may be invalid from optimization)
+      pfit <- repair_vertex_categorical_params(pfit, eps = 1e-6)
+    }
+  }
+  
+  # Validate parameters before simulation
+  if (!point_process_params_valid(pfit)) {
+    if (verbose) cat("  WARNING: Parameters invalid after reconstruction; attempting repair...\n")
+    pfit <- repair_vertex_categorical_params(pfit, eps = 1e-6)
+    if (!point_process_params_valid(pfit)) {
+      if (verbose) cat("  ERROR: Parameters still invalid after repair; GOF may fail\n")
     }
   }
   
@@ -281,10 +293,12 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
         mu_multiplier = mu_multiplier,
         stop_on_full_network = FALSE
       ),
-      error = function(e) { return(list(net = NULL, error = e$message)) }
+      error = function(e) { 
+        return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
+      }
     )
     if (is.null(s$net)) {
-      return(list(net = NULL, error = ifelse(is.null(s$error), "unknown", s$error)))
+      return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
     }
     return(list(net = s$net, error = NULL))
   }, mc.cores = cores)
@@ -293,6 +307,18 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   sim_nets <- sim_nets[!sapply(sim_nets, is.null)]
   n_success <- length(sim_nets)
   n_fail <- n_sim - n_success
+  
+  # Report errors if any
+  if (n_fail > 0 && verbose) {
+    errors <- sapply(sim_results, function(x) if (!is.null(x$error)) x$error else NULL)
+    errors <- errors[!sapply(errors, is.null)]
+    if (length(errors) > 0) {
+      cat("  GOF simulation errors (showing first 3):\n")
+      for (i in seq_len(min(3, length(errors)))) {
+        cat("    ", errors[[i]], "\n")
+      }
+    }
+  }
   
   if (verbose) cat("  GOF simulations:", n_success, "succeeded,", n_fail, "failed\n")
   

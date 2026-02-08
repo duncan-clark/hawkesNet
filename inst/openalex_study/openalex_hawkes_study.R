@@ -174,6 +174,11 @@ if (!is.null(inhom_bg)) {
     params_init_stage2$K <- params_init_inhom$K
     params_init_stage2$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
     
+    # Restore vertex_categorical names and repair parameters (Nelder-Mead doesn't respect bounds)
+    params_init_stage2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+      params_init_stage2, params_init_inhom$vertex_categorical_levels)
+    params_init_stage2 <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_stage2, eps = 1e-6)
+    
     fit_stage2 <- tryCatch(
       fit_hawkesGrowthNet_inhom(
         params_init = params_init_stage2,
@@ -287,12 +292,22 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
   params_init_nodematch$K <- params_init_inhom$K
   params_init_nodematch$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
   
+  # Restore vertex_categorical names and repair parameters (may be invalid from Nelder-Mead)
+  params_init_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+    params_init_nodematch, params_init_inhom$vertex_categorical_levels)
+  params_init_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch, eps = 1e-6)
+  
   # Adjust CS_params length if needed (nodeMatch has different number of parameters)
+  # nodeMix: edges + triangles + star(2,3) + nodeMix('gender') = 1+1+2+6 = 10 stats
+  # nodeMatch: edges + triangles + star(2,3) + nodeMatch('gender') = 1+1+2+1 = 5 stats
+  # So we truncate from 10 to 5, keeping structural params (edges, triangles, stars) 
+  # and using first nodeMix param as starting point for nodeMatch
   if (length(params_init_nodematch$CS_params) != n_cs_nodematch) {
-    # Pad or truncate CS_params to match nodeMatch formula
     if (length(params_init_nodematch$CS_params) > n_cs_nodematch) {
+      # Truncate: keep first n_cs_nodematch params (structural + first nodeMix -> nodeMatch)
       params_init_nodematch$CS_params <- params_init_nodematch$CS_params[1:n_cs_nodematch]
     } else {
+      # Pad with zeros if nodeMatch needs more (shouldn't happen, but handle gracefully)
       params_init_nodematch$CS_params <- c(params_init_nodematch$CS_params, 
                                             rep(0, n_cs_nodematch - length(params_init_nodematch$CS_params)))
     }
@@ -509,12 +524,14 @@ GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NU
 # GOF for nodeMix model
 if (RUN_GOF && !is.null(fit_inhom)) {
   cat("  GOF for nodeMix model...\n")
+  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
+  # The average mu from inhom_bg will be used (computed in gof() function)
   GOF_results <- gof(
     fit = fit_inhom,
     net_obs = net_raw,
     params_init = params_init_inhom,
     PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity_inhom,
+    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
     formula_RHS = FORMULA_RHS,
     time_window = c(0, 0.05),
     truncation = TRUNCATION,
@@ -544,13 +561,19 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   params_init_nodematch_gof$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
   params_init_nodematch_gof$K <- params_init_inhom$K
   params_init_nodematch_gof$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  # Restore names and repair parameters before GOF
+  params_init_nodematch_gof <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+    params_init_nodematch_gof, params_init_inhom$vertex_categorical_levels)
+  params_init_nodematch_gof <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch_gof, eps = 1e-6)
   
+  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
+  # The average mu from inhom_bg will be used (computed in gof() function)
   GOF_results_nodematch <- gof(
     fit = fit_inhom_nodematch,
     net_obs = net_raw,
     params_init = params_init_nodematch_gof,
     PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity_inhom,
+    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
     formula_RHS = FORMULA_RHS_NODEMATCH,
     time_window = c(0, 0.05),
     truncation = TRUNCATION,
@@ -621,10 +644,18 @@ if (PAPER_OUTPUT) {
       skel2$vertex_categorical_levels <- NULL
       pfit2 <- relist(fit_inhom$fit$par, skeleton = skel2)
       pfit2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+      # Restore names and repair parameters before expanding
+      pfit2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+        pfit2, params_init_inhom$vertex_categorical_levels)
+      pfit2 <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit2, eps = 1e-6)
       if (!is.null(pfit2$vertex_categorical$gender)) {
         levs <- params_init_inhom$vertex_categorical_levels$gender
         pgender <- expand_vertex_categorical_probs(pfit2$vertex_categorical$gender, levs)
-        cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender)
+        if (!is.null(pgender)) {
+          cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender)
+        } else {
+          cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
+        }
       }
     }
   }

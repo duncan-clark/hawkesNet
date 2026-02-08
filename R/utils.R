@@ -369,6 +369,130 @@ point_process_params_valid <- function(params, eps = 1e-10) {
 #' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{invisible(params)} if valid.
 #' @export
+#' Repair/clamp vertex_categorical parameters to valid range
+#'
+#' Ensures vertex_categorical parameters are non-negative, finite, and sum < 1.
+#' Used after Nelder-Mead optimization which doesn't respect bounds.
+#'
+#' @param params Parameter list (may contain vertex_categorical).
+#' @param eps Small positive value used as floor (default 1e-6).
+#' @return Parameter list with repaired vertex_categorical.
+#' @noRd
+#' Reconstruct vertex_categorical parameters with correct names after relist
+#'
+#' When parameters are flattened and then relisted, vertex_categorical names may be lost.
+#' This function ensures names are correctly restored from vertex_categorical_levels.
+#'
+#' @param params Parameter list (after relist).
+#' @param vertex_categorical_levels Level names for each attribute.
+#' @return Parameter list with correctly named vertex_categorical.
+#' @noRd
+reconstruct_vertex_categorical_names <- function(params, vertex_categorical_levels) {
+  if (is.null(params$vertex_categorical) || !is.list(params$vertex_categorical)) {
+    return(params)
+  }
+  if (is.null(vertex_categorical_levels) || !is.list(vertex_categorical_levels)) {
+    return(params)
+  }
+  
+  for (attr_name in names(params$vertex_categorical)) {
+    p <- params$vertex_categorical[[attr_name]]
+    levs <- vertex_categorical_levels[[attr_name]]
+    
+    if (!is.null(levs) && length(levs) > 1L && is.numeric(p)) {
+      n_levs <- length(levs) - 1L
+      if (length(p) == n_levs) {
+        # Restore names from levels (n-1 parametrization: exclude reference level)
+        names(p) <- levs[1:n_levs]
+        params$vertex_categorical[[attr_name]] <- p
+      }
+    }
+  }
+  
+  params
+}
+
+repair_vertex_categorical_params <- function(params, eps = 1e-6) {
+  if (is.null(params$vertex_categorical) || !is.list(params$vertex_categorical)) {
+    return(params)
+  }
+  eps <- max(eps, .Machine$double.eps)
+  
+  for (attr_name in names(params$vertex_categorical)) {
+    p <- params$vertex_categorical[[attr_name]]
+    
+    # If p has no names but we have levels, restore names first
+    if (is.numeric(p) && length(p) > 0L && is.null(names(p))) {
+      levs <- params$vertex_categorical_levels[[attr_name]]
+      if (!is.null(levs) && length(levs) > 1L) {
+        n_levs <- length(levs) - 1L
+        if (length(p) == n_levs) {
+          names(p) <- levs[1:n_levs]
+        }
+      }
+    }
+    
+    if (!is.numeric(p) || length(p) == 0L) {
+      # Invalid: set to default (equal probabilities)
+      levs <- params$vertex_categorical_levels[[attr_name]]
+      if (!is.null(levs) && length(levs) > 1L) {
+        n_levs <- length(levs) - 1L
+        default_val <- (1 - eps * n_levs) / n_levs
+        p <- setNames(rep(default_val, n_levs), levs[1:n_levs])
+      } else {
+        next
+      }
+    }
+    
+    # Clamp to [eps, 1-eps] and ensure finite
+    p[!is.finite(p)] <- eps
+    p[p < eps] <- eps
+    
+    # Ensure sum < 1 (n-1 parametrization)
+    s <- sum(p)
+    if (!is.finite(s) || s <= 0) {
+      # Invalid sum: set to equal probabilities
+      levs <- params$vertex_categorical_levels[[attr_name]]
+      if (!is.null(levs) && length(levs) > 1L) {
+        n_levs <- length(levs) - 1L
+        default_val <- (1 - eps * n_levs) / n_levs
+        p <- setNames(rep(default_val, n_levs), names(p)[1:n_levs])
+      }
+    } else if (s >= 1) {
+      # Scale down proportionally to ensure sum < 1 (n-1 parametrization)
+      # Reference level gets probability 1 - sum(p), so we need sum(p) <= 1 - eps
+      # to ensure reference level gets at least eps probability
+      max_sum <- 1 - eps
+      if (max_sum > eps && s > 0) {
+        p <- p * (max_sum / s)
+        # After scaling, ensure individual values are still >= eps
+        p <- pmax(p, eps)
+        # Re-scale if needed to maintain sum <= max_sum
+        s_new <- sum(p)
+        if (s_new > max_sum) {
+          p <- p * (max_sum / s_new)
+        }
+      } else {
+        # If even max_sum is too small, use equal probabilities
+        levs <- params$vertex_categorical_levels[[attr_name]]
+        if (!is.null(levs) && length(levs) > 1L) {
+          n_levs <- length(levs) - 1L
+          default_val <- max_sum / n_levs
+          p <- setNames(rep(default_val, n_levs), names(p)[1:n_levs])
+        }
+      }
+    }
+    
+    # Final clamp to ensure all values are in [eps, 1-eps]
+    p <- pmax(p, eps)
+    p <- pmin(p, 1 - eps)
+    
+    params$vertex_categorical[[attr_name]] <- p
+  }
+  
+  params
+}
+
 validate_point_process_params <- function(params, eps = 1e-10) {
   if (is.null(params) || length(params) == 0) return(invisible(params))
   eps <- max(eps, .Machine$double.eps)
