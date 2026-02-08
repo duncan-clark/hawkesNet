@@ -124,6 +124,10 @@ fit_inhom <- NULL
 # CS_params length must match number of change statistics from formula (ernm)
 exp_cs <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS)
 n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 5L
+cat("  Expected CS_params length:", n_cs, "\n")
+if (!is.null(exp_cs$CS_params_names)) {
+  cat("  CS_params names:", paste(exp_cs$CS_params_names, collapse=", "), "\n")
+}
 params_init_inhom <- list(
   mu = 1,
   beta_overall = 1,
@@ -134,6 +138,7 @@ params_init_inhom <- list(
   vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
   vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
 )
+cat("  Initialized CS_params length:", length(params_init_inhom$CS_params), "\n")
 p_scale_inhom <- c(
   beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
   setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs))),

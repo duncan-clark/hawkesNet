@@ -46,6 +46,9 @@ echo "Git status:"
 git status --short || echo "Not a git repository or git not available"
 
 # Pull latest code (optional - uncomment if you want to auto-pull)
+# NOTE: Using devtools::load_all() loads from source code, so multiple jobs can run
+# simultaneously without conflicts. However, you need to ensure the source code
+# directory has the latest changes before submitting jobs.
 # echo "Pulling latest code..."
 # git pull origin paper_1_update || echo "Git pull failed or not needed"
 

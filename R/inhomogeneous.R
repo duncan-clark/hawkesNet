@@ -277,6 +277,10 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   }
 
   flat_par <- unlist(params_init)
+  cat("DEBUG: Flattened parameters before optimization:\n")
+  cat("  Total parameters:", length(flat_par), "\n")
+  cat("  CS_params in flat_par:", sum(grepl("^CS_params", names(flat_par))), "\n")
+  cat("  Parameter names:", paste(names(flat_par), collapse=", "), "\n")
   optim_args <- list(
     par = flat_par,
     fn = optim_func,
