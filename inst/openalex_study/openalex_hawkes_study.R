@@ -7,9 +7,34 @@
 # Requires: hawkesGrowthNet package (includes inhomogeneous fit and KDE background).
 # =============================================================================
 
-library(hawkesGrowthNet)
-library(ggplot2)
+# Load hawkesGrowthNet package
+# On cluster: package should be installed via library()
+# For local development: can use devtools::load_all() if needed
+tryCatch({
+  library(hawkesGrowthNet)
+}, error = function(e) {
+  # Fallback: try loading from current directory (for development)
+  if (file.exists("DESCRIPTION") && requireNamespace("devtools", quietly = TRUE)) {
+    cat("Package not installed; loading from current directory...\n")
+    devtools::load_all(".")
+  } else {
+    stop("hawkesGrowthNet package not found. Please install it or run from package root with devtools available.")
+  }
+})
+
+# Load required libraries (check availability)
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  warning("ggplot2 not available; plots will not be generated")
+}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+}
+
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("dplyr package required but not available")
+}
 library(dplyr)
+
 library(network)
 library(sna)
 library(ernm)
@@ -36,109 +61,8 @@ PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 
 # =============================================================================
-# Helpers: waiting times *between* formations (triangle, 2-star, 3-star)
+# GOF functions are now in R/gof.R (exported from package)
 # =============================================================================
-#' Waiting times between consecutive structure formations (triangle / 2-star / 3-star).
-#'
-#' Replays the network event-by-event (grouped by event time). An "event" is all
-#' edges sharing the same time — typically a new node joining with its edges.
-#' Records the event time whenever the triangle count, 2-star count, or 3-star
-#' count increases, then returns diff() of those times.
-#'
-#' @param net Network with vertex/edge time attributes.
-#' @param time_attr Name of the time attribute (default "time").
-#' @return list(triangle = numeric(), star2 = numeric(), star3 = numeric())
-waiting_times_between_formations <- function(net, time_attr = "time") {
-  out <- list(triangle = numeric(), star2 = numeric(), star3 = numeric())
-
-  # Get edge list and edge times
-  el <- network::as.edgelist(net)
-  if (nrow(el) == 0) return(out)
-
-  # Try edge times first; fall back to vertex times for edge ordering
-  edge_times <- NULL
-  if (time_attr %in% network::list.edge.attributes(net)) {
-    edge_times <- network::get.edge.attribute(net, time_attr)
-  }
-  if (is.null(edge_times) || length(edge_times) != nrow(el)) {
-    # Use vertex times: assign each edge the max time of its endpoints
-    vtimes <- network::get.vertex.attribute(net, time_attr)
-    if (is.null(vtimes) || all(is.na(vtimes))) return(out)
-    edge_times <- pmax(vtimes[el[, 1]], vtimes[el[, 2]], na.rm = TRUE)
-  }
-
-  # Sort edges by time
-  ord <- order(edge_times)
-  el <- el[ord, , drop = FALSE]
-  edge_times <- edge_times[ord]
-
-  # Group edges by unique event times
-  event_times <- unique(edge_times)
-  n <- network::network.size(net)
-  g <- network::network.initialize(n, directed = network::is.directed(net))
-
-  t_tri <- numeric()
-  t_2s <- numeric()
-  t_3s <- numeric()
-  n_tri_prev <- 0
-  n_2s_prev <- 0
-  n_3s_prev <- 0
-
-  for (t_cur in event_times) {
-    # Add all edges for this event at once
-    idx <- which(edge_times == t_cur)
-    for (j in idx) {
-      network::add.edges(g, tail = el[j, 1], head = el[j, 2])
-    }
-
-    # Check 2-star and 3-star counts
-    degs <- sna::degree(g, gmode = "graph")
-    n_2s <- sum(choose(degs, 2))
-    n_3s <- sum(choose(degs, 3))
-    if (n_2s > n_2s_prev) t_2s <- c(t_2s, t_cur)
-    if (n_3s > n_3s_prev) t_3s <- c(t_3s, t_cur)
-    n_2s_prev <- n_2s
-    n_3s_prev <- n_3s
-
-    # Triangle count
-    A <- as.matrix(g, matrix.type = "adjacency")
-    n_tri <- 0
-    if (nrow(A) >= 3 && ncol(A) >= 3) {
-      n_tri <- sum(diag(A %*% A %*% A)) / 6
-    }
-    if (n_tri > n_tri_prev) t_tri <- c(t_tri, t_cur)
-    n_tri_prev <- n_tri
-  }
-
-  out$triangle <- if (length(t_tri) >= 2) diff(t_tri) else numeric()
-  out$star2    <- if (length(t_2s) >= 2) diff(t_2s) else numeric()
-  out$star3    <- if (length(t_3s) >= 2) diff(t_3s) else numeric()
-  out
-}
-
-#' Degree distribution as vector of counts (degree 0, 1, 2, ... up to max_deg).
-degree_dist <- function(net, max_deg = 20) {
-  degs <- sna::degree(net, gmode = "graph")
-  tab <- table(factor(degs, levels = 0:max_deg))
-  as.vector(tab)
-}
-
-#' ESP distribution via ernm (edge-wise shared partners 0, 1, ... k).
-esp_dist <- function(net, k_max = 15) {
-  tryCatch({
-    as.vector(ernm::calculateStatistics(net ~ esp(0:k_max)))
-  }, error = function(e) rep(NA_real_, k_max + 1))
-}
-
-#' Geodesic distance distribution (upper triangle of distance matrix, excluding Inf).
-geodist_dist <- function(net) {
-  d <- sna::geodist(net, inf.replace = NA)
-  if (is.list(d)) d <- d$gdist
-  d <- as.vector(d)
-  d <- d[!is.na(d) & d > 0]
-  if (length(d) == 0) return(numeric(0))
-  d
-}
 
 # =============================================================================
 # 1. Fetch data and prepare network
@@ -199,9 +123,14 @@ p_scale_inhom <- c(
 
 if (!is.null(inhom_bg)) {
   cat("  Fitting CS model (inhomogeneous + vertex_categorical)...\n")
+  cat("  Two-stage optimization: Nelder-Mead (500 iter) -> L-BFGS-B (500 iter)\n")
   t_fit <- proc.time()
-  fit_inhom <- tryCatch(
-  fit_hawkesGrowthNet_inhom(
+  
+  # Stage 1: Nelder-Mead for 500 iterations
+  cat("  Stage 1: Nelder-Mead optimization (max 500 iterations)...\n")
+  t_stage1 <- proc.time()
+  fit_stage1 <- tryCatch(
+    fit_hawkesGrowthNet_inhom(
       params_init = params_init_inhom,
       time_window = time_window_01,
       mark_filtration = net_raw,
@@ -212,8 +141,8 @@ if (!is.null(inhom_bg)) {
       truncation = TRUNCATION,
       mark_decay = "activity",
       max_node_time = 1,
-      method = "L-BFGS-B",
-      maxit = MAX_ITER,
+      method = "Nelder-Mead",
+      maxit = 500,
       trace = 1,
       reltol = 1e-8,
       verbose = FALSE,
@@ -222,18 +151,297 @@ if (!is.null(inhom_bg)) {
       cache_intensity = TRUE,
       cores = N_CORES
     ),
-    error = function(e) { cat("  ERROR: fit_hawkesGrowthNet_inhom failed:", e$message, "\n"); NULL }
+    error = function(e) { cat("  ERROR: Stage 1 (Nelder-Mead) failed:", e$message, "\n"); NULL }
   )
+  elapsed_stage1 <- (proc.time() - t_stage1)[3]
+  
+  if (!is.null(fit_stage1)) {
+    cat("  Stage 1 completed:", round(elapsed_stage1, 1), "s (",
+        round(elapsed_stage1 / 60, 1), "min)\n")
+    cat("  Stage 1 par:", paste(round(fit_stage1$fit$par, 4), collapse = ", "), "\n")
+    cat("  Stage 1 convergence:", fit_stage1$fit$convergence, "\n")
+    cat("  Stage 1 iterations:", fit_stage1$fit$counts[1], "\n")
+    
+    # Stage 2: L-BFGS-B starting from Stage 1 result
+    cat("  Stage 2: L-BFGS-B optimization (max 500 iterations)...\n")
+    t_stage2 <- proc.time()
+    
+    # Reconstruct params from Stage 1 fit for Stage 2 initialization
+    skel_stage2 <- params_init_inhom
+    skel_stage2$vertex_categorical_levels <- NULL
+    params_init_stage2 <- relist(fit_stage1$fit$par, skeleton = skel_stage2)
+    params_init_stage2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+    params_init_stage2$K <- params_init_inhom$K
+    params_init_stage2$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+    
+    fit_stage2 <- tryCatch(
+      fit_hawkesGrowthNet_inhom(
+        params_init = params_init_stage2,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        max_node_time = 1,
+        method = "L-BFGS-B",
+        maxit = 500,
+        trace = 1,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_inhom,
+        cache_intensity = TRUE,
+        cores = N_CORES
+      ),
+      error = function(e) { cat("  ERROR: Stage 2 (L-BFGS-B) failed:", e$message, "\n"); NULL }
+    )
+    elapsed_stage2 <- (proc.time() - t_stage2)[3]
+    
+    if (!is.null(fit_stage2)) {
+      cat("  Stage 2 completed:", round(elapsed_stage2, 1), "s (",
+          round(elapsed_stage2 / 60, 1), "min)\n")
+      cat("  Stage 2 convergence:", fit_stage2$fit$convergence, "\n")
+      cat("  Stage 2 iterations:", fit_stage2$fit$counts[1], "\n")
+      fit_inhom <- fit_stage2
+      stage2_succeeded <- TRUE
+    } else {
+      # Fall back to Stage 1 result if Stage 2 fails
+      cat("  Stage 2 failed; using Stage 1 result\n")
+      fit_inhom <- fit_stage1
+      stage2_succeeded <- FALSE
+    }
+  } else {
+    cat("  Stage 1 failed; attempting single-stage L-BFGS-B...\n")
+    stage2_succeeded <- FALSE
+    fit_inhom <- tryCatch(
+      fit_hawkesGrowthNet_inhom(
+        params_init = params_init_inhom,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        max_node_time = 1,
+        method = "L-BFGS-B",
+        maxit = 500,
+        trace = 1,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_inhom,
+        cache_intensity = TRUE,
+        cores = N_CORES
+      ),
+      error = function(e) { cat("  ERROR: Single-stage L-BFGS-B failed:", e$message, "\n"); NULL }
+    )
+  }
+  
   elapsed_fit <- (proc.time() - t_fit)[3]
   if (!is.null(fit_inhom)) {
+    # Calculate total iterations
+    if (exists("stage2_succeeded") && stage2_succeeded && exists("fit_stage1") && !is.null(fit_stage1)) {
+      total_iter <- fit_stage1$fit$counts[1] + fit_inhom$fit$counts[1]
+    } else if (exists("fit_stage1") && !is.null(fit_stage1)) {
+      # Only Stage 1 succeeded
+      total_iter <- fit_stage1$fit$counts[1]
+    } else {
+      # Single-stage fallback
+      total_iter <- fit_inhom$fit$counts[1]
+    }
     cat("  Inhomogeneous fit completed:", round(elapsed_fit, 1), "s (",
         round(elapsed_fit / 60, 1), "min)\n")
-    cat("  Fitted par:", paste(round(fit_inhom$fit$par, 4), collapse = ", "), "\n")
-    cat("  Convergence code:", fit_inhom$fit$convergence, "\n")
+    cat("  Final par:", paste(round(fit_inhom$fit$par, 4), collapse = ", "), "\n")
+    cat("  Final convergence:", fit_inhom$fit$convergence, "\n")
+    cat("  Total iterations:", total_iter, "\n")
   } else {
     cat("  Inhomogeneous fit FAILED after", round(elapsed_fit, 1), "s\n")
   }
 }
+
+# =============================================================================
+# 2b. Inhomogeneous fit with nodeMatch (homophily) instead of nodeMix
+# =============================================================================
+fit_inhom_nodematch <- NULL
+FORMULA_RHS_NODEMATCH <- "edges + triangles + star(c(2,3)) + nodeMatch('gender')"
+if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
+  cat("--- Step 2b: Inhomogeneous fit with nodeMatch (homophily) ---\n")
+  cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
+  cat("  Using nodeMix fit as starting point...\n")
+  t_step_nodematch <- proc.time()
+  
+  # Get expected parameters for nodeMatch formula
+  exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
+  n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 4L
+  
+  # Reconstruct fitted params from nodeMix fit
+  skel_nodematch <- params_init_inhom
+  skel_nodematch$vertex_categorical_levels <- NULL
+  params_init_nodematch <- relist(fit_inhom$fit$par, skeleton = skel_nodematch)
+  params_init_nodematch$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+  params_init_nodematch$K <- params_init_inhom$K
+  params_init_nodematch$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  
+  # Adjust CS_params length if needed (nodeMatch has different number of parameters)
+  if (length(params_init_nodematch$CS_params) != n_cs_nodematch) {
+    # Pad or truncate CS_params to match nodeMatch formula
+    if (length(params_init_nodematch$CS_params) > n_cs_nodematch) {
+      params_init_nodematch$CS_params <- params_init_nodematch$CS_params[1:n_cs_nodematch]
+    } else {
+      params_init_nodematch$CS_params <- c(params_init_nodematch$CS_params, 
+                                            rep(0, n_cs_nodematch - length(params_init_nodematch$CS_params)))
+    }
+  }
+  
+  # Keep vertex_categorical - nodeMatch still needs it to identify node attributes
+  # (nodeMatch uses it differently than nodeMix, but it's still required)
+  
+  # Create parscale for nodeMatch
+  p_scale_nodematch <- c(
+    beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+    setNames(rep(0.1, n_cs_nodematch), paste0("CS_params", seq_len(n_cs_nodematch)))
+  )
+  
+  cat("  Two-stage optimization: Nelder-Mead (500 iter) -> L-BFGS-B (500 iter)\n")
+  t_fit_nodematch <- proc.time()
+  
+  # Stage 1: Nelder-Mead
+  cat("  Stage 1: Nelder-Mead optimization (max 500 iterations)...\n")
+  t_stage1_nm <- proc.time()
+  fit_stage1_nm <- tryCatch(
+    fit_hawkesGrowthNet_inhom(
+      params_init = params_init_nodematch,
+      time_window = time_window_01,
+      mark_filtration = net_raw,
+      PMF_mark = PMF_mark_CS,
+      mu_vec = inhom_bg$mu_vec,
+      integral_bg = inhom_bg$integral_bg,
+      formula_RHS = FORMULA_RHS_NODEMATCH,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      method = "Nelder-Mead",
+      maxit = 500,
+      trace = 1,
+      reltol = 1e-8,
+      verbose = FALSE,
+      fixed_params = c("K", "mu"),
+      parscale = p_scale_nodematch,
+      cache_intensity = TRUE,
+      cores = N_CORES
+    ),
+    error = function(e) { cat("  ERROR: Stage 1 (Nelder-Mead) failed:", e$message, "\n"); NULL }
+  )
+  elapsed_stage1_nm <- (proc.time() - t_stage1_nm)[3]
+  
+  if (!is.null(fit_stage1_nm)) {
+    cat("  Stage 1 completed:", round(elapsed_stage1_nm, 1), "s\n")
+    cat("  Stage 1 convergence:", fit_stage1_nm$fit$convergence, "\n")
+    
+    # Stage 2: L-BFGS-B
+    cat("  Stage 2: L-BFGS-B optimization (max 500 iterations)...\n")
+    t_stage2_nm <- proc.time()
+    
+    skel_stage2_nm <- params_init_nodematch
+    skel_stage2_nm$vertex_categorical_levels <- NULL
+    params_init_stage2_nm <- relist(fit_stage1_nm$fit$par, skeleton = skel_stage2_nm)
+    params_init_stage2_nm$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+    params_init_stage2_nm$K <- params_init_nodematch$K
+    params_init_stage2_nm$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+    
+    fit_stage2_nm <- tryCatch(
+      fit_hawkesGrowthNet_inhom(
+        params_init = params_init_stage2_nm,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS_NODEMATCH,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        max_node_time = 1,
+        method = "L-BFGS-B",
+        maxit = 500,
+        trace = 1,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_nodematch,
+        cache_intensity = TRUE,
+        cores = N_CORES
+      ),
+      error = function(e) { cat("  ERROR: Stage 2 (L-BFGS-B) failed:", e$message, "\n"); NULL }
+    )
+    elapsed_stage2_nm <- (proc.time() - t_stage2_nm)[3]
+    
+    if (!is.null(fit_stage2_nm)) {
+      cat("  Stage 2 completed:", round(elapsed_stage2_nm, 1), "s\n")
+      cat("  Stage 2 convergence:", fit_stage2_nm$fit$convergence, "\n")
+      fit_inhom_nodematch <- fit_stage2_nm
+      stage2_succeeded_nm <- TRUE
+    } else {
+      cat("  Stage 2 failed; using Stage 1 result\n")
+      fit_inhom_nodematch <- fit_stage1_nm
+      stage2_succeeded_nm <- FALSE
+    }
+  } else {
+    cat("  Stage 1 failed; attempting single-stage L-BFGS-B...\n")
+    stage2_succeeded_nm <- FALSE
+    fit_inhom_nodematch <- tryCatch(
+      fit_hawkesGrowthNet_inhom(
+        params_init = params_init_nodematch,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS_NODEMATCH,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        max_node_time = 1,
+        method = "L-BFGS-B",
+        maxit = 500,
+        trace = 1,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_nodematch,
+        cache_intensity = TRUE,
+        cores = N_CORES
+      ),
+      error = function(e) { cat("  ERROR: Single-stage L-BFGS-B failed:", e$message, "\n"); NULL }
+    )
+  }
+  
+  elapsed_fit_nodematch <- (proc.time() - t_fit_nodematch)[3]
+  if (!is.null(fit_inhom_nodematch)) {
+    if (exists("stage2_succeeded_nm") && stage2_succeeded_nm && exists("fit_stage1_nm") && !is.null(fit_stage1_nm)) {
+      total_iter_nm <- fit_stage1_nm$fit$counts[1] + fit_inhom_nodematch$fit$counts[1]
+    } else if (exists("fit_stage1_nm") && !is.null(fit_stage1_nm)) {
+      total_iter_nm <- fit_stage1_nm$fit$counts[1]
+    } else {
+      total_iter_nm <- fit_inhom_nodematch$fit$counts[1]
+    }
+    cat("  nodeMatch fit completed:", round(elapsed_fit_nodematch, 1), "s (",
+        round(elapsed_fit_nodematch / 60, 1), "min)\n")
+    cat("  Final par:", paste(round(fit_inhom_nodematch$fit$par, 4), collapse = ", "), "\n")
+    cat("  Final convergence:", fit_inhom_nodematch$fit$convergence, "\n")
+    cat("  Total iterations:", total_iter_nm, "\n")
+  } else {
+    cat("  nodeMatch fit FAILED after", round(elapsed_fit_nodematch, 1), "s\n")
+  }
+  cat("  Step 2b total:", round((proc.time() - t_step_nodematch)[3], 1), "s\n\n")
+} else {
+  if (is.null(inhom_bg)) cat("  No inhomogeneous background; skipping nodeMatch fit\n")
+  if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMatch fit\n")
+}
+
 cat("  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
@@ -291,89 +499,76 @@ cat("--- Step 4: Goodness-of-fit ---\n")
 t_step <- proc.time()
 GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                     geodist_obs = NULL, geodist_sim = NULL,
-                    wait_obs = NULL, wait_sim = NULL)
+                    wait_obs = NULL, wait_sim = NULL,
+                    nodemix_obs = NULL, nodemix_sim = NULL)
+GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL,
+                               nodemix_obs = NULL, nodemix_sim = NULL)
+
+# GOF for nodeMix model
 if (RUN_GOF && !is.null(fit_inhom)) {
-  cat("  Simulating", N_GOF, "networks from fitted model...\n")
-  # Reconstruct fitted params: strip vertex_categorical_levels from skeleton
-  # (the fitter stripped it before unlist, so fit$par doesn't include it)
-  skel <- params_init_inhom
-  skel$vertex_categorical_levels <- NULL
-  pfit <- relist(fit_inhom$fit$par, skeleton = skel)
-  # Restore metadata and fixed params
-  pfit$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-  pfit$K <- params_init_inhom$K
-  pfit$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-  Tval <- time_window_01[2] - time_window_01[1]
-  sim_nets <- list()
-  
-  # fix soome params just for now:
-  pfit$K <- min(max(pfit$K, 0.001), 0.999)  # K must be in (0,1) for stability
-  pfit$mu <- max(pfit$mu, 0.001)  # mu must be positive
-  pfit$node_lambda <- max(pfit$node_lambda, 1)  # node_lambda must be >= 1 for stability
-  pfit$beta_overall <- max(pfit$beta_overall, 0.001)
-  pfit$beta_edges <- max(pfit$beta_edges, 0.001)
-  
-  pfit$vertex_categorical$gender <- c(0.1,0.5)
-  
-  n_success <- 0L
-  n_fail <- 0L
-  for (i in seq_len(N_GOF)) {
-    t_sim_i <- proc.time()
-    s <- tryCatch(
-      sim_hawkesGrowthNet(
-        params = pfit,
-        time_window = c(0,0.05),
-        PMF_mark = PMF_mark_CS,
-        cond_intensity = cond_intensity,
-        formula_RHS = FORMULA_RHS,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        max_node_time = 1,
-        hashed_edges = TRUE,
-        verbose = FALSE,
-        mu_multiplier = 5,
-        stop_on_full_network = FALSE
-      ),
-      error = function(e) { cat("  GOF sim", i, "FAILED:", e$message, "\n"); NULL }
-    )
-    elapsed_i <- round((proc.time() - t_sim_i)[3], 1)
-    if (!is.null(s)) {
-      n_success <- n_success + 1L
-      sim_nets[[i]] <- s$net
-      n_sim_nodes <- network::network.size(s$net)
-      n_sim_edges <- network::network.edgecount(s$net)
-      cat("  GOF sim", i, "/", N_GOF, ":", n_sim_nodes, "nodes,",
-          n_sim_edges, "edges (", elapsed_i, "s)\n")
-    } else {
-      n_fail <- n_fail + 1L
-    }
-  }
-  sim_nets <- sim_nets[!sapply(sim_nets, is.null)]
-  cat("  GOF simulations:", n_success, "succeeded,", n_fail, "failed\n")
-  
-  if (length(sim_nets) > 0) {
-    cat("  Computing GOF statistics...\n")
-    t_stats <- proc.time()
-    max_deg <- 15
-    k_esp <- 15
-    GOF_results$degree_obs <- degree_dist(net_raw, max_deg)
-    GOF_results$degree_sim <- do.call(rbind, lapply(sim_nets, function(n) degree_dist(n, max_deg)))
-    cat("    Degree: done\n")
-    GOF_results$esp_obs <- esp_dist(net_raw, k_esp)
-    GOF_results$esp_sim <- do.call(rbind, lapply(sim_nets, function(n) esp_dist(n, k_esp)))
-    cat("    ESP: done\n")
-    GOF_results$geodist_obs <- geodist_dist(net_raw)
-    GOF_results$geodist_sim <- lapply(sim_nets, geodist_dist)
-    cat("    Geodesic: done\n")
-    GOF_results$wait_obs <- waiting_times_between_formations(net_raw)
-    GOF_results$wait_sim <- lapply(sim_nets, waiting_times_between_formations)
-    cat("    Waiting times: done\n")
-    cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")
-  }
+  cat("  GOF for nodeMix model...\n")
+  GOF_results <- gof(
+    fit = fit_inhom,
+    net_obs = net_raw,
+    params_init = params_init_inhom,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity_inhom,
+    formula_RHS = FORMULA_RHS,
+    time_window = c(0, 0.05),
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    mu_multiplier = 5,
+    verbose = TRUE
+  )
 } else {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping\n")
-  if (is.null(fit_inhom)) cat("  No fit available; skipping GOF\n")
+  if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping GOF\n")
 }
+
+# GOF for nodeMatch model
+if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
+  cat("\n  GOF for nodeMatch model...\n")
+  
+  # Reconstruct params_init for nodeMatch
+  skel_nodematch_gof <- params_init_inhom
+  skel_nodematch_gof$vertex_categorical_levels <- NULL
+  params_init_nodematch_gof <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch_gof)
+  params_init_nodematch_gof$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+  params_init_nodematch_gof$K <- params_init_inhom$K
+  params_init_nodematch_gof$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  
+  GOF_results_nodematch <- gof(
+    fit = fit_inhom_nodematch,
+    net_obs = net_raw,
+    params_init = params_init_nodematch_gof,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity_inhom,
+    formula_RHS = FORMULA_RHS_NODEMATCH,
+    time_window = c(0, 0.05),
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    mu_multiplier = 5,
+    verbose = TRUE
+  )
+} else {
+  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMatch GOF\n")
+  if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
+}
+
 cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
@@ -385,12 +580,16 @@ save_list <- list(
   edges = edges,
   inhom_bg = inhom_bg,
   fit_inhom = fit_inhom,
+  fit_inhom_nodematch = fit_inhom_nodematch,
   params_init_inhom = params_init_inhom,
+  FORMULA_RHS = FORMULA_RHS,
+  FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
   fit_temporal = fit_temporal,
   ks_temporal_pval = ks_temporal_pval,
   realiz = realiz,
   windowT = windowT,
   GOF_results = GOF_results,
+  GOF_results_nodematch = GOF_results_nodematch,
   N_GOF = N_GOF,
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
@@ -434,8 +633,20 @@ if (PAPER_OUTPUT) {
     cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
   }
 
-  # GOF plots: degree, ESP, geodesic, waiting times
-  if (!is.null(dat$GOF_results) && !is.null(dat$GOF_results$degree_obs)) {
+  # GOF plots: use plots from gof() function if available, otherwise generate here
+  if (!is.null(dat$GOF_results)) {
+    # First, try to use plots from gof() function (if available)
+    if (!is.null(dat$GOF_results$plots) && length(dat$GOF_results$plots) > 0) {
+      cat("  Displaying GOF plots from gof() function...\n")
+      if (!is.null(dat$GOF_results$plots$degree_plot)) print(dat$GOF_results$plots$degree_plot)
+      if (!is.null(dat$GOF_results$plots$esp_plot)) print(dat$GOF_results$plots$esp_plot)
+      if (!is.null(dat$GOF_results$plots$geodist_plot)) print(dat$GOF_results$plots$geodist_plot)
+      if (!is.null(dat$GOF_results$plots$nodemix_plot)) print(dat$GOF_results$plots$nodemix_plot)
+      if (!is.null(dat$GOF_results$plots$waiting_times_plot)) print(dat$GOF_results$plots$waiting_times_plot)
+    } else if (requireNamespace("ggplot2", quietly = TRUE) && !is.null(dat$GOF_results$degree_obs)) {
+      # Fallback: generate plots here (legacy code)
+      cat("  Generating GOF plots (legacy method)...\n")
+      gof <- dat$GOF_results
     gof <- dat$GOF_results
     max_deg <- length(gof$degree_obs) - 1
     # Degree: observed vs simulated boxplots
@@ -528,6 +739,11 @@ if (PAPER_OUTPUT) {
         print(p_wait)
       }
     }
+    } else {
+      cat("  ggplot2 not available; skipping GOF plots\n")
+    }
+  } else {
+    cat("  No GOF results available for plotting\n")
   }
   cat("  Step 6 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 }
