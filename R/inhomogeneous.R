@@ -295,6 +295,10 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
 
   # Results table: estimate and standard error (from numerical Hessian)
   par_names <- names(fit$par)
+  # Debug: check parameter count
+  if (length(par_names) != length(fit$par)) {
+    warning("fit$par has ", length(fit$par), " elements but ", length(par_names), " names")
+  }
   fit_table <- data.frame(
     parameter = par_names,
     estimate  = fit$par,
@@ -315,7 +319,9 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   message("Inhomogeneous fit results:")
-  print(fit_table)
+  message("Total parameters in fit table: ", nrow(fit_table))
+  # Print all rows explicitly (max = NULL means print all rows)
+  print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
     message("(Standard errors not available; install numDeriv for SEs.)")
   }

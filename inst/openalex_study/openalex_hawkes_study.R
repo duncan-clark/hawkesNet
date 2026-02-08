@@ -8,19 +8,20 @@
 # =============================================================================
 
 # Load hawkesGrowthNet package
-# On cluster: package should be installed via library()
-# For local development: can use devtools::load_all() if needed
-tryCatch({
-  library(hawkesGrowthNet)
-}, error = function(e) {
-  # Fallback: try loading from current directory (for development)
-  if (file.exists("DESCRIPTION") && requireNamespace("devtools", quietly = TRUE)) {
-    cat("Package not installed; loading from current directory...\n")
-    devtools::load_all(".")
-  } else {
+# Priority: use devtools::load_all() to ensure latest code is used
+# Fallback: use installed package if devtools unavailable
+if (file.exists("DESCRIPTION") && requireNamespace("devtools", quietly = TRUE)) {
+  cat("Loading hawkesGrowthNet from current directory (devtools::load_all)...\n")
+  devtools::load_all(".")
+} else {
+  # Fallback: try installed package
+  tryCatch({
+    cat("Loading hawkesGrowthNet from installed package...\n")
+    library(hawkesGrowthNet)
+  }, error = function(e) {
     stop("hawkesGrowthNet package not found. Please install it or run from package root with devtools available.")
-  }
-})
+  })
+}
 
 # Load required libraries (check availability)
 if (!requireNamespace("ggplot2", quietly = TRUE)) {
@@ -49,7 +50,7 @@ source(file.path(PKG_ROOT, "inst", "openalex_study", "get_network_openalex.R"))
 # =============================================================================
 EMAIL <- Sys.getenv("OPENALEX_EMAIL", "duncan-clark@outlook.com")
 SEARCH_STRING <- Sys.getenv("OPENALEX_STRING", "Hawkes")
-PAGES <- as.integer(Sys.getenv("OPENALEX_PAGES", 100))
+PAGES <- as.integer(Sys.getenv("OPENALEX_PAGES", 10))
 PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
@@ -175,9 +176,9 @@ if (!is.null(inhom_bg)) {
     params_init_stage2$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
     
     # Restore vertex_categorical names and repair parameters (Nelder-Mead doesn't respect bounds)
-    params_init_stage2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+    params_init_stage2 <- reconstruct_vertex_categorical_names(
       params_init_stage2, params_init_inhom$vertex_categorical_levels)
-    params_init_stage2 <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_stage2, eps = 1e-6)
+    params_init_stage2 <- repair_vertex_categorical_params(params_init_stage2, eps = 1e-6)
     
     fit_stage2 <- tryCatch(
       fit_hawkesGrowthNet_inhom(

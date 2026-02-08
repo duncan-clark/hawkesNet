@@ -40,6 +40,12 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
     warning("rename_CS_params_in_table: Found ", length(cs_indices), 
             " CS_params in fit table but expected ", n_cs, 
             " statistics from formula. Some parameters may not be renamed.")
+    # Debug: print what we found
+    if (length(cs_indices) > 0) {
+      message("DEBUG: Found CS_params indices: ", paste(cs_indices, collapse=", "))
+      message("DEBUG: Found CS_params names: ", paste(fit_table$parameter[cs_indices], collapse=", "))
+    }
+    message("DEBUG: Expected ", n_cs, " statistics: ", paste(stat_names, collapse=", "))
   }
   # Extract parameter numbers and rename
   for (idx in cs_indices) {
@@ -626,7 +632,9 @@ fit_hawkesGrowthNet <- function(params_init,
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   message("Hawkes growth fit results:")
-  print(fit_table)
+  message("Total parameters in fit table: ", nrow(fit_table))
+  # Print all rows explicitly (max = NULL means print all rows)
+  print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
     message("(Standard errors not available; install numDeriv for SEs.)")
   }

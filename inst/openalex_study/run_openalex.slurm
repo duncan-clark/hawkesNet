@@ -14,7 +14,7 @@
 # Optional env (set before sbatch or in script):
 #   OPENALEX_EMAIL=your@email
 #   OPENALEX_STRING=Hawkes
-#   OPENALEX_PAGES=50
+#   OPENALEX_PAGES=10  (default is 10 for speed)
 
 mkdir -p cluster_output
 
