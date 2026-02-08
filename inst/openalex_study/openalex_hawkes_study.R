@@ -168,34 +168,55 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
   exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 4L
   
-  # Reconstruct fitted params from nodeMix fit
-  skel_nodematch <- params_init_inhom
-  skel_nodematch$vertex_categorical_levels <- NULL
-  params_init_nodematch <- relist(fit_inhom$fit$par, skeleton = skel_nodematch)
-  params_init_nodematch$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-  params_init_nodematch$K <- params_init_inhom$K
-  params_init_nodematch$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  # Reconstruct fitted params from nodeMix fit - need to extract values correctly
+  # First, reconstruct nodeMix params properly
+  skel_nodemix <- params_init_inhom
+  skel_nodemix$vertex_categorical_levels <- NULL
+  params_fitted_nodemix <- relist(fit_inhom$fit$par, skeleton = skel_nodemix)
+  params_fitted_nodemix$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
   
-  # Restore vertex_categorical names and repair parameters (may be invalid from Nelder-Mead)
-  params_init_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-    params_init_nodematch, params_init_inhom$vertex_categorical_levels)
-  params_init_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch, eps = 1e-6)
+  # Restore vertex_categorical names and repair parameters
+  params_fitted_nodemix <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+    params_fitted_nodemix, params_init_inhom$vertex_categorical_levels)
+  params_fitted_nodemix <- hawkesGrowthNet:::repair_vertex_categorical_params(params_fitted_nodemix, eps = 1e-6)
   
-  # Adjust CS_params length if needed (nodeMatch has different number of parameters)
-  # nodeMix: edges + triangles + star(2,3) + nodeMix('gender') = 1+1+2+6 = 10 stats
-  # nodeMatch: edges + triangles + star(2,3) + nodeMatch('gender') = 1+1+2+1 = 5 stats
-  # So we truncate from 10 to 5, keeping structural params (edges, triangles, stars) 
-  # and using first nodeMix param as starting point for nodeMatch
+  # Now build nodeMatch params_init from scratch using extracted values
+  # nodeMix has 10 CS_params: edges(1) + triangles(1) + star2(1) + star3(1) + nodeMix(6) = 10
+  # nodeMatch has 5 CS_params: edges(1) + triangles(1) + star2(1) + star3(1) + nodeMatch(1) = 5
+  # Extract structural params (first 4) and use average of nodeMix params as starting point for nodeMatch
+  cs_structural <- params_fitted_nodemix$CS_params[1:min(4, length(params_fitted_nodemix$CS_params))]
+  cs_nodemix <- if (length(params_fitted_nodemix$CS_params) > 4) {
+    params_fitted_nodemix$CS_params[5:length(params_fitted_nodemix$CS_params)]
+  } else {
+    numeric(0)
+  }
+  # Use average of nodeMix parameters as starting point for nodeMatch (or 0 if none)
+  cs_nodematch_start <- if (length(cs_nodemix) > 0) mean(cs_nodemix) else 0
+  
+  # Build proper nodeMatch skeleton
+  params_init_nodematch <- list(
+    mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
+    beta_overall = params_fitted_nodemix$beta_overall,
+    K = params_init_inhom$K,  # Keep original K (fixed)
+    beta_edges = params_fitted_nodemix$beta_edges,
+    node_lambda = params_fitted_nodemix$node_lambda,
+    CS_params = c(cs_structural, cs_nodematch_start)[1:n_cs_nodematch],  # Ensure correct length
+    vertex_categorical = params_fitted_nodemix$vertex_categorical,  # Keep vertex_categorical from nodeMix fit
+    vertex_categorical_levels = params_init_inhom$vertex_categorical_levels
+  )
+  
+  # Ensure CS_params has correct length
   if (length(params_init_nodematch$CS_params) != n_cs_nodematch) {
-    if (length(params_init_nodematch$CS_params) > n_cs_nodematch) {
-      # Truncate: keep first n_cs_nodematch params (structural + first nodeMix -> nodeMatch)
-      params_init_nodematch$CS_params <- params_init_nodematch$CS_params[1:n_cs_nodematch]
-    } else {
-      # Pad with zeros if nodeMatch needs more (shouldn't happen, but handle gracefully)
+    if (length(params_init_nodematch$CS_params) < n_cs_nodematch) {
       params_init_nodematch$CS_params <- c(params_init_nodematch$CS_params, 
                                             rep(0, n_cs_nodematch - length(params_init_nodematch$CS_params)))
+    } else {
+      params_init_nodematch$CS_params <- params_init_nodematch$CS_params[1:n_cs_nodematch]
     }
   }
+  
+  # Repair vertex_categorical one more time to ensure validity
+  params_init_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch, eps = 1e-6)
   
   # Keep vertex_categorical - nodeMatch still needs it to identify node attributes
   # (nodeMatch uses it differently than nodeMix, but it's still required)
