@@ -54,7 +54,7 @@ N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 MAX_ITER <- 5000
 TRUNCATION <- 100L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
-N_GOF <- 50L   # number of simulated networks for goodness-of-fit
+N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 TOPIC <- "Point processes and geometric inequalities"
@@ -231,27 +231,63 @@ if (!is.null(inhom_bg)) {
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 5L
   
   # Initialize nodeMatch fit from structural fit results
-  if (!is.null(fit_inhom_structural)) {
+  if (!is.null(fit_inhom_structural) && fit_inhom_structural$fit$convergence == 0) {
     # Extract structural parameters from structural fit
     skel_structural <- params_init_structural
-    pfit_structural <- relist(fit_inhom_structural$fit$par, skeleton = skel_structural)
+    pfit_structural <- tryCatch({
+      relist(fit_inhom_structural$fit$par, skeleton = skel_structural)
+    }, error = function(e) {
+      cat("  Warning: Failed to extract structural parameters, using independent init\n")
+      NULL
+    })
     
-    # Initialize nodeMatch: use structural CS_params for first 4 terms, add nodeMatch term
-    cs_structural <- pfit_structural$CS_params[seq_len(min(4L, length(pfit_structural$CS_params)))]
-    cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
-    cs_init_nodematch <- c(cs_structural, cs_padding)[seq_len(n_cs_nodematch)]
+    if (!is.null(pfit_structural)) {
+      # Validate extracted parameters
+      if (all(is.finite(unlist(pfit_structural[c("mu", "beta_overall", "K", "beta_edges", "node_lambda")]))) &&
+          all(is.finite(pfit_structural$CS_params)) &&
+          length(pfit_structural$CS_params) >= 4L) {
+        # Initialize nodeMatch: use structural CS_params for first 4 terms, add nodeMatch term
+        cs_structural <- pfit_structural$CS_params[seq_len(min(4L, length(pfit_structural$CS_params)))]
+        cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
+        cs_init_nodematch <- c(cs_structural, cs_padding)[seq_len(n_cs_nodematch)]
+        
+        # Ensure mu is calculated correctly
+        mu_val <- if (is.finite(pfit_structural$mu) && pfit_structural$mu > 0) {
+          pfit_structural$mu
+        } else {
+          inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+        }
+        
+        params_init_nodematch <- list(
+          mu = mu_val,
+          beta_overall = pfit_structural$beta_overall,
+          K = pfit_structural$K,
+          beta_edges = pfit_structural$beta_edges,
+          node_lambda = pfit_structural$node_lambda,
+          CS_params = cs_init_nodematch,
+          vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+          vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+        )
+        cat("  Initialized from structural fit\n")
+      } else {
+        pfit_structural <- NULL  # Force fallback
+      }
+    }
     
-    params_init_nodematch <- list(
-      mu = pfit_structural$mu,
-      beta_overall = pfit_structural$beta_overall,
-      K = pfit_structural$K,
-      beta_edges = pfit_structural$beta_edges,
-      node_lambda = pfit_structural$node_lambda,
-      CS_params = cs_init_nodematch,
-      vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-      vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-    )
-    cat("  Initialized from structural fit\n")
+    if (is.null(pfit_structural)) {
+      # Fallback: independent initialization
+      params_init_nodematch <- list(
+        mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
+        beta_overall = 1,
+        K = 0.5,
+        beta_edges = 1,
+        node_lambda = 1,
+        CS_params = c(-10, rep(0, n_cs_nodematch - 1)),
+        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+      )
+      cat("  Structural fit parameters invalid; using independent initialization\n")
+    }
   } else {
     # Fallback: independent initialization if structural fit failed
     params_init_nodematch <- list(

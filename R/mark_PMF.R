@@ -921,6 +921,43 @@ PMF_mark_CS <- function(time,
 
 
       delete.vertex.attribute(mark_sample,'na')
+      
+      # CRITICAL: Ensure ALL nodes have required vertex attributes before createCppModel
+      vcat <- params$vertex_categorical
+      if (!is.null(vcat) && is.list(vcat)) {
+        nv <- network::network.size(mark_sample)
+        for (attr_name in names(vcat)) {
+          if (!attr_name %in% network::list.vertex.attributes(mark_sample)) {
+            levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
+              params$vertex_categorical_levels[[attr_name]]
+            } else {
+              c("unknown")
+            }
+            if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
+            network::set.vertex.attribute(mark_sample, attr_name, rep(levs[1L], nv))
+          } else {
+            attr_vals <- mark_sample %v% attr_name
+            if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
+              levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
+                params$vertex_categorical_levels[[attr_name]]
+              } else {
+                unique_vals <- unique(attr_vals[!is.na(attr_vals) & attr_vals != ""])
+                if (length(unique_vals) > 0) sort(unique_vals) else c("unknown")
+              }
+              if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
+              if (length(attr_vals) < nv) {
+                attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
+              }
+              attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
+              network::set.vertex.attribute(mark_sample, attr_name, attr_vals)
+            }
+          }
+        }
+      }
+      if ("na" %in% network::list.vertex.attributes(mark_sample)) {
+        delete.vertex.attribute(mark_sample, "na")
+      }
+      
       model <- createCppModel(as.formula(paste("mark_sample ~ ",formula_RHS)))
       model$calculate()
       

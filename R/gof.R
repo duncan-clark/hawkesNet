@@ -59,6 +59,21 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   # Determine number of statistics by creating a temporary model
   n <- network::network.size(net)
   g_temp <- network::network.initialize(n, directed = network::is.directed(net))
+  
+  # Copy vertex attributes from net to g_temp (required for nodeMatch/nodeMix)
+  vattrs <- network::list.vertex.attributes(net)
+  for (attr_name in vattrs) {
+    if (attr_name != "na") {
+      attr_vals <- network::get.vertex.attribute(net, attr_name)
+      if (length(attr_vals) == n) {
+        network::set.vertex.attribute(g_temp, attr_name, attr_vals)
+      }
+    }
+  }
+  if ("na" %in% network::list.vertex.attributes(g_temp)) {
+    network::delete.vertex.attribute(g_temp, "na")
+  }
+  
   # Create formula with g_temp in the environment
   formula_str <- paste0("g_temp ~ ", formula_RHS)
   formula_obj <- as.formula(formula_str)
@@ -95,6 +110,20 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   # Group edges by unique event times
   event_times <- unique(edge_times)
   g <- network::network.initialize(n, directed = network::is.directed(net))
+  
+  # Copy vertex attributes from net to g (required for nodeMatch/nodeMix)
+  vattrs <- network::list.vertex.attributes(net)
+  for (attr_name in vattrs) {
+    if (attr_name != "na") {
+      attr_vals <- network::get.vertex.attribute(net, attr_name)
+      if (length(attr_vals) == n) {
+        network::set.vertex.attribute(g, attr_name, attr_vals)
+      }
+    }
+  }
+  if ("na" %in% network::list.vertex.attributes(g)) {
+    network::delete.vertex.attribute(g, "na")
+  }
 
   # Initialize tracking for all statistics
   stat_prev <- rep(0, n_stats)
