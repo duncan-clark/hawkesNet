@@ -444,48 +444,62 @@ repair_vertex_categorical_params <- function(params, eps = 1e-6) {
       }
     }
     
-    # Clamp to [eps, 1-eps] and ensure finite
-    p[!is.finite(p)] <- eps
-    p[p < eps] <- eps
-    
-    # Ensure sum < 1 (n-1 parametrization)
+    # Only repair if parameters are INVALID (negative, non-finite, or sum >= 1)
+    # Do NOT clamp valid small positive values - they might be legitimate estimates
     s <- sum(p)
-    if (!is.finite(s) || s <= 0) {
-      # Invalid sum: set to equal probabilities
-      levs <- params$vertex_categorical_levels[[attr_name]]
-      if (!is.null(levs) && length(levs) > 1L) {
-        n_levs <- length(levs) - 1L
-        default_val <- (1 - eps * n_levs) / n_levs
-        p <- setNames(rep(default_val, n_levs), names(p)[1:n_levs])
-      }
-    } else if (s >= 1) {
-      # Scale down proportionally to ensure sum < 1 (n-1 parametrization)
-      # Reference level gets probability 1 - sum(p), so we need sum(p) <= 1 - eps
-      # to ensure reference level gets at least eps probability
-      max_sum <- 1 - eps
-      if (max_sum > eps && s > 0) {
-        p <- p * (max_sum / s)
-        # After scaling, ensure individual values are still >= eps
-        p <- pmax(p, eps)
-        # Re-scale if needed to maintain sum <= max_sum
-        s_new <- sum(p)
-        if (s_new > max_sum) {
-          p <- p * (max_sum / s_new)
-        }
-      } else {
-        # If even max_sum is too small, use equal probabilities
+    needs_repair <- FALSE
+    
+    # Check for invalid values
+    if (any(!is.finite(p)) || any(p < 0) || !is.finite(s) || s <= 0 || s >= 1) {
+      needs_repair <- TRUE
+    }
+    
+    if (needs_repair) {
+      # Repair invalid parameters
+      # First, handle non-finite and negative values
+      p[!is.finite(p)] <- eps
+      p[p < 0] <- eps
+      
+      # Recompute sum after fixing non-finite/negative
+      s <- sum(p)
+      
+      if (!is.finite(s) || s <= 0) {
+        # Invalid sum: set to default (equal probabilities)
         levs <- params$vertex_categorical_levels[[attr_name]]
         if (!is.null(levs) && length(levs) > 1L) {
           n_levs <- length(levs) - 1L
-          default_val <- max_sum / n_levs
-          p <- setNames(rep(default_val, n_levs), names(p)[1:n_levs])
+          default_val <- (1 - eps * n_levs) / n_levs
+          p <- setNames(rep(default_val, n_levs), levs[1:n_levs])
+        }
+      } else if (s >= 1) {
+        # Scale down proportionally to ensure sum < 1 (n-1 parametrization)
+        # Reference level gets probability 1 - sum(p), so we need sum(p) <= 1 - eps
+        max_sum <- 1 - eps
+        if (max_sum > eps && s > 0) {
+          p <- p * (max_sum / s)
+          # After scaling, ensure individual values are still >= eps
+          p <- pmax(p, eps)
+          # Re-scale if needed to maintain sum <= max_sum
+          s_new <- sum(p)
+          if (s_new > max_sum) {
+            p <- p * (max_sum / s_new)
+          }
+        } else {
+          # If even max_sum is too small, use equal probabilities
+          levs <- params$vertex_categorical_levels[[attr_name]]
+          if (!is.null(levs) && length(levs) > 1L) {
+            n_levs <- length(levs) - 1L
+            default_val <- max_sum / n_levs
+            p <- setNames(rep(default_val, n_levs), names(p)[1:n_levs])
+          }
         }
       }
+      # After repair, ensure values are in valid range
+      p <- pmax(p, eps)
+      p <- pmin(p, 1 - eps)
     }
-    
-    # Final clamp to ensure all values are in [eps, 1-eps]
-    p <- pmax(p, eps)
-    p <- pmin(p, 1 - eps)
+    # If parameters are valid (finite, non-negative, sum < 1), leave them as-is
+    # This preserves legitimate small values from optimization
     
     params$vertex_categorical[[attr_name]] <- p
   }

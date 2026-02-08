@@ -33,12 +33,21 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
   if (is.null(exp_cs) || is.null(exp_cs$CS_params_names)) return(fit_table)
   stat_names <- exp_cs$CS_params_names
   n_cs <- length(stat_names)
-  # Build mapping: CS_params1 -> stat_names[1], etc.
-  old_names <- paste0("CS_params", seq_len(n_cs))
-  for (i in seq_len(n_cs)) {
-    idx <- which(fit_table$parameter == old_names[i])
-    if (length(idx) == 1L) {
-      fit_table$parameter[idx] <- stat_names[i]
+  # Find all CS_params in the fit table (may not be sequential if other params are interspersed)
+  cs_indices <- grep("^CS_params[0-9]+$", fit_table$parameter)
+  if (length(cs_indices) != n_cs) {
+    # Mismatch: try to match by extracting numbers
+    warning("rename_CS_params_in_table: Found ", length(cs_indices), 
+            " CS_params in fit table but expected ", n_cs, 
+            " statistics from formula. Some parameters may not be renamed.")
+  }
+  # Extract parameter numbers and rename
+  for (idx in cs_indices) {
+    old_name <- fit_table$parameter[idx]
+    # Extract number: CS_params1 -> 1, CS_params10 -> 10
+    param_num <- as.integer(sub("^CS_params", "", old_name))
+    if (!is.na(param_num) && param_num >= 1L && param_num <= n_cs) {
+      fit_table$parameter[idx] <- stat_names[param_num]
     }
   }
   fit_table
