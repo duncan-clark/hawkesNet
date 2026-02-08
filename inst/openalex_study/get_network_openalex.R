@@ -42,7 +42,11 @@ get_network <- function(email = "",
                         per_page = 50,
                         string = "Hawkes",
                         min_date = "1971-04-01",
-                        max_date = "2100-01-01") {
+                        max_date = "2100-01-01",
+                        min_topic = NULL,
+                        remove_topics = NULL,
+                        topics_include = NULL
+                        ) {
   base_url <- "https://api.openalex.org/works"
   params <- list(
     filter = paste0("title_and_abstract.search:", string),
@@ -90,6 +94,25 @@ get_network <- function(email = "",
     dplyr::filter(date >= as.Date(min_date)) %>%
     dplyr::filter(date <= as.Date(max_date)) %>%
     dplyr::arrange(date)
+  
+  if(!is.null(min_topic)){
+    topic_counts <- table(nodes$topic)
+    nodes <- nodes %>%
+      dplyr::mutate(topic = ifelse(topic_counts[topic] < 5, "Other", topic)) %>%
+      filter(!topic == "Other")
+  }
+  
+  if(!is.null(remove_topics)){
+    remove <- sapply(unique(nodes$topic), function(t) any(grepl(remove_topics, t, ignore.case = TRUE)))
+    nodes <- nodes %>%
+      filter(!topic %in% remove)
+  }
+  
+  if(!is.null(topics_include)){
+    nodes <- nodes %>%
+      filter(topic %in% topics_include)
+  }
+  
   message("Predicting author genders...")
   unique_names <- unique(na.omit(nodes$first_name))
   unique_names <- unique_names[unique_names != ""]
@@ -206,9 +229,9 @@ get_network <- function(email = "",
   network::set.vertex.attribute(net, "entry_time", nodes$date_str)
   network::set.vertex.attribute(net, "time_scaled", nodes$time_scaled)
   network::set.vertex.attribute(net, "citations", nodes$citations)
-  network::set.vertex.attribute(net, "topic", nodes$topic)
+  network::set.vertex.attribute(net, "topic", as.vector(nodes$topic))
   network::set.vertex.attribute(net, "type", nodes$type)
   network::set.vertex.attribute(net, "author_name", nodes$first_author_name)
   network::set.vertex.attribute(net, "gender", nodes$predicted_gender)
-  return(list(net = net, edges = edges))
+  return(list(net = net, edges = edges,nodes = nodes))
 }
