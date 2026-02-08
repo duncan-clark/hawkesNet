@@ -8,11 +8,24 @@ library(purrr)
 library(tidyr)
 library(network)
 
+# Load gender packages if available
+gender_available <- FALSE
+genderdata_available <- FALSE
 if (requireNamespace("gender", quietly = TRUE)) {
   library(gender)
-  if (requireNamespace("genderdata", quietly = TRUE)) library(genderdata)
+  gender_available <- TRUE
+  if (requireNamespace("genderdata", quietly = TRUE)) {
+    library(genderdata)
+    genderdata_available <- TRUE
+  } else {
+    message("⚠ Package 'genderdata' not installed. Gender prediction will fail.")
+    message("  Install with: install.packages('genderdata')")
+    message("  NOTE: This may require internet access to download historical name data.")
+  }
 } else {
-  message("Package 'gender' not installed; all predicted_gender will be 'unknown'.")
+  message("⚠ Package 'gender' not installed; all predicted_gender will be 'unknown'.")
+  message("  Install with: install.packages(c('gender', 'genderdata'))")
+  message("  NOTE: 'genderdata' may require internet access to download data.")
 }
 
 #' Fetch citation network from OpenAlex API.
@@ -80,49 +93,93 @@ get_network <- function(email = "",
   message("Predicting author genders...")
   unique_names <- unique(na.omit(nodes$first_name))
   unique_names <- unique_names[unique_names != ""]
-  if (length(unique_names) > 0 && requireNamespace("gender", quietly = TRUE) && 
-      requireNamespace("genderdata", quietly = TRUE)) {
+  
+  if (length(unique_names) == 0) {
+    message("  No first names found; setting all genders to 'unknown'.")
+    nodes$predicted_gender <- "unknown"
+  } else if (!gender_available || !genderdata_available) {
+    warning("⚠ Gender prediction skipped: packages not available.")
+    if (!gender_available) {
+      warning("  - 'gender' package not installed. Install with: install.packages('gender')")
+    }
+    if (!genderdata_available) {
+      warning("  - 'genderdata' package not installed. Install with: install.packages('genderdata')")
+      warning("  - NOTE: Installing 'genderdata' requires internet access to download historical name data.")
+      warning("  - On clusters without internet: install 'genderdata' before submitting SLURM jobs.")
+    }
+    nodes$predicted_gender <- "unknown"
+  } else {
+    # Both packages are available, try to predict genders
     tryCatch({
       # Load gender function explicitly
       gender_func <- get("gender", envir = asNamespace("gender"))
       
-      # Use publication years as proxy for birth years (assuming authors are ~30-50 years old)
-      # Calculate approximate birth years from publication years
-      pub_years <- unique(na.omit(nodes$year))
-      if (length(pub_years) > 0) {
-        # Estimate birth years: assume authors are 30-50 years old when publishing
-        # Use a wide range to cover most cases
-        birth_year_min <- max(1930, min(pub_years, na.rm = TRUE) - 50)
-        birth_year_max <- max(pub_years, na.rm = TRUE) - 25
-        years_range <- c(birth_year_min, birth_year_max)
+      # Test if gender() function works with a simple test name
+      test_result <- tryCatch({
+        gender_func("Mary", years = c(1932, 2012), method = "ssa")
+      }, error = function(e) {
+        NULL
+      })
+      
+      if (is.null(test_result) || nrow(test_result) == 0) {
+        warning("⚠ Gender prediction test failed - 'genderdata' package may not have data loaded.")
+        warning("  This often happens on clusters without internet access.")
+        warning("  Solution: Install 'genderdata' package BEFORE submitting SLURM jobs (requires internet).")
+        warning("  Or: Copy genderdata package from a machine with internet to cluster.")
+        nodes$predicted_gender <- "unknown"
       } else {
-        # Default to wide range if no years available
-        years_range <- c(1932, 2012)
-      }
-      
-      # Call gender() with years parameter
-      gender_preds <- gender_func(unique_names, years = years_range, method = "ssa") %>%
-        dplyr::select(first_name = name, predicted_gender = gender) %>%
-        # Handle case where multiple rows per name (shouldn't happen with unique names, but be safe)
-        dplyr::distinct(first_name, .keep_all = TRUE)
-      
-      nodes <- nodes %>%
-        dplyr::left_join(gender_preds, by = "first_name") %>%
-        dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
-      
-      # Check if gender prediction actually worked
-      gender_counts <- table(nodes$predicted_gender, useNA = "ifany")
-      message("  Gender distribution: ", paste(names(gender_counts), "=", gender_counts, collapse = ", "))
-      if (all(nodes$predicted_gender == "unknown", na.rm = TRUE)) {
-        warning("⚠ All genders are 'unknown' - gender prediction may have failed. Check if 'gender' and 'genderdata' packages are installed.")
+        # Use publication years as proxy for birth years (assuming authors are ~30-50 years old)
+        # Calculate approximate birth years from publication years
+        pub_years <- unique(na.omit(nodes$year))
+        if (length(pub_years) > 0) {
+          # Estimate birth years: assume authors are 30-50 years old when publishing
+          # Use a wide range to cover most cases
+          birth_year_min <- max(1930, min(pub_years, na.rm = TRUE) - 50)
+          birth_year_max <- max(pub_years, na.rm = TRUE) - 25
+          years_range <- c(birth_year_min, birth_year_max)
+        } else {
+          # Default to wide range if no years available
+          years_range <- c(1932, 2012)
+        }
+        
+        message("  Predicting genders for ", length(unique_names), " unique names...")
+        message("  Using birth year range: ", years_range[1], "-", years_range[2])
+        
+        # Call gender() with years parameter
+        gender_preds <- gender_func(unique_names, years = years_range, method = "ssa") %>%
+          dplyr::select(first_name = name, predicted_gender = gender) %>%
+          # Handle case where multiple rows per name (shouldn't happen with unique names, but be safe)
+          dplyr::distinct(first_name, .keep_all = TRUE)
+        
+        nodes <- nodes %>%
+          dplyr::left_join(gender_preds, by = "first_name") %>%
+          dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
+        
+        # Check if gender prediction actually worked
+        gender_counts <- table(nodes$predicted_gender, useNA = "ifany")
+        message("  Gender distribution: ", paste(names(gender_counts), "=", gender_counts, collapse = ", "))
+        
+        n_predicted <- sum(nodes$predicted_gender != "unknown", na.rm = TRUE)
+        if (n_predicted == 0) {
+          warning("⚠ All genders are 'unknown' - gender prediction returned no results.")
+          warning("  Possible causes:")
+          warning("  1. Names not in historical database (try wider year range)")
+          warning("  2. 'genderdata' package data not properly loaded")
+          warning("  3. Network/internet issue preventing data download")
+        } else {
+          message("  Successfully predicted ", n_predicted, " genders (", 
+                  round(100 * n_predicted / nrow(nodes), 1), "%)")
+        }
       }
     }, error = function(e) {
-      warning("⚠ Gender prediction failed: ", e$message, "\n  Setting all genders to 'unknown'. Install 'gender' and 'genderdata' packages for gender prediction.")
+      warning("⚠ Gender prediction failed with error: ", e$message)
+      warning("  Common causes:")
+      warning("  1. 'genderdata' package not installed or data not available")
+      warning("  2. Cluster has no internet access (install packages before submitting jobs)")
+      warning("  3. Package version incompatibility")
+      warning("  Setting all genders to 'unknown'.")
       nodes$predicted_gender <<- "unknown"
     })
-  } else {
-    warning("⚠ 'gender' or 'genderdata' packages not available. All genders set to 'unknown'.")
-    nodes$predicted_gender <- "unknown"
   }
   min_d <- min(nodes$date, na.rm = TRUE)
   max_d <- max(nodes$date, na.rm = TRUE)

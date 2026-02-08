@@ -28,6 +28,11 @@ echo "CPUs:      $SLURM_CPUS_PER_TASK"
 echo "Memory:    $SLURM_MEM_PER_NODE MB"
 echo "Started:   $(date)"
 echo "=========================================="
+echo ""
+echo "NOTE: Gender prediction requires 'gender' and 'genderdata' packages."
+echo "      If not installed, install BEFORE submitting this job (requires internet):"
+echo "        Rscript -e \"install.packages(c('gender', 'genderdata'))\""
+echo "=========================================="
 
 # Ensure we're in the package root directory (should contain R/, inst/, DESCRIPTION)
 # If running from package root, this will be the current directory
