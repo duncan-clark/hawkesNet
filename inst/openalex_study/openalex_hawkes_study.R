@@ -34,7 +34,7 @@ PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
-MAX_ITER <- 1000
+MAX_ITER <- 5000
 TRUNCATION <- 100L
 N_GOF <- 50L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
@@ -131,7 +131,7 @@ if (!is.null(inhom_bg)) {
       mark_decay = "activity",
       max_node_time = 1,
       method = "Nelder-Mead",
-      maxit = 500,
+      maxit = MAX_ITER,
       trace = 1,
       reltol = 1e-8,
       verbose = FALSE,
@@ -244,7 +244,7 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
       mark_decay = "activity",
       max_node_time = 1,
       method = "Nelder-Mead",
-      maxit = 500,
+      maxit = MAX_ITER,
       trace = 1,
       reltol = 1e-8,
       verbose = FALSE,
