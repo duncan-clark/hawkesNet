@@ -28,17 +28,20 @@ source(file.path(PKG_ROOT, "inst", "openalex_study", "get_network_openalex.R"))
 # Config (override via env or edit)
 # =============================================================================
 EMAIL <- Sys.getenv("OPENALEX_EMAIL", "duncan-clark@outlook.com")
-SEARCH_STRING <- Sys.getenv("OPENALEX_STRING", "Hawkes")
+SEARCH_STRING <- Sys.getenv("OPENALEX_STRING", "Hawkes Process")
 PAGES <- as.integer(Sys.getenv("OPENALEX_PAGES", 100))
 PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 MAX_ITER <- 5000
 TRUNCATION <- 100L
+GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 50L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
+TOPIC <- "Point processes and geometric inequalities"
+
 
 # =============================================================================
 # GOF functions are now in R/gof.R (exported from package)
@@ -55,7 +58,7 @@ cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n\n")
 cat("--- Step 1: Fetch data and prepare network ---\n")
 t_step <- proc.time()
 out <- get_network(email = EMAIL, pages = PAGES, per_page = PER_PAGE,
-                   string = SEARCH_STRING, min_date = MIN_DATE, max_date = MAX_DATE)
+                   string = SEARCH_STRING, min_date = MIN_DATE, max_date = MAX_DATE,topics_include = c(TOPIC))
 net_raw <- out$net
 edges <- out$edges
 network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
@@ -115,7 +118,7 @@ p_scale_inhom <- c(
 
 if (!is.null(inhom_bg)) {
   cat("  Fitting CS model (inhomogeneous + vertex_categorical)...\n")
-  cat("  Method: Nelder-Mead (max 500 iterations)\n")
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit <- proc.time()
   
   fit_inhom <- tryCatch(
@@ -163,28 +166,26 @@ if (!is.null(inhom_bg)) {
 # =============================================================================
 fit_inhom_nodematch <- NULL
 FORMULA_RHS_NODEMATCH <- "edges + triangles + star(c(2,3)) + nodeMatch('gender')"
-if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
+if (!is.null(inhom_bg)) {
   cat("--- Step 2b: Inhomogeneous fit with nodeMatch (homophily) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
-  cat("  Using nodeMix fit as starting point...\n")
   t_step_nodematch <- proc.time()
   
   # Get expected parameters for nodeMatch formula
   exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 5L
   
-  # Start nodeMatch fit from scratch using params_init_inhom
-  # Simply adjust CS_params length for nodeMatch (5 params: edges, triangles, star2, star3, nodeMatch)
-  params_init_nodematch <- params_init_inhom
-  params_init_nodematch$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-  # Take first 4 CS_params (edges, triangles, star2, star3) and pad with zeros for nodeMatch
-  n_structural <- min(4L, length(params_init_inhom$CS_params))
-  cs_structural <- if (n_structural > 0) params_init_inhom$CS_params[seq_len(n_structural)] else numeric(0)
-  cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
-  params_init_nodematch$CS_params <- c(cs_structural, cs_padding)[seq_len(n_cs_nodematch)]
-  
-  # Keep vertex_categorical - nodeMatch still needs it to identify node attributes
-  # (nodeMatch uses it differently than nodeMix, but it's still required)
+  # Initialize nodeMatch fit completely independently
+  params_init_nodematch <- list(
+    mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
+    beta_overall = 1,
+    K = 0.5,
+    beta_edges = 1,
+    node_lambda = 1,
+    CS_params = c(-10, rep(0, n_cs_nodematch - 1)),
+    vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+    vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+  )
   
   # Create parscale for nodeMatch
   p_scale_nodematch <- c(
@@ -193,7 +194,7 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
     vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
   )
   
-  cat("  Method: Nelder-Mead (max 500 iterations)\n")
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_nodematch <- proc.time()
   
   fit_inhom_nodematch <- tryCatch(
@@ -236,8 +237,83 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
   }
   cat("  Step 2b total:", round((proc.time() - t_step_nodematch)[3], 1), "s\n\n")
 } else {
-  if (is.null(inhom_bg)) cat("  No inhomogeneous background; skipping nodeMatch fit\n")
-  if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMatch fit\n")
+  cat("  No inhomogeneous background; skipping nodeMatch fit\n")
+}
+
+# =============================================================================
+# 2c. Inhomogeneous fit with structural terms only (no gender)
+# =============================================================================
+fit_inhom_structural <- NULL
+FORMULA_RHS_STRUCTURAL <- "edges + triangles + star(c(2,3))"
+if (!is.null(inhom_bg)) {
+  cat("--- Step 2c: Inhomogeneous fit with structural terms only ---\n")
+  cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
+  t_step_structural <- proc.time()
+  
+  # Get expected parameters for structural formula
+  exp_cs_structural <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL)
+  n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 4L
+  
+  # Initialize parameters for structural-only model (no vertex_categorical)
+  params_init_structural <- list(
+    mu = 1,
+    beta_overall = 1,
+    K = 0.5,
+    beta_edges = 1,
+    node_lambda = 1,
+    CS_params = c(-10, rep(0, n_cs_structural - 1))
+  )
+  
+  # Create parscale for structural model
+  p_scale_structural <- c(
+    beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+    setNames(rep(0.1, n_cs_structural), paste0("CS_params", seq_len(n_cs_structural)))
+  )
+  
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+  t_fit_structural <- proc.time()
+  
+  fit_inhom_structural <- tryCatch(
+    fit_hawkesGrowthNet_inhom(
+      params_init = params_init_structural,
+      time_window = time_window_01,
+      mark_filtration = net_raw,
+      PMF_mark = PMF_mark_CS,
+      mu_vec = inhom_bg$mu_vec,
+      integral_bg = inhom_bg$integral_bg,
+      formula_RHS = FORMULA_RHS_STRUCTURAL,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      method = "Nelder-Mead",
+      maxit = MAX_ITER,
+      trace = 1,
+      reltol = 1e-8,
+      verbose = FALSE,
+      fixed_params = c("K", "mu"),
+      parscale = p_scale_structural,
+      cache_intensity = TRUE,
+      cores = N_CORES
+    ),
+    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
+  )
+  
+  elapsed_fit_structural <- (proc.time() - t_fit_structural)[3]
+  if (!is.null(fit_inhom_structural)) {
+    cat("  Fit completed:", round(elapsed_fit_structural, 1), "s (", round(elapsed_fit_structural / 60, 1), "min)\n")
+    cat("  Convergence:", fit_inhom_structural$fit$convergence, "\n")
+    cat("  Iterations:", fit_inhom_structural$fit$counts[1], "\n")
+    # Print fit table
+    if (!is.null(fit_inhom_structural$fit_table)) {
+      cat("\n  Structural-only fit results:\n")
+      print(fit_inhom_structural$fit_table, max = NULL)
+    }
+  } else {
+    cat("  Fit FAILED after", round(elapsed_fit_structural, 1), "s\n")
+  }
+  cat("  Step 2c total:", round((proc.time() - t_step_structural)[3], 1), "s\n\n")
+} else {
+  cat("  No inhomogeneous background; skipping structural fit\n")
 }
 
 cat("  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
@@ -303,6 +379,9 @@ GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NU
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL,
                                nodemix_obs = NULL, nodemix_sim = NULL)
+GOF_results_structural <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL)
 
 # GOF for nodeMix model
 if (RUN_GOF && !is.null(fit_inhom)) {
@@ -316,7 +395,7 @@ if (RUN_GOF && !is.null(fit_inhom)) {
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,  # Use homogeneous version for simulations
     formula_RHS = FORMULA_RHS,
-    time_window = c(0, 0.05),
+    time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
     max_node_time = 1,
@@ -337,16 +416,16 @@ if (RUN_GOF && !is.null(fit_inhom)) {
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   cat("\n  GOF for nodeMatch model...\n")
   
-  # Reconstruct params_init for nodeMatch
-  skel_nodematch_gof <- params_init_inhom
+  # Reconstruct params_init for nodeMatch using its own independent initialization
+  skel_nodematch_gof <- params_init_nodematch
   skel_nodematch_gof$vertex_categorical_levels <- NULL
   params_init_nodematch_gof <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch_gof)
-  params_init_nodematch_gof$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-  params_init_nodematch_gof$K <- params_init_inhom$K
-  params_init_nodematch_gof$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  params_init_nodematch_gof$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+  params_init_nodematch_gof$K <- params_init_nodematch$K
+  params_init_nodematch_gof$mu <- params_init_nodematch$mu
   # Restore names and repair parameters before GOF
   params_init_nodematch_gof <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-    params_init_nodematch_gof, params_init_inhom$vertex_categorical_levels)
+    params_init_nodematch_gof, params_init_nodematch$vertex_categorical_levels)
   params_init_nodematch_gof <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch_gof, eps = 1e-6)
   
   # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
@@ -358,7 +437,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,  # Use homogeneous version for simulations
     formula_RHS = FORMULA_RHS_NODEMATCH,
-    time_window = c(0, 0.05),
+    time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
     max_node_time = 1,
@@ -375,6 +454,41 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
 }
 
+# GOF for structural-only model
+if (RUN_GOF && !is.null(fit_inhom_structural)) {
+  cat("\n  GOF for structural-only model...\n")
+  
+  # Reconstruct params_init for structural model
+  skel_structural_gof <- params_init_structural
+  params_init_structural_gof <- relist(fit_inhom_structural$fit$par, skeleton = skel_structural_gof)
+  params_init_structural_gof$K <- params_init_structural$K
+  params_init_structural_gof$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  
+  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
+  GOF_results_structural <- gof(
+    fit = fit_inhom_structural,
+    net_obs = net_raw,
+    params_init = params_init_structural_gof,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+    formula_RHS = FORMULA_RHS_STRUCTURAL,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    mu_multiplier = 5,
+    verbose = TRUE
+  )
+} else {
+  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping structural GOF\n")
+  if (is.null(fit_inhom_structural)) cat("  No structural fit available; skipping structural GOF\n")
+}
+
 cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
@@ -387,15 +501,20 @@ save_list <- list(
   inhom_bg = inhom_bg,
   fit_inhom = fit_inhom,
   fit_inhom_nodematch = fit_inhom_nodematch,
+  fit_inhom_structural = fit_inhom_structural,
   params_init_inhom = params_init_inhom,
+  params_init_nodematch = params_init_nodematch,
+  params_init_structural = params_init_structural,
   FORMULA_RHS = FORMULA_RHS,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
+  FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
   fit_temporal = fit_temporal,
   ks_temporal_pval = ks_temporal_pval,
   realiz = realiz,
   windowT = windowT,
   GOF_results = GOF_results,
   GOF_results_nodematch = GOF_results_nodematch,
+  GOF_results_structural = GOF_results_structural,
   N_GOF = N_GOF,
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
@@ -456,24 +575,19 @@ if (PAPER_OUTPUT) {
       cat("  Inhomogeneous fit (nodeMatch): raw parameters\n")
       print(fit_inhom_nodematch$fit$par)
     }
-    if (exists("params_init_inhom") && !is.null(params_init_inhom$vertex_categorical)) {
-      # Reconstruct nodeMatch parameters for gender proportions
-      skel_nodematch <- params_init_inhom
+    if (exists("params_init_nodematch") && !is.null(params_init_nodematch$vertex_categorical)) {
+      # Reconstruct nodeMatch parameters for gender proportions using its own initialization
+      skel_nodematch <- params_init_nodematch
       skel_nodematch$vertex_categorical_levels <- NULL
-      skel_nodematch$CS_params <- rep(0, length(params_init_inhom$CS_params))
-      # Adjust CS_params length to match nodeMatch fit
-      exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
-      n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 5L
-      skel_nodematch$CS_params <- rep(0, n_cs_nodematch)
       
       pfit_nodematch <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
-      pfit_nodematch$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+      pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
       # Restore names and repair parameters before expanding
       pfit_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-        pfit_nodematch, params_init_inhom$vertex_categorical_levels)
+        pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
       pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
       if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
-        levs <- params_init_inhom$vertex_categorical_levels$gender
+        levs <- params_init_nodematch$vertex_categorical_levels$gender
         pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)
         if (!is.null(pgender_nodematch)) {
           cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender_nodematch)
@@ -483,6 +597,19 @@ if (PAPER_OUTPUT) {
       }
     }
   }
+  
+  # Print structural-only fit results
+  if (!is.null(dat$fit_inhom_structural)) {
+    cat("\n--- Structural-Only Fit Results ---\n")
+    if (!is.null(dat$fit_inhom_structural$fit_table)) {
+      cat("  Inhomogeneous fit (structural-only): parameter estimates and standard errors\n")
+      print(dat$fit_inhom_structural$fit_table, max = NULL)
+    } else {
+      cat("  Inhomogeneous fit (structural-only): raw parameters\n")
+      print(fit_inhom_structural$fit$par)
+    }
+  }
+  
   if (!is.null(dat$fit_temporal)) {
     cat("  Temporal Hawkes par:\n"); print(fit_temporal$par)
     cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
