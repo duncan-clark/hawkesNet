@@ -371,29 +371,74 @@ if (!is.null(inhom_bg)) {
   n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 5L
   
   # Initialize nodeMix fit from nodeMatch fit results
-  if (!is.null(fit_inhom_nodematch)) {
+  if (!is.null(fit_inhom_nodematch) && fit_inhom_nodematch$fit$convergence == 0) {
     # Extract parameters from nodeMatch fit
     skel_nodematch <- params_init_nodematch
     skel_nodematch$vertex_categorical_levels <- NULL
-    pfit_nodematch <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
-    pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+    pfit_nodematch <- tryCatch({
+      relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
+    }, error = function(e) {
+      cat("  Warning: Failed to extract nodeMatch parameters, using independent init\n")
+      NULL
+    })
     
-    # Initialize nodeMix: use nodeMatch CS_params for first 4 terms, add nodeMix terms
-    cs_nodematch <- pfit_nodematch$CS_params[seq_len(min(4L, length(pfit_nodematch$CS_params)))]
-    cs_padding <- rep(0, max(0L, n_cs - length(cs_nodematch)))
-    cs_init_nodemix <- c(cs_nodematch, cs_padding)[seq_len(n_cs)]
+    if (!is.null(pfit_nodematch)) {
+      pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+      
+      # Restore names and repair vertex_categorical parameters (may be invalid after optimization)
+      pfit_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+        pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
+      pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
+      
+      # Validate extracted parameters
+      if (all(is.finite(unlist(pfit_nodematch[c("mu", "beta_overall", "K", "beta_edges", "node_lambda")]))) &&
+          all(is.finite(pfit_nodematch$CS_params)) &&
+          length(pfit_nodematch$CS_params) >= 4L &&
+          !is.null(pfit_nodematch$vertex_categorical) &&
+          is.list(pfit_nodematch$vertex_categorical)) {
+        
+        # Initialize nodeMix: use nodeMatch CS_params for first 4 terms, add nodeMix terms
+        cs_nodematch <- pfit_nodematch$CS_params[seq_len(min(4L, length(pfit_nodematch$CS_params)))]
+        cs_padding <- rep(0, max(0L, n_cs - length(cs_nodematch)))
+        cs_init_nodemix <- c(cs_nodematch, cs_padding)[seq_len(n_cs)]
+        
+        # Ensure mu is calculated correctly
+        mu_val <- if (is.finite(pfit_nodematch$mu) && pfit_nodematch$mu > 0) {
+          pfit_nodematch$mu
+        } else {
+          inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+        }
+        
+        params_init_inhom <- list(
+          mu = mu_val,
+          beta_overall = pfit_nodematch$beta_overall,
+          K = pfit_nodematch$K,
+          beta_edges = pfit_nodematch$beta_edges,
+          node_lambda = pfit_nodematch$node_lambda,
+          CS_params = cs_init_nodemix,
+          vertex_categorical = pfit_nodematch$vertex_categorical,
+          vertex_categorical_levels = pfit_nodematch$vertex_categorical_levels
+        )
+        cat("  Initialized from nodeMatch fit\n")
+      } else {
+        pfit_nodematch <- NULL  # Force fallback
+      }
+    }
     
-    params_init_inhom <- list(
-      mu = pfit_nodematch$mu,
-      beta_overall = pfit_nodematch$beta_overall,
-      K = pfit_nodematch$K,
-      beta_edges = pfit_nodematch$beta_edges,
-      node_lambda = pfit_nodematch$node_lambda,
-      CS_params = cs_init_nodemix,
-      vertex_categorical = pfit_nodematch$vertex_categorical,
-      vertex_categorical_levels = pfit_nodematch$vertex_categorical_levels
-    )
-    cat("  Initialized from nodeMatch fit\n")
+    if (is.null(pfit_nodematch)) {
+      # Fallback: independent initialization
+      params_init_inhom <- list(
+        mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
+        beta_overall = 1,
+        K = 0.5,
+        beta_edges = 1,
+        node_lambda = 1,
+        CS_params = c(-10, rep(0, n_cs - 1)),
+        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+      )
+      cat("  nodeMatch fit parameters invalid; using independent initialization\n")
+    }
   } else {
     # Fallback: independent initialization if nodeMatch fit failed
     params_init_inhom <- list(
