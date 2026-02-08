@@ -8,56 +8,17 @@
 # =============================================================================
 
 # Load hawkesGrowthNet package
-# Priority: use devtools::load_all() to ensure latest code is used
-# Fallback: use installed package if devtools unavailable
-cat("Current working directory:", getwd(), "\n")
-cat("DESCRIPTION file exists:", file.exists("DESCRIPTION"), "\n")
-if (file.exists("DESCRIPTION") && requireNamespace("devtools", quietly = TRUE)) {
-  cat("Loading hawkesGrowthNet from current directory (devtools::load_all)...\n")
-  # Force reload to ensure latest code
-  if ("package:hawkesGrowthNet" %in% search()) {
-    detach("package:hawkesGrowthNet", unload = TRUE)
-  }
-  devtools::load_all(".", quiet = FALSE)
-  # Verify we have the latest version by checking for a recent function
-  if (exists("rename_CS_params_in_table", envir = asNamespace("hawkesGrowthNet"))) {
-    cat("Package loaded successfully. Checking for latest code...\n")
-    # Check if the function has the grep-based fix (should have cs_indices <- grep)
-    fn_body <- deparse(body(get("rename_CS_params_in_table", envir = asNamespace("hawkesGrowthNet"))))
-    if (any(grepl("grep.*CS_params", fn_body))) {
-      cat("✓ Latest code detected (grep-based CS_params renaming)\n")
-    } else {
-      warning("⚠ Old code detected - rename_CS_params_in_table may not have latest fixes")
-    }
-  }
-} else {
-  # Fallback: try installed package
-  tryCatch({
-    cat("Loading hawkesGrowthNet from installed package...\n")
-    library(hawkesGrowthNet)
-    warning("⚠ Using installed package - may not have latest code. Consider using devtools::load_all()")
-  }, error = function(e) {
-    stop("hawkesGrowthNet package not found. Please install it or run from package root with devtools available.")
-  })
-}
+library(hawkesGrowthNet)
 
-# Load required libraries (check availability)
-if (!requireNamespace("ggplot2", quietly = TRUE)) {
-  warning("ggplot2 not available; plots will not be generated")
-}
-if (requireNamespace("ggplot2", quietly = TRUE)) {
-  library(ggplot2)
-}
-
-if (!requireNamespace("dplyr", quietly = TRUE)) {
-  stop("dplyr package required but not available")
-}
+# Load required libraries
 library(dplyr)
-
 library(network)
 library(sna)
 library(ernm)
 library(parallel)
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+}
 
 # Paths: run from package root (directory containing inst/)
 PKG_ROOT <- getwd()
@@ -103,6 +64,18 @@ net_raw <- hawkesGrowthNet::normalize_times_01(net_raw, attr = "time", keep_na =
 n_events <- length(hawkesGrowthNet::get_times(net_raw)$times)
 n_nodes <- network::network.size(net_raw)
 cat("  Network:", n_events, "events,", n_nodes, "nodes\n")
+# Check gender distribution
+if ("gender" %in% network::list.vertex.attributes(net_raw)) {
+  gender_vals <- net_raw %v% "gender"
+  gender_counts <- table(gender_vals, useNA = "ifany")
+  cat("  Gender distribution:", paste(names(gender_counts), "=", gender_counts, collapse = ", "), "\n")
+  if (all(gender_vals == "unknown", na.rm = TRUE)) {
+    warning("⚠ WARNING: All genders are 'unknown'. This will cause nodeMix to only detect 1 statistic instead of 6.")
+    warning("⚠ Install 'gender' and 'genderdata' packages for gender prediction: install.packages(c('gender', 'genderdata'))")
+  }
+} else {
+  warning("⚠ No 'gender' attribute found on network vertices")
+}
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
@@ -124,10 +97,6 @@ fit_inhom <- NULL
 # CS_params length must match number of change statistics from formula (ernm)
 exp_cs <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS)
 n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 5L
-cat("  Expected CS_params length:", n_cs, "\n")
-if (!is.null(exp_cs$CS_params_names)) {
-  cat("  CS_params names:", paste(exp_cs$CS_params_names, collapse=", "), "\n")
-}
 params_init_inhom <- list(
   mu = 1,
   beta_overall = 1,
@@ -138,7 +107,6 @@ params_init_inhom <- list(
   vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
   vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
 )
-cat("  Initialized CS_params length:", length(params_init_inhom$CS_params), "\n")
 p_scale_inhom <- c(
   beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
   setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs))),
@@ -147,13 +115,10 @@ p_scale_inhom <- c(
 
 if (!is.null(inhom_bg)) {
   cat("  Fitting CS model (inhomogeneous + vertex_categorical)...\n")
-  cat("  Two-stage optimization: Nelder-Mead (500 iter) -> L-BFGS-B (500 iter)\n")
+  cat("  Method: Nelder-Mead (max 500 iterations)\n")
   t_fit <- proc.time()
   
-  # Stage 1: Nelder-Mead for 500 iterations
-  cat("  Stage 1: Nelder-Mead optimization (max 500 iterations)...\n")
-  t_stage1 <- proc.time()
-  fit_stage1 <- tryCatch(
+  fit_inhom <- tryCatch(
     fit_hawkesGrowthNet_inhom(
       params_init = params_init_inhom,
       time_window = time_window_01,
@@ -175,121 +140,16 @@ if (!is.null(inhom_bg)) {
       cache_intensity = TRUE,
       cores = N_CORES
     ),
-    error = function(e) { cat("  ERROR: Stage 1 (Nelder-Mead) failed:", e$message, "\n"); NULL }
+    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
   )
-  elapsed_stage1 <- (proc.time() - t_stage1)[3]
-  
-  if (!is.null(fit_stage1)) {
-    cat("  Stage 1 completed:", round(elapsed_stage1, 1), "s (",
-        round(elapsed_stage1 / 60, 1), "min)\n")
-    cat("  Stage 1 par:", paste(round(fit_stage1$fit$par, 4), collapse = ", "), "\n")
-    cat("  Stage 1 convergence:", fit_stage1$fit$convergence, "\n")
-    cat("  Stage 1 iterations:", fit_stage1$fit$counts[1], "\n")
-    
-    # Stage 2: L-BFGS-B starting from Stage 1 result
-    cat("  Stage 2: L-BFGS-B optimization (max 500 iterations)...\n")
-    t_stage2 <- proc.time()
-    
-    # Reconstruct params from Stage 1 fit for Stage 2 initialization
-    skel_stage2 <- params_init_inhom
-    skel_stage2$vertex_categorical_levels <- NULL
-    params_init_stage2 <- relist(fit_stage1$fit$par, skeleton = skel_stage2)
-    params_init_stage2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-    params_init_stage2$K <- params_init_inhom$K
-    params_init_stage2$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-    
-    # Restore vertex_categorical names and repair parameters (Nelder-Mead doesn't respect bounds)
-    params_init_stage2 <- reconstruct_vertex_categorical_names(
-      params_init_stage2, params_init_inhom$vertex_categorical_levels)
-    params_init_stage2 <- repair_vertex_categorical_params(params_init_stage2, eps = 1e-6)
-    
-    fit_stage2 <- tryCatch(
-      fit_hawkesGrowthNet_inhom(
-        params_init = params_init_stage2,
-        time_window = time_window_01,
-        mark_filtration = net_raw,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = inhom_bg$mu_vec,
-        integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        max_node_time = 1,
-        method = "L-BFGS-B",
-        maxit = 500,
-        trace = 1,
-        reltol = 1e-8,
-        verbose = FALSE,
-        fixed_params = c("K", "mu"),
-        parscale = p_scale_inhom,
-        cache_intensity = TRUE,
-        cores = N_CORES
-      ),
-      error = function(e) { cat("  ERROR: Stage 2 (L-BFGS-B) failed:", e$message, "\n"); NULL }
-    )
-    elapsed_stage2 <- (proc.time() - t_stage2)[3]
-    
-    if (!is.null(fit_stage2)) {
-      cat("  Stage 2 completed:", round(elapsed_stage2, 1), "s (",
-          round(elapsed_stage2 / 60, 1), "min)\n")
-      cat("  Stage 2 convergence:", fit_stage2$fit$convergence, "\n")
-      cat("  Stage 2 iterations:", fit_stage2$fit$counts[1], "\n")
-      fit_inhom <- fit_stage2
-      stage2_succeeded <- TRUE
-    } else {
-      # Fall back to Stage 1 result if Stage 2 fails
-      cat("  Stage 2 failed; using Stage 1 result\n")
-      fit_inhom <- fit_stage1
-      stage2_succeeded <- FALSE
-    }
-  } else {
-    cat("  Stage 1 failed; attempting single-stage L-BFGS-B...\n")
-    stage2_succeeded <- FALSE
-    fit_inhom <- tryCatch(
-      fit_hawkesGrowthNet_inhom(
-        params_init = params_init_inhom,
-        time_window = time_window_01,
-        mark_filtration = net_raw,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = inhom_bg$mu_vec,
-        integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        max_node_time = 1,
-        method = "L-BFGS-B",
-        maxit = 500,
-        trace = 1,
-        reltol = 1e-8,
-        verbose = FALSE,
-        fixed_params = c("K", "mu"),
-        parscale = p_scale_inhom,
-        cache_intensity = TRUE,
-        cores = N_CORES
-      ),
-      error = function(e) { cat("  ERROR: Single-stage L-BFGS-B failed:", e$message, "\n"); NULL }
-    )
-  }
   
   elapsed_fit <- (proc.time() - t_fit)[3]
   if (!is.null(fit_inhom)) {
-    # Calculate total iterations
-    if (exists("stage2_succeeded") && stage2_succeeded && exists("fit_stage1") && !is.null(fit_stage1)) {
-      total_iter <- fit_stage1$fit$counts[1] + fit_inhom$fit$counts[1]
-    } else if (exists("fit_stage1") && !is.null(fit_stage1)) {
-      # Only Stage 1 succeeded
-      total_iter <- fit_stage1$fit$counts[1]
-    } else {
-      # Single-stage fallback
-      total_iter <- fit_inhom$fit$counts[1]
-    }
-    cat("  Inhomogeneous fit completed:", round(elapsed_fit, 1), "s (",
-        round(elapsed_fit / 60, 1), "min)\n")
-    cat("  Final par:", paste(round(fit_inhom$fit$par, 4), collapse = ", "), "\n")
-    cat("  Final convergence:", fit_inhom$fit$convergence, "\n")
-    cat("  Total iterations:", total_iter, "\n")
+    cat("  Fit completed:", round(elapsed_fit, 1), "s (", round(elapsed_fit / 60, 1), "min)\n")
+    cat("  Convergence:", fit_inhom$fit$convergence, "\n")
+    cat("  Iterations:", fit_inhom$fit$counts[1], "\n")
   } else {
-    cat("  Inhomogeneous fit FAILED after", round(elapsed_fit, 1), "s\n")
+    cat("  Fit FAILED after", round(elapsed_fit, 1), "s\n")
   }
 }
 
@@ -343,16 +203,14 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
   # Create parscale for nodeMatch
   p_scale_nodematch <- c(
     beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-    setNames(rep(0.1, n_cs_nodematch), paste0("CS_params", seq_len(n_cs_nodematch)))
+    setNames(rep(0.1, n_cs_nodematch), paste0("CS_params", seq_len(n_cs_nodematch))),
+    vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
   )
   
-  cat("  Two-stage optimization: Nelder-Mead (500 iter) -> L-BFGS-B (500 iter)\n")
+  cat("  Method: Nelder-Mead (max 500 iterations)\n")
   t_fit_nodematch <- proc.time()
   
-  # Stage 1: Nelder-Mead
-  cat("  Stage 1: Nelder-Mead optimization (max 500 iterations)...\n")
-  t_stage1_nm <- proc.time()
-  fit_stage1_nm <- tryCatch(
+  fit_inhom_nodematch <- tryCatch(
     fit_hawkesGrowthNet_inhom(
       params_init = params_init_nodematch,
       time_window = time_window_01,
@@ -374,106 +232,16 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
       cache_intensity = TRUE,
       cores = N_CORES
     ),
-    error = function(e) { cat("  ERROR: Stage 1 (Nelder-Mead) failed:", e$message, "\n"); NULL }
+    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
   )
-  elapsed_stage1_nm <- (proc.time() - t_stage1_nm)[3]
-  
-  if (!is.null(fit_stage1_nm)) {
-    cat("  Stage 1 completed:", round(elapsed_stage1_nm, 1), "s\n")
-    cat("  Stage 1 convergence:", fit_stage1_nm$fit$convergence, "\n")
-    
-    # Stage 2: L-BFGS-B
-    cat("  Stage 2: L-BFGS-B optimization (max 500 iterations)...\n")
-    t_stage2_nm <- proc.time()
-    
-    skel_stage2_nm <- params_init_nodematch
-    skel_stage2_nm$vertex_categorical_levels <- NULL
-    params_init_stage2_nm <- relist(fit_stage1_nm$fit$par, skeleton = skel_stage2_nm)
-    params_init_stage2_nm$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
-    params_init_stage2_nm$K <- params_init_nodematch$K
-    params_init_stage2_nm$mu <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-    
-    fit_stage2_nm <- tryCatch(
-      fit_hawkesGrowthNet_inhom(
-        params_init = params_init_stage2_nm,
-        time_window = time_window_01,
-        mark_filtration = net_raw,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = inhom_bg$mu_vec,
-        integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS_NODEMATCH,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        max_node_time = 1,
-        method = "L-BFGS-B",
-        maxit = 500,
-        trace = 1,
-        reltol = 1e-8,
-        verbose = FALSE,
-        fixed_params = c("K", "mu"),
-        parscale = p_scale_nodematch,
-        cache_intensity = TRUE,
-        cores = N_CORES
-      ),
-      error = function(e) { cat("  ERROR: Stage 2 (L-BFGS-B) failed:", e$message, "\n"); NULL }
-    )
-    elapsed_stage2_nm <- (proc.time() - t_stage2_nm)[3]
-    
-    if (!is.null(fit_stage2_nm)) {
-      cat("  Stage 2 completed:", round(elapsed_stage2_nm, 1), "s\n")
-      cat("  Stage 2 convergence:", fit_stage2_nm$fit$convergence, "\n")
-      fit_inhom_nodematch <- fit_stage2_nm
-      stage2_succeeded_nm <- TRUE
-    } else {
-      cat("  Stage 2 failed; using Stage 1 result\n")
-      fit_inhom_nodematch <- fit_stage1_nm
-      stage2_succeeded_nm <- FALSE
-    }
-  } else {
-    cat("  Stage 1 failed; attempting single-stage L-BFGS-B...\n")
-    stage2_succeeded_nm <- FALSE
-    fit_inhom_nodematch <- tryCatch(
-      fit_hawkesGrowthNet_inhom(
-        params_init = params_init_nodematch,
-        time_window = time_window_01,
-        mark_filtration = net_raw,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = inhom_bg$mu_vec,
-        integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS_NODEMATCH,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        max_node_time = 1,
-        method = "L-BFGS-B",
-        maxit = 500,
-        trace = 1,
-        reltol = 1e-8,
-        verbose = FALSE,
-        fixed_params = c("K", "mu"),
-        parscale = p_scale_nodematch,
-        cache_intensity = TRUE,
-        cores = N_CORES
-      ),
-      error = function(e) { cat("  ERROR: Single-stage L-BFGS-B failed:", e$message, "\n"); NULL }
-    )
-  }
   
   elapsed_fit_nodematch <- (proc.time() - t_fit_nodematch)[3]
   if (!is.null(fit_inhom_nodematch)) {
-    if (exists("stage2_succeeded_nm") && stage2_succeeded_nm && exists("fit_stage1_nm") && !is.null(fit_stage1_nm)) {
-      total_iter_nm <- fit_stage1_nm$fit$counts[1] + fit_inhom_nodematch$fit$counts[1]
-    } else if (exists("fit_stage1_nm") && !is.null(fit_stage1_nm)) {
-      total_iter_nm <- fit_stage1_nm$fit$counts[1]
-    } else {
-      total_iter_nm <- fit_inhom_nodematch$fit$counts[1]
-    }
-    cat("  nodeMatch fit completed:", round(elapsed_fit_nodematch, 1), "s (",
-        round(elapsed_fit_nodematch / 60, 1), "min)\n")
-    cat("  Final par:", paste(round(fit_inhom_nodematch$fit$par, 4), collapse = ", "), "\n")
-    cat("  Final convergence:", fit_inhom_nodematch$fit$convergence, "\n")
-    cat("  Total iterations:", total_iter_nm, "\n")
+    cat("  Fit completed:", round(elapsed_fit_nodematch, 1), "s (", round(elapsed_fit_nodematch / 60, 1), "min)\n")
+    cat("  Convergence:", fit_inhom_nodematch$fit$convergence, "\n")
+    cat("  Iterations:", fit_inhom_nodematch$fit$counts[1], "\n")
   } else {
-    cat("  nodeMatch fit FAILED after", round(elapsed_fit_nodematch, 1), "s\n")
+    cat("  Fit FAILED after", round(elapsed_fit_nodematch, 1), "s\n")
   }
   cat("  Step 2b total:", round((proc.time() - t_step_nodematch)[3], 1), "s\n\n")
 } else {

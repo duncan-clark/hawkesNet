@@ -277,10 +277,6 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   }
 
   flat_par <- unlist(params_init)
-  cat("DEBUG: Flattened parameters before optimization:\n")
-  cat("  Total parameters:", length(flat_par), "\n")
-  cat("  CS_params in flat_par:", sum(grepl("^CS_params", names(flat_par))), "\n")
-  cat("  Parameter names:", paste(names(flat_par), collapse=", "), "\n")
   optim_args <- list(
     par = flat_par,
     fn = optim_func,
@@ -323,10 +319,6 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   cat("Inhomogeneous fit results:\n")
-  cat("Total parameters in fit table:", nrow(fit_table), "\n")
-  cat("CS_params found:", sum(grepl("^CS_params", names(fit$par))), "\n")
-  cat("After renaming, nodeMix parameters:", sum(grepl("^nodemix", fit_table$parameter)), "\n")
-  # Print all rows explicitly (max = NULL means print all rows)
   print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
     message("(Standard errors not available; install numDeriv for SEs.)")

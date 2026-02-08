@@ -22,4 +22,6 @@ Suggests:
     testthat (>= 3.0.0),
     networkDynamic,
     animation,
-    numDeriv
+    numDeriv,
+    gender,
+    genderdata

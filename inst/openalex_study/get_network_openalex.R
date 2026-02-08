@@ -80,13 +80,28 @@ get_network <- function(email = "",
   message("Predicting author genders...")
   unique_names <- unique(na.omit(nodes$first_name))
   unique_names <- unique_names[unique_names != ""]
-  if (length(unique_names) > 0 && exists("gender", mode = "function")) {
-    gender_preds <- gender(unique_names) %>%
-      dplyr::select(first_name = name, predicted_gender = gender)
-    nodes <- nodes %>%
-      dplyr::left_join(gender_preds, by = "first_name") %>%
-      dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
+  if (length(unique_names) > 0 && requireNamespace("gender", quietly = TRUE) && 
+      requireNamespace("genderdata", quietly = TRUE)) {
+    tryCatch({
+      # Load gender function explicitly
+      gender_func <- get("gender", envir = asNamespace("gender"))
+      gender_preds <- gender_func(unique_names) %>%
+        dplyr::select(first_name = name, predicted_gender = gender)
+      nodes <- nodes %>%
+        dplyr::left_join(gender_preds, by = "first_name") %>%
+        dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
+      # Check if gender prediction actually worked
+      gender_counts <- table(nodes$predicted_gender, useNA = "ifany")
+      message("  Gender distribution: ", paste(names(gender_counts), "=", gender_counts, collapse = ", "))
+      if (all(nodes$predicted_gender == "unknown", na.rm = TRUE)) {
+        warning("⚠ All genders are 'unknown' - gender prediction may have failed. Check if 'gender' and 'genderdata' packages are installed.")
+      }
+    }, error = function(e) {
+      warning("⚠ Gender prediction failed: ", e$message, "\n  Setting all genders to 'unknown'. Install 'gender' and 'genderdata' packages for gender prediction.")
+      nodes$predicted_gender <<- "unknown"
+    })
   } else {
+    warning("⚠ 'gender' or 'genderdata' packages not available. All genders set to 'unknown'.")
     nodes$predicted_gender <- "unknown"
   }
   min_d <- min(nodes$date, na.rm = TRUE)
