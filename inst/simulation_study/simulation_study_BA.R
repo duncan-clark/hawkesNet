@@ -420,7 +420,7 @@ if(INVESTIGATE){
 if(RUN_CONSISTENCY){
   
   # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 25, 50,75,100,150,200)
+  time_windows <- c(5, 10, 25, 50,75,100)
   N_SIMS_CONSISTENCY <- 50
   
   # Parameters (Standard/Stable regime)
