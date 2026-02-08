@@ -318,8 +318,10 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   }
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
-  message("Inhomogeneous fit results:")
-  message("Total parameters in fit table: ", nrow(fit_table))
+  cat("Inhomogeneous fit results:\n")
+  cat("Total parameters in fit table:", nrow(fit_table), "\n")
+  cat("CS_params found:", sum(grepl("^CS_params", names(fit$par))), "\n")
+  cat("After renaming, nodeMix parameters:", sum(grepl("^nodemix", fit_table$parameter)), "\n")
   # Print all rows explicitly (max = NULL means print all rows)
   print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {

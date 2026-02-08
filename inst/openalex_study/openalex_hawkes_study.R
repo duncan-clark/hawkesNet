@@ -10,14 +10,32 @@
 # Load hawkesGrowthNet package
 # Priority: use devtools::load_all() to ensure latest code is used
 # Fallback: use installed package if devtools unavailable
+cat("Current working directory:", getwd(), "\n")
+cat("DESCRIPTION file exists:", file.exists("DESCRIPTION"), "\n")
 if (file.exists("DESCRIPTION") && requireNamespace("devtools", quietly = TRUE)) {
   cat("Loading hawkesGrowthNet from current directory (devtools::load_all)...\n")
-  devtools::load_all(".")
+  # Force reload to ensure latest code
+  if ("package:hawkesGrowthNet" %in% search()) {
+    detach("package:hawkesGrowthNet", unload = TRUE)
+  }
+  devtools::load_all(".", quiet = FALSE)
+  # Verify we have the latest version by checking for a recent function
+  if (exists("rename_CS_params_in_table", envir = asNamespace("hawkesGrowthNet"))) {
+    cat("Package loaded successfully. Checking for latest code...\n")
+    # Check if the function has the grep-based fix (should have cs_indices <- grep)
+    fn_body <- deparse(body(get("rename_CS_params_in_table", envir = asNamespace("hawkesGrowthNet"))))
+    if (any(grepl("grep.*CS_params", fn_body))) {
+      cat("✓ Latest code detected (grep-based CS_params renaming)\n")
+    } else {
+      warning("⚠ Old code detected - rename_CS_params_in_table may not have latest fixes")
+    }
+  }
 } else {
   # Fallback: try installed package
   tryCatch({
     cat("Loading hawkesGrowthNet from installed package...\n")
     library(hawkesGrowthNet)
+    warning("⚠ Using installed package - may not have latest code. Consider using devtools::load_all()")
   }, error = function(e) {
     stop("hawkesGrowthNet package not found. Please install it or run from package root with devtools available.")
   })
