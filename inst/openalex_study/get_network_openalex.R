@@ -85,11 +85,31 @@ get_network <- function(email = "",
     tryCatch({
       # Load gender function explicitly
       gender_func <- get("gender", envir = asNamespace("gender"))
-      gender_preds <- gender_func(unique_names) %>%
-        dplyr::select(first_name = name, predicted_gender = gender)
+      
+      # Use publication years as proxy for birth years (assuming authors are ~30-50 years old)
+      # Calculate approximate birth years from publication years
+      pub_years <- unique(na.omit(nodes$year))
+      if (length(pub_years) > 0) {
+        # Estimate birth years: assume authors are 30-50 years old when publishing
+        # Use a wide range to cover most cases
+        birth_year_min <- max(1930, min(pub_years, na.rm = TRUE) - 50)
+        birth_year_max <- max(pub_years, na.rm = TRUE) - 25
+        years_range <- c(birth_year_min, birth_year_max)
+      } else {
+        # Default to wide range if no years available
+        years_range <- c(1932, 2012)
+      }
+      
+      # Call gender() with years parameter
+      gender_preds <- gender_func(unique_names, years = years_range, method = "ssa") %>%
+        dplyr::select(first_name = name, predicted_gender = gender) %>%
+        # Handle case where multiple rows per name (shouldn't happen with unique names, but be safe)
+        dplyr::distinct(first_name, .keep_all = TRUE)
+      
       nodes <- nodes %>%
         dplyr::left_join(gender_preds, by = "first_name") %>%
         dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
+      
       # Check if gender prediction actually worked
       gender_counts <- table(nodes$predicted_gender, useNA = "ifany")
       message("  Gender distribution: ", paste(names(gender_counts), "=", gender_counts, collapse = ", "))
