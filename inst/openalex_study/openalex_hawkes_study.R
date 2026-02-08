@@ -29,7 +29,7 @@ source(file.path(PKG_ROOT, "inst", "openalex_study", "get_network_openalex.R"))
 # =============================================================================
 EMAIL <- Sys.getenv("OPENALEX_EMAIL", "duncan-clark@outlook.com")
 SEARCH_STRING <- Sys.getenv("OPENALEX_STRING", "Hawkes")
-PAGES <- as.integer(Sys.getenv("OPENALEX_PAGES", 10))
+PAGES <- as.integer(Sys.getenv("OPENALEX_PAGES", 100))
 PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
