@@ -168,54 +168,38 @@ if (!is.null(inhom_bg) && !is.null(fit_inhom)) {
   exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 4L
   
-  # Reconstruct fitted params from nodeMix fit - need to extract values correctly
-  # First, reconstruct nodeMix params properly
-  skel_nodemix <- params_init_inhom
-  skel_nodemix$vertex_categorical_levels <- NULL
-  params_fitted_nodemix <- relist(fit_inhom$fit$par, skeleton = skel_nodemix)
-  params_fitted_nodemix$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+  # Extract fitted parameters from nodeMix fit
+  skel <- params_init_inhom
+  skel$vertex_categorical_levels <- NULL
+  params_fitted <- relist(fit_inhom$fit$par, skeleton = skel)
+  params_fitted$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+  params_fitted <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+    params_fitted, params_init_inhom$vertex_categorical_levels)
+  params_fitted <- hawkesGrowthNet:::repair_vertex_categorical_params(params_fitted, eps = 1e-6)
   
-  # Restore vertex_categorical names and repair parameters
-  params_fitted_nodemix <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-    params_fitted_nodemix, params_init_inhom$vertex_categorical_levels)
-  params_fitted_nodemix <- hawkesGrowthNet:::repair_vertex_categorical_params(params_fitted_nodemix, eps = 1e-6)
+  # Build nodeMatch params_init: keep structural params, replace nodeMix with nodeMatch
+  # Structural CS_params (edges, triangles, stars) are first 4; nodeMix terms are 5-10
+  cs_structural <- head(params_fitted$CS_params, 4)  # edges, triangles, star2, star3
+  cs_nodemix <- tail(params_fitted$CS_params, -4)     # nodeMix terms (if any)
+  cs_nodematch <- if (length(cs_nodemix) > 0) mean(cs_nodemix) else 0
   
-  # Now build nodeMatch params_init from scratch using extracted values
-  # nodeMix has 10 CS_params: edges(1) + triangles(1) + star2(1) + star3(1) + nodeMix(6) = 10
-  # nodeMatch has 5 CS_params: edges(1) + triangles(1) + star2(1) + star3(1) + nodeMatch(1) = 5
-  # Extract structural params (first 4) and use average of nodeMix params as starting point for nodeMatch
-  cs_structural <- params_fitted_nodemix$CS_params[1:min(4, length(params_fitted_nodemix$CS_params))]
-  cs_nodemix <- if (length(params_fitted_nodemix$CS_params) > 4) {
-    params_fitted_nodemix$CS_params[5:length(params_fitted_nodemix$CS_params)]
-  } else {
-    numeric(0)
-  }
-  # Use average of nodeMix parameters as starting point for nodeMatch (or 0 if none)
-  cs_nodematch_start <- if (length(cs_nodemix) > 0) mean(cs_nodemix) else 0
-  
-  # Build proper nodeMatch skeleton
   params_init_nodematch <- list(
     mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-    beta_overall = params_fitted_nodemix$beta_overall,
-    K = params_init_inhom$K,  # Keep original K (fixed)
-    beta_edges = params_fitted_nodemix$beta_edges,
-    node_lambda = params_fitted_nodemix$node_lambda,
-    CS_params = c(cs_structural, cs_nodematch_start)[1:n_cs_nodematch],  # Ensure correct length
-    vertex_categorical = params_fitted_nodemix$vertex_categorical,  # Keep vertex_categorical from nodeMix fit
+    beta_overall = params_fitted$beta_overall,
+    K = params_init_inhom$K,
+    beta_edges = params_fitted$beta_edges,
+    node_lambda = params_fitted$node_lambda,
+    CS_params = c(cs_structural, cs_nodematch)[1:n_cs_nodematch],
+    vertex_categorical = params_fitted$vertex_categorical,
     vertex_categorical_levels = params_init_inhom$vertex_categorical_levels
   )
   
   # Ensure CS_params has correct length
-  if (length(params_init_nodematch$CS_params) != n_cs_nodematch) {
-    if (length(params_init_nodematch$CS_params) < n_cs_nodematch) {
-      params_init_nodematch$CS_params <- c(params_init_nodematch$CS_params, 
-                                            rep(0, n_cs_nodematch - length(params_init_nodematch$CS_params)))
-    } else {
-      params_init_nodematch$CS_params <- params_init_nodematch$CS_params[1:n_cs_nodematch]
-    }
+  if (length(params_init_nodematch$CS_params) < n_cs_nodematch) {
+    params_init_nodematch$CS_params <- c(params_init_nodematch$CS_params, 
+                                          rep(0, n_cs_nodematch - length(params_init_nodematch$CS_params)))
   }
   
-  # Repair vertex_categorical one more time to ensure validity
   params_init_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch, eps = 1e-6)
   
   # Keep vertex_categorical - nodeMatch still needs it to identify node attributes
