@@ -21,7 +21,24 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
 }
 
 # Paths: run from package root (directory containing inst/)
+# Try to find package root: check current directory and parent directories
 PKG_ROOT <- getwd()
+if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) {
+  # Try parent directory
+  parent_dir <- dirname(PKG_ROOT)
+  if (file.exists(file.path(parent_dir, "DESCRIPTION"))) {
+    PKG_ROOT <- parent_dir
+  } else {
+    # Try looking for inst/ directory
+    if (file.exists(file.path(PKG_ROOT, "inst", "openalex_study", "openalex_hawkes_study.R"))) {
+      # We're already in package root
+    } else {
+      warning("Could not find package root. Using current directory: ", PKG_ROOT)
+    }
+  }
+}
+cat("Package root:", PKG_ROOT, "\n")
+cat("Working directory:", getwd(), "\n")
 source(file.path(PKG_ROOT, "inst", "openalex_study", "get_network_openalex.R"))
 
 # =============================================================================
@@ -53,7 +70,35 @@ TOPIC <- "Point processes and geometric inequalities"
 t_total <- proc.time()
 cat("=== OpenAlex Hawkes Study ===\n")
 cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "\n")
-cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n\n")
+cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n")
+cat("  Package root:", PKG_ROOT, "\n")
+cat("  Working directory:", getwd(), "\n")
+cat("  Cluster output dir:", file.path(PKG_ROOT, "cluster_output"), "\n")
+
+# Test write permissions early
+test_dir <- file.path(PKG_ROOT, "cluster_output")
+if (!dir.exists(test_dir)) {
+  test_create <- tryCatch({
+    dir.create(test_dir, showWarnings = TRUE, recursive = TRUE)
+    cat("  Created cluster_output directory\n")
+  }, error = function(e) {
+    cat("  WARNING: Cannot create cluster_output directory:", e$message, "\n")
+  })
+} else {
+  cat("  cluster_output directory exists\n")
+}
+
+# Test write permissions
+test_file <- file.path(test_dir, ".test_write")
+test_write <- tryCatch({
+  writeLines("test", test_file)
+  unlink(test_file)
+  cat("  Write permissions: OK\n")
+}, error = function(e) {
+  cat("  WARNING: Cannot write to cluster_output directory:", e$message, "\n")
+})
+
+cat("\n")
 
 cat("--- Step 1: Fetch data and prepare network ---\n")
 t_step <- proc.time()
@@ -520,9 +565,46 @@ save_list <- list(
   time_window_01 = time_window_01
 )
 rds_path <- file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
-dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
-saveRDS(save_list, rds_path)
-cat("  Saved to", rds_path, "\n\n")
+cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+cat("  Saving to:", rds_path, "\n")
+cat("  Package root:", PKG_ROOT, "\n")
+cat("  Cluster output dir:", cluster_output_dir, "\n")
+
+# Create directory with error checking
+dir_result <- tryCatch({
+  dir.create(cluster_output_dir, showWarnings = TRUE, recursive = TRUE)
+}, error = function(e) {
+  cat("  ERROR creating directory:", e$message, "\n")
+  FALSE
+})
+
+if (!dir_result && !dir.exists(cluster_output_dir)) {
+  cat("  ERROR: Failed to create cluster_output directory\n")
+  cat("  Attempting to save to current directory instead...\n")
+  rds_path <- "results_openalex_full.RDS"
+}
+
+# Save with error checking
+save_result <- tryCatch({
+  saveRDS(save_list, rds_path)
+  cat("  Successfully saved to:", rds_path, "\n")
+  cat("  File exists:", file.exists(rds_path), "\n")
+  if (file.exists(rds_path)) {
+    file_info <- file.info(rds_path)
+    cat("  File size:", round(file_info$size / 1024^2, 2), "MB\n")
+  }
+  TRUE
+}, error = function(e) {
+  cat("  ERROR saving file:", e$message, "\n")
+  cat("  Attempted path:", rds_path, "\n")
+  FALSE
+})
+
+if (!save_result) {
+  cat("  WARNING: Failed to save results file!\n")
+}
+
+cat("\n")
 
 # =============================================================================
 # 6. PAPER_OUTPUT: rehydrate and produce figures/tables
