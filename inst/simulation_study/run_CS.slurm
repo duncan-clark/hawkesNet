@@ -5,7 +5,7 @@
 #SBATCH --time=50:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=128
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/simulation_study/run_CS.slurm

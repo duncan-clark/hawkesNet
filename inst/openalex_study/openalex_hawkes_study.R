@@ -57,6 +57,8 @@ GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
+# Set FALSE to skip nodeMix fit and GOF (nodeMatch fit still problematic; nodeMix is heavier and often OOM)
+RUN_NODEMIX <- FALSE
 TOPIC <- "Point processes and geometric inequalities"
 
 
@@ -69,7 +71,7 @@ TOPIC <- "Point processes and geometric inequalities"
 # =============================================================================
 t_total <- proc.time()
 cat("=== OpenAlex Hawkes Study ===\n")
-cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "\n")
+cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "| RUN_NODEMIX:", RUN_NODEMIX, "\n")
 cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n")
 cat("  Package root:", PKG_ROOT, "\n")
 cat("  Working directory:", getwd(), "\n")
@@ -375,8 +377,9 @@ if (!is.null(inhom_bg)) {
 # 2c. nodeMix fit (initialized from nodeMatch fit)
 # =============================================================================
 fit_inhom <- NULL
+params_init_inhom <- NULL
 FORMULA_RHS <- "edges + triangles + star(c(2,3)) + nodeMix('gender')"
-if (!is.null(inhom_bg)) {
+if (!is.null(inhom_bg) && RUN_NODEMIX) {
   cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
   cat("  Formula:", FORMULA_RHS, "\n")
   t_step_nodemix <- proc.time()
@@ -538,7 +541,8 @@ if (!is.null(inhom_bg)) {
   }
   cat("  Step 2c total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
 } else {
-  cat("  No inhomogeneous background; skipping nodeMix fit\n")
+  if (is.null(inhom_bg)) cat("  No inhomogeneous background; skipping nodeMix fit\n")
+  else cat("  RUN_NODEMIX = FALSE; skipping nodeMix fit\n")
 }
 
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
@@ -687,7 +691,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
 }
 
 # GOF for nodeMix model (third)
-if (RUN_GOF && !is.null(fit_inhom)) {
+if (RUN_GOF && RUN_NODEMIX && !is.null(fit_inhom)) {
   cat("\n  GOF for nodeMix model...\n")
   
   # Reconstruct params_init for nodeMix
@@ -725,7 +729,8 @@ if (RUN_GOF && !is.null(fit_inhom)) {
   )
 } else {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMix GOF\n")
-  if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
+  else if (!RUN_NODEMIX) cat("  RUN_NODEMIX = FALSE; skipping nodeMix GOF\n")
+  else if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
 }
 
 cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
