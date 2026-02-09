@@ -253,12 +253,14 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @param params_init Initial parameter list used for fitting (needed to reconstruct full parameter structure).
 #' @param PMF_mark Mark probability mass function (e.g., \code{PMF_mark_CS}).
 #' @param cond_intensity Conditional intensity function (cached closure from fitting).
+#'   If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automatically for simulations.
 #' @param formula_RHS Character string RHS of ERNM formula (e.g., "edges + triangles + star(c(2,3))").
 #' @param time_window Time window for simulations (default c(0, 0.05)).
 #' @param truncation Truncation parameter for mark PMF (default 100).
 #' @param mark_decay Mark decay type: "node_entrance" or "activity" (default "activity").
 #' @param max_node_time Maximum node time (default 1).
-#' @param inhom_bg Optional inhomogeneous background object (for computing mu from integral_bg).
+#' @param inhom_bg Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
+#'   If provided, simulations use \code{cond_intensity_inhom} with time-varying background rate to match the fitted model.
 #' @param n_sim Number of simulated networks to generate (default 50).
 #' @param cores Number of cores for parallelization (default 7).
 #' @param max_deg Maximum degree for degree distribution (default 15).
@@ -320,10 +322,17 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
   pfit$K <- params_init$K
   
-  # Compute mu from inhomogeneous background if provided
-  if (!is.null(inhom_bg)) {
+  # Handle inhomogeneous background
+  use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
+  
+  if (use_inhom) {
+    # For inhomogeneous: mu is not used directly, but we set it for compatibility
+    # The actual mu_at_t will be computed from mu_fun during simulation
     Tval <- time_window[2] - time_window[1]
-    pfit$mu <- inhom_bg$integral_bg / Tval
+    pfit$mu <- inhom_bg$integral_bg / Tval  # Average mu for compatibility
+    if (verbose) {
+      cat("  Using inhomogeneous background for simulations (matches fitted model)\n")
+    }
   } else {
     pfit$mu <- params_init$mu
   }
@@ -365,7 +374,14 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   }
   
   # Parallelize GOF simulations
-  if (verbose) cat("  Using", cores, "cores for parallel GOF simulations...\n")
+  if (verbose) {
+    cat("  Using", cores, "cores for parallel GOF simulations...\n")
+    if (use_inhom) {
+      cat("  Simulations will use inhomogeneous background (cond_intensity_inhom)\n")
+    } else {
+      cat("  Simulations will use homogeneous background (cond_intensity)\n")
+    }
+  }
   sim_results <- tryCatch({
     parallel::mclapply(seq_len(n_sim), function(i) {
       s <- tryCatch(
@@ -373,7 +389,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           params = pfit,
           time_window = time_window,
           PMF_mark = PMF_mark,
-          cond_intensity = cond_intensity,
+          cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom if use_inhom
           formula_RHS = formula_RHS,
           truncation = truncation,
           mark_decay = mark_decay,
@@ -381,7 +397,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           hashed_edges = TRUE,
           verbose = FALSE,
           mu_multiplier = mu_multiplier,
-          stop_on_full_network = FALSE
+          stop_on_full_network = FALSE,
+          inhom_bg = inhom_bg  # Pass inhom_bg to enable inhomogeneous simulation
         ),
         error = function(e) { 
           return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 

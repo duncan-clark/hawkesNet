@@ -618,19 +618,20 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
   params_init_structural_gof$K <- params_init_structural$K
   params_init_structural_gof$mu <- params_init_structural$mu
   
-  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
+  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
+  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results_structural <- gof(
     fit = fit_inhom_structural,
     net_obs = net_raw,
     params_init = params_init_structural_gof,
     PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS_STRUCTURAL,
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
     max_node_time = 1,
-    inhom_bg = inhom_bg,
+    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
     cores = N_CORES,
     max_deg = 15,
@@ -659,20 +660,20 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     params_init_nodematch_gof, params_init_nodematch$vertex_categorical_levels)
   params_init_nodematch_gof <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodematch_gof, eps = 1e-6)
   
-  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
-  # The average mu from inhom_bg will be used (computed in gof() function)
+  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
+  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results_nodematch <- gof(
     fit = fit_inhom_nodematch,
     net_obs = net_raw,
     params_init = params_init_nodematch_gof,
     PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS_NODEMATCH,
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
     max_node_time = 1,
-    inhom_bg = inhom_bg,
+    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
     cores = N_CORES,
     max_deg = 15,
@@ -701,20 +702,20 @@ if (RUN_GOF && !is.null(fit_inhom)) {
     params_init_nodemix_gof, params_init_inhom$vertex_categorical_levels)
   params_init_nodemix_gof <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodemix_gof, eps = 1e-6)
   
-  # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
-  # The average mu from inhom_bg will be used (computed in gof() function)
+  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
+  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results <- gof(
     fit = fit_inhom,
     net_obs = net_raw,
     params_init = params_init_nodemix_gof,
     PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS,
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
     max_node_time = 1,
-    inhom_bg = inhom_bg,
+    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
     cores = N_CORES,
     max_deg = 15,

@@ -8,8 +8,11 @@
 **hawkesGrowthNet** is an R package that provides tools for simulating and analyzing networks that grow with **Hawkes process** arrival times.
 
 - Generate events under various Hawkesian network growth formulations
-- Estimate model parameters for hawkesGrowthNet models
+- Estimate model parameters for hawkesGrowthNet models (homogeneous and inhomogeneous background rates)
+- Goodness-of-fit (GOF) diagnostics with simulations matching the fitted model
 - Visualize network growth over time (see `make_network_growth_animation`; requires suggested packages `networkDynamic` and `animation`)
+
+**Note:** When using inhomogeneous background rates (KDE-based), GOF simulations automatically use `cond_intensity_inhom` with time-varying background to match the fitted model exactly.
 
 ---
 

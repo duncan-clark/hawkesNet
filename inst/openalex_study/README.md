@@ -88,4 +88,4 @@ from the package root; the script will load the RDS and produce the paper output
 - **Waiting times between formations**  
   For triangles, 2-stars (node degree ≥ 2), and 3-stars (node degree ≥ 3): the time *gaps* between consecutive formation events (each time the count of triangles / 2-stars / 3-stars increases). Observed vs simulated distributions (boxplots).
 
-Simulated networks are generated from the fitted inhomogeneous HawkesNet (same formula and mark PMF as the fit; `mu` set from the KDE background integral over the time window).
+Simulated networks are generated from the fitted inhomogeneous HawkesNet using **`cond_intensity_inhom`** with time-varying background rate (same formula and mark PMF as the fit). The background rate `mu(t)` is computed from the KDE fit (`inhom_bg$mu_fit$mu_fun`) at each event time during simulation, ensuring the simulations match the fitted inhomogeneous model exactly.

@@ -152,20 +152,25 @@ cond_intensity <- function(new_net,
 #' Simulate a Hawkes-driven network growth process
 #'
 #' Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
+#' Supports both homogeneous (constant mu) and inhomogeneous (time-varying mu) background rates.
 #'
 #' @param params List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).
+#'   For inhomogeneous background, \code{mu} is ignored and \code{mu_at_t} is used instead.
 #' @param time_window Numeric vector \code{c(t0, t1)}.
 #' @param PMF_mark Mark PMF function (e.g. \code{PMF_mark_BA} or \code{PMF_mark_CS}).
-#' @param cond_intensity Conditional intensity function (e.g. \code{cond_intensity}).
+#' @param cond_intensity Conditional intensity function (e.g. \code{cond_intensity} or \code{cond_intensity_inhom}).
+#'   If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automatically.
 #' @param hashed_edges If \code{TRUE}, use a hash for edge lookup (default \code{FALSE}).
 #' @param verbose Print progress (default \code{FALSE}).
 #' @param mu_multiplier Multiplier for thinning upper bound (default 10).
 #' @param joint_accept Logical (default \code{FALSE}); joint acceptance for mark and time.
 #' @param n_mark_sample Optional number of mark samples per proposal.
 #' @param stop_on_full_network If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.
+#' @param inhom_bg Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
+#'   If provided, uses \code{cond_intensity_inhom} with time-varying background rate.
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
-#' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
+#' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
 #' @rdname sim_hawkesGrowthNet
 #' @export
 sim_hawkesGrowthNet <- function(params,
@@ -178,20 +183,40 @@ sim_hawkesGrowthNet <- function(params,
                                 joint_accept = F,
                                 n_mark_sample = NULL,
                                 stop_on_full_network = TRUE, # if TRUE, stop when no candidate edges (full network); if FALSE, warn and continue with no new edges
+                                inhom_bg = NULL, # optional inhomogeneous background object
                                 ... # to be past to PMF_mark
 
 
 ){
   t1 <- proc.time()
   validate_point_process_params(params)
-  # simulate the background points (can only simulate their times right now)
-  mu <- params$mu
+  
+  # Determine if using inhomogeneous background
+  use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
+  
+  if (use_inhom) {
+    # Inhomogeneous: get mu_fun and compute max mu for thinning bound
+    mu_fun <- inhom_bg$mu_fit$mu_fun
+    # Evaluate mu_fun on a grid to find maximum for thinning bound
+    t_grid <- seq(time_window[1], time_window[2], length.out = 1000)
+    mu_grid <- pmax(mu_fun(t_grid), 1e-12)
+    mu_max <- max(mu_grid, na.rm = TRUE)
+    if (!is.finite(mu_max) || mu_max <= 0) {
+      mu_max <- params$mu  # Fallback to params$mu if mu_fun fails
+    }
+    lambda <- mu_multiplier * mu_max
+    if (verbose) {
+      cat("Using inhomogeneous background: mu_max =", mu_max, "for thinning bound\n")
+    }
+  } else {
+    # Homogeneous: use constant mu
+    mu <- params$mu
+    lambda <- mu_multiplier * mu
+  }
+  
   theta <- params$theta
   beta <- params$beta
   K <- params$K
-
-  # poisson in time lambda
-  lambda <- mu_multiplier*mu
 
   # Initialize the output list of events
   events = list()
@@ -252,15 +277,35 @@ sim_hawkesGrowthNet <- function(params,
       }else{
         edge_hash <- NULL
       }
+      # Get mu_at_t for inhomogeneous case
+      mu_at_t <- if (use_inhom) {
+        mu_val <- mu_fun(current_event$time)
+        pmax(mu_val, 1e-12)  # Ensure positive
+      } else {
+        NULL
+      }
+      
       if(joint_accept){
-        intensity <- cond_intensity(new_net = net,
-                                    t = current_event$time,
-                                    mark_filtration = current_net,
-                                    PMF_mark = PMF_mark,
-                                    params = params,
-                                    new_edge_hash = edge_hash,
-                                    ...
-        )$result
+        if (use_inhom) {
+          intensity <- cond_intensity_inhom(new_net = net,
+                                           t = current_event$time,
+                                           mark_filtration = current_net,
+                                           PMF_mark = PMF_mark,
+                                           params = params,
+                                           mu_at_t = mu_at_t,
+                                           new_edge_hash = edge_hash,
+                                           ...
+          )$result
+        } else {
+          intensity <- cond_intensity(new_net = net,
+                                     t = current_event$time,
+                                     mark_filtration = current_net,
+                                     PMF_mark = PMF_mark,
+                                     params = params,
+                                     new_edge_hash = edge_hash,
+                                     ...
+          )$result
+        }
       }else{
         if(!is.null(n_mark_sample)){
           imp_sample <- sapply(1:n_mark_sample,function(i){
@@ -283,27 +328,52 @@ sim_hawkesGrowthNet <- function(params,
             }else{
               edge_hash <- NULL
             }
-            intensity <- cond_intensity(new_net = net,
-                                        t = current_event$time,
-                                        mark_filtration = current_net,
-                                        PMF_mark = PMF_mark,
-                                        params = params,
-                                        new_edge_hash = edge_hash,
-                                        ...
-            )
+            if (use_inhom) {
+              intensity <- cond_intensity_inhom(new_net = net,
+                                               t = current_event$time,
+                                               mark_filtration = current_net,
+                                               PMF_mark = PMF_mark,
+                                               params = params,
+                                               mu_at_t = mu_at_t,
+                                               new_edge_hash = edge_hash,
+                                               ...
+              )
+            } else {
+              intensity <- cond_intensity(new_net = net,
+                                         t = current_event$time,
+                                         mark_filtration = current_net,
+                                         PMF_mark = PMF_mark,
+                                         params = params,
+                                         new_edge_hash = edge_hash,
+                                         ...
+              )
+            }
             return(intensity$result/mark_sample$mark_sample_density)
           })
           intensity <- mean(imp_sample)
         }else{
-          tmp <- cond_intensity(new_net = net,
-                                t = current_event$time,
-                                mark_filtration = current_net,
-                                PMF_mark = PMF_mark,
-                                params = params,
-                                new_edge_hash = edge_hash,
-                                ...
-          )
-          intensity <- tmp$lambda + tmp$kernel_sum
+          if (use_inhom) {
+            tmp <- cond_intensity_inhom(new_net = net,
+                                       t = current_event$time,
+                                       mark_filtration = current_net,
+                                       PMF_mark = PMF_mark,
+                                       params = params,
+                                       mu_at_t = mu_at_t,
+                                       new_edge_hash = edge_hash,
+                                       ...
+            )
+            intensity <- tmp$lambda + tmp$kernel_sum
+          } else {
+            tmp <- cond_intensity(new_net = net,
+                                 t = current_event$time,
+                                 mark_filtration = current_net,
+                                 PMF_mark = PMF_mark,
+                                 params = params,
+                                 new_edge_hash = edge_hash,
+                                 ...
+            )
+            intensity <- tmp$lambda + tmp$kernel_sum
+          }
         }
         # Use the same proposed mark for acceptance and for updating (do not resample)
       }
@@ -333,8 +403,8 @@ sim_hawkesGrowthNet <- function(params,
       # do nothing since we rejected the point
     }
     if(verbose){
-      print(paste0("time is ",current_event$t, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
-      print(paste0("time is ",current_event$t, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
+      print(paste0("time is ",current_event$time, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
+      print(paste0("time is ",current_event$time, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
     }
     # Concatenate new events to event_queue only if we have only one event left to go
     old_n <- dim(event_queue)[1]
