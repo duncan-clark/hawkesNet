@@ -20,6 +20,17 @@ sbatch inst/openalex_study/run_openalex.slurm
 
 Defaults: 8 CPUs, 32G mem, 24h. Edit `run_openalex.slurm` to change.
 
+### One-shot: pull, install, submit
+
+From package root or from `inst/openalex_study/`:
+
+```bash
+chmod +x inst/openalex_study/pull_install_submit.sh   # once
+./inst/openalex_study/pull_install_submit.sh
+```
+
+This runs: `git pull` → `module load R` → `R --no-save -e "devtools::install()"` → `sbatch inst/openalex_study/run_openalex.slurm`.
+
 ## Runtime (cloud / SLURM)
 
 Yes. With the default settings the job should finish in **reasonable time** (typically well under the 24h limit). Rough breakdown:
