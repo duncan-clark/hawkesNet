@@ -47,14 +47,24 @@ RUN_CONSISTENCY <- FALSE
 MAX_ITER = 2000
 
 N_SIMS <- 100
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
-# Core allocation for consistency study:
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
+# Core allocation: split roughly evenly between inner and outer
 # N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
 # N_CORES_OUTER = parallel sim+fit workers (PSOCK cluster).
 # Total cores used = N_CORES_OUTER * N_CORES_INNER.
 # CS model benefits from inner parallelism (ERNM change stats are expensive).
-N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
+# For 50 cores: split as 7 inner x 7 outer = 49 cores (efficient use)
+# Or 5 inner x 10 outer = 50 cores (uses all cores)
+N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 7))
 N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+# Ensure we don't exceed available cores
+if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
+  # Rebalance: prefer more outer workers for better parallelization
+  N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+}
+cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
+    N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
 
 SEED <- 01267
 
@@ -88,9 +98,10 @@ make_cluster <- function(N_CORES){
 }
 
 if(SIMULATE){
-  # make the cluster:
+  # make the cluster: use N_CORES_OUTER for outer parallelization
   t <- proc.time()
-  cl <- make_cluster(N_CORES)
+  cl <- make_cluster(N_CORES_OUTER)
+  clusterExport(cl, c("N_CORES_INNER"))
   set.seed(SEED)
   
   # Ensure the cluster will be stopped no matter what.
@@ -101,6 +112,7 @@ if(SIMULATE){
   }, add = TRUE)
 
   print("Commencing simulation:")
+  print(paste("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each"))
   sims <- parLapply(cl=cl,1:N_SIMS,function(x){
     results <- tryCatch({
       sim_hawkesGrowthNet(params =  params,
@@ -134,8 +146,9 @@ if(SIMULATE){
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
-  clusterExport(cl, c("params_init"))
+  clusterExport(cl, c("params_init", "N_CORES_INNER"))
   print("Commencing Fitting")
+  print(paste("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each"))
   t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
@@ -149,7 +162,9 @@ if(SIMULATE){
         maxit = MAX_ITER,
         truncation = TRUNCATION,
         fixed_params = c("K"),
-        method = "L-BFGS-B"
+        method = "Nelder-Mead",
+        cores = N_CORES_INNER,
+        cache_intensity = TRUE
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
@@ -216,7 +231,7 @@ if(RUN_CONSISTENCY){
   cat("Setting up cluster...\n")
   t_cluster <- proc.time()
   cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER"))
+  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER"))
   cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
 
   # Storage for results
@@ -234,7 +249,7 @@ if(RUN_CONSISTENCY){
     cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
         N_CORES_INNER, "inner cores...\n")
     t_simfit <- proc.time()
-    res_list <- pblapply(1:N_SIMS_CONSISTENCY, cl = cl, FUN = function(i){
+    res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
 
       # A. Simulate
       sim_res <- tryCatch({
@@ -253,12 +268,17 @@ if(RUN_CONSISTENCY){
 
       # B. Fit - CS options: formula_RHS, fixed_params = c("K")
       # Initialize near true params + small noise for better convergence
-      params_init <- list(mu = params_true$mu * exp(rnorm(1, 0, 0.2)),
-                          beta_overall = params_true$beta_overall * exp(rnorm(1, 0, 0.2)),
-                          K = params_true$K,
-                          beta_edges = params_true$beta_edges * exp(rnorm(1, 0, 0.2)),
-                          node_lambda = params_true$node_lambda * exp(rnorm(1, 0, 0.2)),
-                          CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5))
+      # Ensure all parameters are positive and finite
+      params_init <- list(
+        mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
+        beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
+        K = params_true$K,
+        beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
+        node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+        CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
+      )
+      # Ensure CS_params are finite
+      params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
 
       fit_res <- tryCatch({
         fit_hawkesGrowthNet(params_init = params_init,
@@ -266,19 +286,25 @@ if(RUN_CONSISTENCY){
                             mark_filtration = sim_res$net,
                             PMF_mark = PMF_mark_CS,
                             formula_RHS = "edges + triangles + star(c(2,3))",
-                            maxit = 1000,
+                            maxit = MAX_ITER,
                             truncation = TRUNCATION,
                             cache_intensity = TRUE,
                             verbose = FALSE,
                             fixed_params = c("K"),
                             cores = N_CORES_INNER,
-                            method = "L-BFGS-B")
+                            method = "Nelder-Mead")
       }, error = function(e) return(NULL))
 
-      keep <- (length(fit_res$fit) != 0 & fit_res$fit$convergence == 0 &
-               !any(fit_res$fit$par > 100) & !any(fit_res$fit$par[2] > 10))
-
-      if(is.null(fit_res)) return(NULL)
+      if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
+      
+      # Check if fit succeeded
+      keep <- (!is.null(fit_res$fit) && 
+               length(fit_res$fit) > 0 && 
+               fit_res$fit$convergence == 0 &&
+               all(is.finite(fit_res$fit$par)) &&
+               !any(fit_res$fit$par > 100) && 
+               length(fit_res$fit$par) >= 2 &&
+               fit_res$fit$par[2] <= 10)
 
       # Return row
       return(data.frame(
