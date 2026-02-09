@@ -233,19 +233,34 @@ if (!is.null(inhom_bg)) {
   # Initialize nodeMatch fit from structural fit results
   if (!is.null(fit_inhom_structural) && fit_inhom_structural$fit$convergence == 0) {
     # Extract structural parameters from structural fit
-    skel_structural <- params_init_structural
+    # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
+    skel_structural <- list(
+      mu = params_init_structural$mu,
+      beta_overall = params_init_structural$beta_overall,
+      K = params_init_structural$K,
+      beta_edges = params_init_structural$beta_edges,
+      node_lambda = params_init_structural$node_lambda,
+      CS_params = params_init_structural$CS_params
+    )
     pfit_structural <- tryCatch({
       relist(fit_inhom_structural$fit$par, skeleton = skel_structural)
     }, error = function(e) {
-      cat("  Warning: Failed to extract structural parameters, using independent init\n")
+      cat("  Warning: Failed to extract structural parameters:", e$message, "\n")
+      cat("  Using independent initialization\n")
       NULL
     })
     
     if (!is.null(pfit_structural)) {
-      # Validate extracted parameters
-      if (all(is.finite(unlist(pfit_structural[c("mu", "beta_overall", "K", "beta_edges", "node_lambda")]))) &&
-          all(is.finite(pfit_structural$CS_params)) &&
-          length(pfit_structural$CS_params) >= 4L) {
+      # Validate extracted parameters - check each field individually
+      mu_valid <- is.finite(pfit_structural$mu) && pfit_structural$mu > 0
+      beta_overall_valid <- is.finite(pfit_structural$beta_overall)
+      K_valid <- is.finite(pfit_structural$K)
+      beta_edges_valid <- is.finite(pfit_structural$beta_edges)
+      node_lambda_valid <- is.finite(pfit_structural$node_lambda) && pfit_structural$node_lambda > 0
+      cs_valid <- all(is.finite(pfit_structural$CS_params)) && length(pfit_structural$CS_params) >= 4L
+      
+      if (mu_valid && beta_overall_valid && K_valid && beta_edges_valid && 
+          node_lambda_valid && cs_valid) {
         # Initialize nodeMatch: use structural CS_params for first 4 terms, add nodeMatch term
         cs_structural <- pfit_structural$CS_params[seq_len(min(4L, length(pfit_structural$CS_params)))]
         cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
@@ -373,12 +388,22 @@ if (!is.null(inhom_bg)) {
   # Initialize nodeMix fit from nodeMatch fit results
   if (!is.null(fit_inhom_nodematch) && fit_inhom_nodematch$fit$convergence == 0) {
     # Extract parameters from nodeMatch fit
-    skel_nodematch <- params_init_nodematch
-    skel_nodematch$vertex_categorical_levels <- NULL
+    # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
+    # (params_init_nodematch with vertex_categorical_levels stripped)
+    skel_nodematch <- list(
+      mu = params_init_nodematch$mu,
+      beta_overall = params_init_nodematch$beta_overall,
+      K = params_init_nodematch$K,
+      beta_edges = params_init_nodematch$beta_edges,
+      node_lambda = params_init_nodematch$node_lambda,
+      CS_params = params_init_nodematch$CS_params,
+      vertex_categorical = params_init_nodematch$vertex_categorical
+    )
     pfit_nodematch <- tryCatch({
       relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
     }, error = function(e) {
-      cat("  Warning: Failed to extract nodeMatch parameters, using independent init\n")
+      cat("  Warning: Failed to extract nodeMatch parameters:", e$message, "\n")
+      cat("  Using independent initialization\n")
       NULL
     })
     
@@ -390,24 +415,30 @@ if (!is.null(inhom_bg)) {
         pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
       pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
       
-      # Validate extracted parameters
-      if (all(is.finite(unlist(pfit_nodematch[c("mu", "beta_overall", "K", "beta_edges", "node_lambda")]))) &&
-          all(is.finite(pfit_nodematch$CS_params)) &&
-          length(pfit_nodematch$CS_params) >= 4L &&
-          !is.null(pfit_nodematch$vertex_categorical) &&
-          is.list(pfit_nodematch$vertex_categorical)) {
-        
+      # Validate extracted parameters - check each field individually
+      mu_valid <- is.finite(pfit_nodematch$mu) && pfit_nodematch$mu > 0
+      beta_overall_valid <- is.finite(pfit_nodematch$beta_overall)
+      K_valid <- is.finite(pfit_nodematch$K)
+      beta_edges_valid <- is.finite(pfit_nodematch$beta_edges)
+      node_lambda_valid <- is.finite(pfit_nodematch$node_lambda) && pfit_nodematch$node_lambda > 0
+      cs_valid <- all(is.finite(pfit_nodematch$CS_params)) && length(pfit_nodematch$CS_params) >= 4L
+      vcat_valid <- !is.null(pfit_nodematch$vertex_categorical) && 
+                     is.list(pfit_nodematch$vertex_categorical) &&
+                     "gender" %in% names(pfit_nodematch$vertex_categorical) &&
+                     length(pfit_nodematch$vertex_categorical$gender) == 2L &&
+                     all(is.finite(pfit_nodematch$vertex_categorical$gender)) &&
+                     all(pfit_nodematch$vertex_categorical$gender >= 0) &&
+                     sum(pfit_nodematch$vertex_categorical$gender) < 1
+      
+      if (mu_valid && beta_overall_valid && K_valid && beta_edges_valid && 
+          node_lambda_valid && cs_valid && vcat_valid) {
         # Initialize nodeMix: use nodeMatch CS_params for first 4 terms, add nodeMix terms
         cs_nodematch <- pfit_nodematch$CS_params[seq_len(min(4L, length(pfit_nodematch$CS_params)))]
         cs_padding <- rep(0, max(0L, n_cs - length(cs_nodematch)))
         cs_init_nodemix <- c(cs_nodematch, cs_padding)[seq_len(n_cs)]
         
         # Ensure mu is calculated correctly
-        mu_val <- if (is.finite(pfit_nodematch$mu) && pfit_nodematch$mu > 0) {
-          pfit_nodematch$mu
-        } else {
-          inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-        }
+        mu_val <- pfit_nodematch$mu
         
         params_init_inhom <- list(
           mu = mu_val,
@@ -421,6 +452,10 @@ if (!is.null(inhom_bg)) {
         )
         cat("  Initialized from nodeMatch fit\n")
       } else {
+        cat("  nodeMatch fit parameters invalid:\n")
+        cat("    mu:", mu_valid, "beta_overall:", beta_overall_valid, "K:", K_valid, "\n")
+        cat("    beta_edges:", beta_edges_valid, "node_lambda:", node_lambda_valid, "\n")
+        cat("    CS_params:", cs_valid, "vertex_categorical:", vcat_valid, "\n")
         pfit_nodematch <- NULL  # Force fallback
       }
     }
@@ -784,22 +819,36 @@ if (PAPER_OUTPUT) {
       cat("  Inhomogeneous fit (nodeMix): raw parameters\n")
       print(fit_inhom$fit$par)
     }
-    if (exists("params_init_inhom") && !is.null(params_init_inhom$vertex_categorical)) {
-      skel2 <- params_init_inhom
-      skel2$vertex_categorical_levels <- NULL
-      pfit2 <- relist(fit_inhom$fit$par, skeleton = skel2)
-      pfit2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-      # Restore names and repair parameters before expanding
-      pfit2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-        pfit2, params_init_inhom$vertex_categorical_levels)
-      pfit2 <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit2, eps = 1e-6)
-      if (!is.null(pfit2$vertex_categorical$gender)) {
-        levs <- params_init_inhom$vertex_categorical_levels$gender
-        pgender <- expand_vertex_categorical_probs(pfit2$vertex_categorical$gender, levs)
-        if (!is.null(pgender)) {
-          cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender)
-        } else {
-          cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
+    if (exists("params_init_inhom") && !is.null(params_init_inhom$vertex_categorical) &&
+        !is.null(dat$fit_inhom) && !is.null(dat$fit_inhom$fit$par)) {
+      # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
+      skel2 <- list(
+        mu = params_init_inhom$mu,
+        beta_overall = params_init_inhom$beta_overall,
+        K = params_init_inhom$K,
+        beta_edges = params_init_inhom$beta_edges,
+        node_lambda = params_init_inhom$node_lambda,
+        CS_params = params_init_inhom$CS_params,
+        vertex_categorical = params_init_inhom$vertex_categorical
+      )
+      pfit2 <- tryCatch({
+        relist(dat$fit_inhom$fit$par, skeleton = skel2)
+      }, error = function(e) NULL)
+      
+      if (!is.null(pfit2)) {
+        pfit2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
+        # Restore names and repair parameters before expanding
+        pfit2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+          pfit2, params_init_inhom$vertex_categorical_levels)
+        pfit2 <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit2, eps = 1e-6)
+        if (!is.null(pfit2$vertex_categorical$gender)) {
+          levs <- params_init_inhom$vertex_categorical_levels$gender
+          pgender <- expand_vertex_categorical_probs(pfit2$vertex_categorical$gender, levs)
+          if (!is.null(pgender)) {
+            cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender)
+          } else {
+            cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
+          }
         }
       }
     }
@@ -815,24 +864,38 @@ if (PAPER_OUTPUT) {
       cat("  Inhomogeneous fit (nodeMatch): raw parameters\n")
       print(fit_inhom_nodematch$fit$par)
     }
-    if (exists("params_init_nodematch") && !is.null(params_init_nodematch$vertex_categorical)) {
+    if (exists("params_init_nodematch") && !is.null(params_init_nodematch$vertex_categorical) &&
+        !is.null(dat$fit_inhom_nodematch) && !is.null(dat$fit_inhom_nodematch$fit$par)) {
       # Reconstruct nodeMatch parameters for gender proportions using its own initialization
-      skel_nodematch <- params_init_nodematch
-      skel_nodematch$vertex_categorical_levels <- NULL
+      # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
+      skel_nodematch <- list(
+        mu = params_init_nodematch$mu,
+        beta_overall = params_init_nodematch$beta_overall,
+        K = params_init_nodematch$K,
+        beta_edges = params_init_nodematch$beta_edges,
+        node_lambda = params_init_nodematch$node_lambda,
+        CS_params = params_init_nodematch$CS_params,
+        vertex_categorical = params_init_nodematch$vertex_categorical
+      )
       
-      pfit_nodematch <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
-      pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
-      # Restore names and repair parameters before expanding
-      pfit_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-        pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
-      pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
-      if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
-        levs <- params_init_nodematch$vertex_categorical_levels$gender
-        pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)
-        if (!is.null(pgender_nodematch)) {
-          cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender_nodematch)
-        } else {
-          cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
+      pfit_nodematch <- tryCatch({
+        relist(dat$fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
+      }, error = function(e) NULL)
+      
+      if (!is.null(pfit_nodematch)) {
+        pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+        # Restore names and repair parameters before expanding
+        pfit_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
+          pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
+        pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
+        if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
+          levs <- params_init_nodematch$vertex_categorical_levels$gender
+          pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)
+          if (!is.null(pgender_nodematch)) {
+            cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender_nodematch)
+          } else {
+            cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
+          }
         }
       }
     }

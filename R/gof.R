@@ -460,7 +460,16 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     })
     
     GOF_results$wait_obs <- tryCatch({
-      waiting_times_between_formations(net_obs, formula_RHS = formula_RHS)
+      wait_obs_raw <- waiting_times_between_formations(net_obs, formula_RHS = formula_RHS)
+      # Get ERNM statistic names from formula
+      exp_cs <- tryCatch({
+        expected_params_PMF_mark_CS(net_obs, formula_RHS)
+      }, error = function(e) NULL)
+      if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names) && 
+          length(exp_cs$CS_params_names) == length(wait_obs_raw)) {
+        names(wait_obs_raw) <- exp_cs$CS_params_names
+      }
+      wait_obs_raw
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
       NULL
@@ -518,9 +527,23 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     
     if (verbose) cat("    Computing waiting times...\n")
     GOF_results$wait_sim <- tryCatch({
+      # Get ERNM statistic names from formula (use first simulated network or observed)
+      exp_cs <- tryCatch({
+        net_for_names <- if (!is.null(net_obs)) net_obs else if (length(sim_nets) > 0 && !is.null(sim_nets[[1]])) sim_nets[[1]] else NULL
+        if (!is.null(net_for_names)) {
+          expected_params_PMF_mark_CS(net_for_names, formula_RHS)
+        } else NULL
+      }, error = function(e) NULL)
+      stat_names <- if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names)) exp_cs$CS_params_names else NULL
+      
       parallel::mclapply(sim_nets, function(n) {
         tryCatch({
-          waiting_times_between_formations(n, formula_RHS = formula_RHS)
+          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = formula_RHS)
+          # Apply stat names if available
+          if (!is.null(stat_names) && length(stat_names) == length(wait_sim_raw)) {
+            names(wait_sim_raw) <- stat_names
+          }
+          wait_sim_raw
         }, error = function(e) {
           if (verbose && length(sim_nets) <= 5) cat("        Warning: Could not compute waiting times for one sim:", e$message, "\n")
           list()
@@ -608,6 +631,7 @@ create_gof_plots <- function(GOF_results) {
   plots <- list()
   
   # Helper function to create boxplot for distributional statistics
+  # Observed values shown as dots, simulated as boxplots
   create_dist_plot <- function(obs, sim, stat_name, x_label = NULL) {
     if (is.null(obs) || is.null(sim) || nrow(sim) == 0) return(NULL)
     
@@ -615,28 +639,28 @@ create_gof_plots <- function(GOF_results) {
     n_obs <- length(obs)
     n_sim <- nrow(sim)
     
-    # Create data frame
-    df_obs <- data.frame(
-      value = obs,
-      x = seq_along(obs),
-      type = "Observed"
-    )
-    
+    # Create data frame for simulated (boxplot)
     df_sim <- data.frame(
       value = as.vector(sim),
       x = rep(seq_len(ncol(sim)), each = nrow(sim)),
       type = "Simulated"
     )
     
-    df <- rbind(df_obs, df_sim)
+    # Create data frame for observed (dots)
+    df_obs <- data.frame(
+      value = obs,
+      x = seq_along(obs),
+      type = "Observed"
+    )
     
     # Use x_label if provided, otherwise "Index"
     x_lab <- if (is.null(x_label)) "Index" else x_label
     
-    # Create plot
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = factor(x), y = value, fill = type)) +
-      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
-      ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+    # Create plot: boxplot for simulated, dots for observed
+    p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x), y = value)) +
+      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x), y = value), 
+                          color = "#E69F00", size = 2, shape = 19) +
       ggplot2::labs(
         title = paste(stat_name, "Distribution"),
         x = x_lab,
@@ -672,28 +696,52 @@ create_gof_plots <- function(GOF_results) {
     )
   }
   
-  # Geodesic distance plot (histogram style)
+  # Geodesic distance plot (boxplot with relative proportions)
   if (!is.null(GOF_results$geodist_obs) && !is.null(GOF_results$geodist_sim) && 
       length(GOF_results$geodist_obs) > 0 && length(GOF_results$geodist_sim) > 0) {
-    # Combine observed and simulated geodesic distances
-    df_geod <- data.frame(
-      distance = c(
-        GOF_results$geodist_obs,
-        unlist(GOF_results$geodist_sim)
-      ),
-      type = c(
-        rep("Observed", length(GOF_results$geodist_obs)),
-        rep("Simulated", sum(sapply(GOF_results$geodist_sim, length)))
-      )
-    )
+    # Calculate relative proportions for each distance
+    # Observed: proportion of pairs at each distance
+    obs_dist <- GOF_results$geodist_obs
+    obs_tab <- table(factor(obs_dist, levels = sort(unique(c(obs_dist, unlist(GOF_results$geodist_sim))))))
+    obs_prop <- as.numeric(obs_tab) / sum(obs_tab)
+    obs_dist_levels <- as.numeric(names(obs_tab))
     
-    plots$geodist_plot <- ggplot2::ggplot(df_geod, ggplot2::aes(x = distance, fill = type)) +
-      ggplot2::geom_histogram(alpha = 0.7, bins = 30, position = "identity") +
-      ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+    # Simulated: proportion for each simulation, then average
+    sim_dist_list <- GOF_results$geodist_sim
+    all_dist_levels <- sort(unique(c(obs_dist, unlist(sim_dist_list))))
+    
+    sim_prop_mat <- do.call(rbind, lapply(sim_dist_list, function(sim_dist) {
+      if (length(sim_dist) == 0) return(rep(0, length(all_dist_levels)))
+      sim_tab <- table(factor(sim_dist, levels = all_dist_levels))
+      as.numeric(sim_tab) / sum(sim_tab)
+    }))
+    
+    # Create data frame
+    df_geod <- data.frame(
+      distance = rep(all_dist_levels, 2),
+      proportion = c(
+        obs_prop[match(all_dist_levels, obs_dist_levels)],
+        colMeans(sim_prop_mat, na.rm = TRUE)
+      ),
+      type = rep(c("Observed", "Simulated"), each = length(all_dist_levels))
+    )
+    df_geod$proportion[is.na(df_geod$proportion)] <- 0
+    
+    # Observed as dot, simulated as boxplot
+    df_sim_box <- data.frame(
+      distance = rep(all_dist_levels, each = nrow(sim_prop_mat)),
+      proportion = as.vector(sim_prop_mat)
+    )
+    df_obs_dot <- df_geod[df_geod$type == "Observed", ]
+    
+    plots$geodist_plot <- ggplot2::ggplot(df_sim_box, ggplot2::aes(x = factor(distance), y = proportion)) +
+      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      ggplot2::geom_point(data = df_obs_dot, ggplot2::aes(x = factor(distance), y = proportion),
+                         color = "#E69F00", size = 2, shape = 19) +
       ggplot2::labs(
-        title = "Geodesic Distance Distribution",
+        title = "Geodesic Distance Distribution (Relative Proportions)",
         x = "Geodesic Distance",
-        y = "Frequency",
+        y = "Proportion of Pairs",
         fill = "Type"
       ) +
       ggplot2::theme_minimal() +
@@ -714,7 +762,7 @@ create_gof_plots <- function(GOF_results) {
     )
   }
   
-  # Waiting times plot (faceted histograms)
+  # Waiting times plot (2-column format: observed in one column, simulated in another, row by row)
   if (!is.null(GOF_results$wait_obs) && !is.null(GOF_results$wait_sim) && 
       length(GOF_results$wait_sim) > 0 && length(GOF_results$wait_obs) > 0) {
     # Extract waiting times for each statistic
@@ -741,34 +789,42 @@ create_gof_plots <- function(GOF_results) {
       if (is.null(sim_wait)) sim_wait <- numeric(0)
       
       if (length(obs_wait) > 0 || length(sim_wait) > 0) {
-        df_wait_list[[stat_name]] <- data.frame(
-          waiting_time = c(obs_wait, sim_wait),
-          type = c(rep("Observed", length(obs_wait)), rep("Simulated", length(sim_wait))),
+        # Create separate data frames for observed and simulated
+        df_obs <- data.frame(
+          waiting_time = obs_wait,
+          type = "Observed",
           statistic = stat_name
         )
+        df_sim <- data.frame(
+          waiting_time = sim_wait,
+          type = "Simulated",
+          statistic = stat_name
+        )
+        df_wait_list[[stat_name]] <- list(obs = df_obs, sim = df_sim)
       }
     }
     
     if (length(df_wait_list) > 0) {
-      df_wait <- do.call(rbind, df_wait_list)
+      # Combine all observed and simulated separately
+      df_obs_all <- do.call(rbind, lapply(df_wait_list, function(x) x$obs))
+      df_sim_all <- do.call(rbind, lapply(df_wait_list, function(x) x$sim))
       
-      # Determine number of columns for faceting (max 2)
-      n_stats <- length(unique(df_wait$statistic))
-      ncol_facet <- min(2, n_stats)
+      # Create combined data frame with type and statistic
+      df_wait <- rbind(df_obs_all, df_sim_all)
       
-      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
-        ggplot2::geom_histogram(alpha = 0.7, bins = 30, position = "identity") +
-        ggplot2::facet_wrap(~ statistic, scales = "free", ncol = ncol_facet) +
-        ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+      # Use facet_grid with 2 columns (Observed, Simulated) and rows by statistic
+      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time)) +
+        ggplot2::geom_histogram(alpha = 0.7, bins = 30, fill = "#56B4E9") +
+        ggplot2::facet_grid(statistic ~ type, scales = "free", 
+                            labeller = ggplot2::labeller(statistic = ggplot2::label_value)) +
         ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
           x = "Waiting Time",
-          y = "Frequency",
-          fill = "Type"
+          y = "Frequency"
         ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(
-          legend.position = "bottom",
+          legend.position = "none",
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
           strip.text = ggplot2::element_text(face = "bold")
         )
