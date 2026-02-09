@@ -302,132 +302,128 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     return(GOF_results)
   }
   
-  # Wrap entire function body in tryCatch to ensure we always return results
-  tryCatch({
-    if (verbose) cat("  Simulating", n_sim, "networks from fitted model...\n")
-    
-    # Reconstruct fitted params: strip vertex_categorical_levels from skeleton
-    # (the fitter stripped it before unlist, so fit$par doesn't include it)
-    skel <- params_init
-    skel$vertex_categorical_levels <- NULL
-    pfit <- tryCatch({
-      relist(fit$fit$par, skeleton = skel)
-    }, error = function(e) {
-      if (verbose) cat("  ERROR: Failed to reconstruct parameters:", e$message, "\n")
-      if (verbose) cat("  Using params_init as fallback\n")
-      params_init
-    })
+  if (verbose) cat("  Simulating", n_sim, "networks from fitted model...\n")
   
-    # Restore metadata and fixed params
-    pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
-    pfit$K <- params_init$K
-    
-    # Compute mu from inhomogeneous background if provided
-    if (!is.null(inhom_bg)) {
-      Tval <- time_window[2] - time_window[1]
-      pfit$mu <- inhom_bg$integral_bg / Tval
+  # Reconstruct fitted params: strip vertex_categorical_levels from skeleton
+  # (the fitter stripped it before unlist, so fit$par doesn't include it)
+  skel <- params_init
+  skel$vertex_categorical_levels <- NULL
+  pfit <- tryCatch({
+    relist(fit$fit$par, skeleton = skel)
+  }, error = function(e) {
+    if (verbose) cat("  ERROR: Failed to reconstruct parameters:", e$message, "\n")
+    if (verbose) cat("  Using params_init as fallback\n")
+    params_init
+  })
+
+  # Restore metadata and fixed params
+  pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
+  pfit$K <- params_init$K
+  
+  # Compute mu from inhomogeneous background if provided
+  if (!is.null(inhom_bg)) {
+    Tval <- time_window[2] - time_window[1]
+    pfit$mu <- inhom_bg$integral_bg / Tval
+  } else {
+    pfit$mu <- params_init$mu
+  }
+  
+  # Ensure parameters are within valid ranges
+  pfit$K <- min(max(pfit$K, 0.001), 0.999)  # K must be in (0,1) for stability
+  pfit$mu <- max(pfit$mu, 0.001)  # mu must be positive
+  pfit$node_lambda <- max(pfit$node_lambda, 1)  # node_lambda must be >= 1 for stability
+  pfit$beta_overall <- max(pfit$beta_overall, 0.001)
+  pfit$beta_edges <- max(pfit$beta_edges, 0.001)
+  
+  # Set vertex_categorical if it exists (use defaults if needed)
+  if (!is.null(params_init$vertex_categorical)) {
+    if (is.null(pfit$vertex_categorical)) {
+      pfit$vertex_categorical <- params_init$vertex_categorical
     } else {
-      pfit$mu <- params_init$mu
-    }
-    
-    # Ensure parameters are within valid ranges
-    pfit$K <- min(max(pfit$K, 0.001), 0.999)  # K must be in (0,1) for stability
-    pfit$mu <- max(pfit$mu, 0.001)  # mu must be positive
-    pfit$node_lambda <- max(pfit$node_lambda, 1)  # node_lambda must be >= 1 for stability
-    pfit$beta_overall <- max(pfit$beta_overall, 0.001)
-    pfit$beta_edges <- max(pfit$beta_edges, 0.001)
-    
-    # Set vertex_categorical if it exists (use defaults if needed)
-    if (!is.null(params_init$vertex_categorical)) {
-      if (is.null(pfit$vertex_categorical)) {
-        pfit$vertex_categorical <- params_init$vertex_categorical
-      } else {
-        # Repair vertex_categorical parameters (may be invalid from optimization)
-        pfit <- tryCatch({
-          repair_vertex_categorical_params(pfit, eps = 1e-6)
-        }, error = function(e) {
-          if (verbose) cat("  WARNING: Failed to repair vertex_categorical:", e$message, "\n")
-          pfit
-        })
-      }
-    }
-    
-    # Validate parameters before simulation
-    if (!point_process_params_valid(pfit)) {
-      if (verbose) cat("  WARNING: Parameters invalid after reconstruction; attempting repair...\n")
+      # Repair vertex_categorical parameters (may be invalid from optimization)
       pfit <- tryCatch({
         repair_vertex_categorical_params(pfit, eps = 1e-6)
       }, error = function(e) {
-        if (verbose) cat("  WARNING: Failed to repair parameters:", e$message, "\n")
+        if (verbose) cat("  WARNING: Failed to repair vertex_categorical:", e$message, "\n")
         pfit
       })
-      if (!point_process_params_valid(pfit)) {
-        if (verbose) cat("  ERROR: Parameters still invalid after repair; GOF may fail\n")
-      }
     }
-    
-    # Parallelize GOF simulations
-    if (verbose) cat("  Using", cores, "cores for parallel GOF simulations...\n")
-    sim_results <- tryCatch({
-      parallel::mclapply(seq_len(n_sim), function(i) {
-    s <- tryCatch(
-      sim_hawkesGrowthNet(
-        params = pfit,
-        time_window = time_window,
-        PMF_mark = PMF_mark,
-        cond_intensity = cond_intensity,
-        formula_RHS = formula_RHS,
-        truncation = truncation,
-        mark_decay = mark_decay,
-        max_node_time = max_node_time,
-        hashed_edges = TRUE,
-        verbose = FALSE,
-        mu_multiplier = mu_multiplier,
-        stop_on_full_network = FALSE
-      ),
-      error = function(e) { 
-        return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
-      }
-    )
-    if (is.null(s$net)) {
-      return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
-    }
-        return(list(net = s$net, error = NULL))
-      }, mc.cores = cores)
+  }
+  
+  # Validate parameters before simulation
+  if (!point_process_params_valid(pfit)) {
+    if (verbose) cat("  WARNING: Parameters invalid after reconstruction; attempting repair...\n")
+    pfit <- tryCatch({
+      repair_vertex_categorical_params(pfit, eps = 1e-6)
     }, error = function(e) {
-      if (verbose) cat("  ERROR: Failed to run simulations:", e$message, "\n")
-      list()  # Return empty list if simulations fail completely
+      if (verbose) cat("  WARNING: Failed to repair parameters:", e$message, "\n")
+      pfit
     })
-    
-    if (is.null(sim_results) || length(sim_results) == 0) {
-      if (verbose) cat("  No simulation results; returning empty GOF results\n")
-      return(GOF_results)
+    if (!point_process_params_valid(pfit)) {
+      if (verbose) cat("  ERROR: Parameters still invalid after repair; GOF may fail\n")
     }
-    
-    sim_nets <- lapply(sim_results, function(x) x$net)
-    sim_nets <- sim_nets[!sapply(sim_nets, is.null)]
-    n_success <- length(sim_nets)
-    n_fail <- n_sim - n_success
-    
-    # Report errors if any
-    if (n_fail > 0 && verbose) {
-      errors <- sapply(sim_results, function(x) if (!is.null(x$error)) x$error else NULL)
-      errors <- errors[!sapply(errors, is.null)]
-      if (length(errors) > 0) {
-        cat("  GOF simulation errors (showing first 3):\n")
-        for (i in seq_len(min(3, length(errors)))) {
-          cat("    ", errors[[i]], "\n")
+  }
+  
+  # Parallelize GOF simulations
+  if (verbose) cat("  Using", cores, "cores for parallel GOF simulations...\n")
+  sim_results <- tryCatch({
+    parallel::mclapply(seq_len(n_sim), function(i) {
+      s <- tryCatch(
+        sim_hawkesGrowthNet(
+          params = pfit,
+          time_window = time_window,
+          PMF_mark = PMF_mark,
+          cond_intensity = cond_intensity,
+          formula_RHS = formula_RHS,
+          truncation = truncation,
+          mark_decay = mark_decay,
+          max_node_time = max_node_time,
+          hashed_edges = TRUE,
+          verbose = FALSE,
+          mu_multiplier = mu_multiplier,
+          stop_on_full_network = FALSE
+        ),
+        error = function(e) { 
+          return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
         }
+      )
+      if (is.null(s$net)) {
+        return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
+      }
+      return(list(net = s$net, error = NULL))
+    }, mc.cores = cores)
+  }, error = function(e) {
+    if (verbose) cat("  ERROR: Failed to run simulations:", e$message, "\n")
+    list()  # Return empty list if simulations fail completely
+  })
+  
+  if (is.null(sim_results) || length(sim_results) == 0) {
+    if (verbose) cat("  No simulation results; returning empty GOF results\n")
+    return(GOF_results)
+  }
+  
+  sim_nets <- lapply(sim_results, function(x) x$net)
+  sim_nets <- sim_nets[!sapply(sim_nets, is.null)]
+  n_success <- length(sim_nets)
+  n_fail <- n_sim - n_success
+  
+  # Report errors if any
+  if (n_fail > 0 && verbose) {
+    errors <- sapply(sim_results, function(x) if (!is.null(x$error)) x$error else NULL)
+    errors <- errors[!sapply(errors, is.null)]
+    if (length(errors) > 0) {
+      cat("  GOF simulation errors (showing first 3):\n")
+      for (i in seq_len(min(3, length(errors)))) {
+        cat("    ", errors[[i]], "\n")
       }
     }
-    
-    if (verbose) cat("  GOF simulations:", n_success, "succeeded,", n_fail, "failed\n")
-    
-    if (length(sim_nets) > 0) {
-      # Wrap entire statistics computation in tryCatch to ensure we always return partial results
-      tryCatch({
-      if (verbose) cat("  Computing GOF statistics (parallelized)...\n")
-      t_stats <- proc.time()
+  }
+  
+  if (verbose) cat("  GOF simulations:", n_success, "succeeded,", n_fail, "failed\n")
+  
+  if (length(sim_nets) > 0) {
+    if (verbose) cat("  Computing GOF statistics (parallelized)...\n")
+    t_stats <- proc.time()
     
     # Observed statistics (single network)
     if (verbose) cat("    Computing observed statistics...\n")
@@ -580,33 +576,23 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")
     }
     
-      # Generate plots (if ggplot2 is available)
-      if (verbose) cat("  Generating GOF plots...\n")
-      if (requireNamespace("ggplot2", quietly = TRUE)) {
-        GOF_results$plots <- tryCatch(
-          create_gof_plots(GOF_results),
-          error = function(e) {
-            if (verbose) cat("    Warning: Could not generate plots:", e$message, "\n")
-            list()
-          }
-        )
-      } else {
-        if (verbose) cat("    ggplot2 not available; skipping plots\n")
-        GOF_results$plots <- list()
-      }
-      }, error = function(e) {
-        # If statistics computation fails completely, return whatever we have
-        if (verbose) cat("  ERROR in GOF statistics computation:", e$message, "\n")
-        if (verbose) cat("  Returning partial results (some statistics may be NULL)\n")
-      })
+    # Generate plots (if ggplot2 is available)
+    if (verbose) cat("  Generating GOF plots...\n")
+    if (requireNamespace("ggplot2", quietly = TRUE)) {
+      GOF_results$plots <- tryCatch(
+        create_gof_plots(GOF_results),
+        error = function(e) {
+          if (verbose) cat("    Warning: Could not generate plots:", e$message, "\n")
+          list()
+        }
+      )
     } else {
-      if (verbose) cat("  No successful simulations; returning empty GOF results\n")
+      if (verbose) cat("    ggplot2 not available; skipping plots\n")
+      GOF_results$plots <- list()
     }
-  }, error = function(e) {
-    # If anything fails at the top level (parameter reconstruction, simulations, etc.)
-    if (verbose) cat("  ERROR in GOF function:", e$message, "\n")
-    if (verbose) cat("  Returning empty GOF results\n")
-  })
+  } else {
+    if (verbose) cat("  No successful simulations; returning empty GOF results\n")
+  }
   
   # Always return results, even if some computations failed
   GOF_results
