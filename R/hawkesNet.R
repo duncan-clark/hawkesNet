@@ -171,9 +171,9 @@ cond_intensity <- function(new_net,
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
-#' @rdname sim_hawkesGrowthNet
+#' @rdname sim_hawkesNet
 #' @export
-sim_hawkesGrowthNet <- function(params,
+sim_hawkesNet <- function(params,
                                 time_window,
                                 PMF_mark, # function that both generates new mark and calculates the density of existing mark
                                 cond_intensity, # function to calcualte condiational_intensity, takes in a kernel_func
@@ -433,9 +433,9 @@ sim_hawkesGrowthNet <- function(params,
 #' @param ... Passed to \code{cond_intensity} / \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{loglik} and \code{intens_funcs}.
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
-#' @rdname loglik_hawkesGrowthNet
+#' @rdname loglik_hawkesNet
 #' @export
-loglik_hawkesGrowthNet = function(params,
+loglik_hawkesNet = function(params,
                                   time_window,
                                   mark_filtration,
                                   PMF_mark,
@@ -536,12 +536,12 @@ loglik_hawkesGrowthNet = function(params,
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
   }
   integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
-  loglik <- intens_sum - integral  # If you hit Browse[] here, clear RStudio breakpoints (Debug -> Clear All) or run undebug(loglik_hawkesGrowthNet)
+  loglik <- intens_sum - integral  # If you hit Browse[] here, clear RStudio breakpoints (Debug -> Clear All) or run undebug(loglik_hawkesNet)
   
   # Guard: ensure loglik is finite for L-BFGS-B
   if (!is.finite(loglik) || !is.finite(intens_sum) || !is.finite(integral)) {
     if (verbose) {
-      warning("loglik_hawkesGrowthNet: non-finite loglik detected. intens_sum=", intens_sum, 
+      warning("loglik_hawkesNet: non-finite loglik detected. intens_sum=", intens_sum, 
               ", integral=", integral, ", returning -1e10")
     }
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
@@ -575,11 +575,11 @@ loglik_hawkesGrowthNet = function(params,
 #' @param method Optimization method: \code{"Nelder-Mead"} (default, derivative-free) or
 #'   \code{"L-BFGS-B"} (gradient-based with box constraints; constrains mu, beta_overall,
 #'   beta_edges, K, node_lambda > 0 automatically).
-#' @param ... Passed to \code{loglik_hawkesGrowthNet} (e.g. \code{truncation}, \code{formula_RHS}).
+#' @param ... Passed to \code{loglik_hawkesNet} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{fit} (output of \code{optim}), \code{intens_funcs}, \code{fit_table} (parameter estimates and standard errors), and \code{hessian} (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
-#' @rdname fit_hawkesGrowthNet
+#' @rdname fit_hawkesNet
 #' @export
-fit_hawkesGrowthNet <- function(params_init,
+fit_hawkesNet <- function(params_init,
                                 time_window,
                                 mark_filtration,
                                 PMF_mark,
@@ -618,7 +618,7 @@ fit_hawkesGrowthNet <- function(params_init,
   # 1. Pre-calculate ONLY if cache_intensity is TRUE
   if(cache_intensity){
     print("Pre-calculating intensity closures (Fast Mode)...")
-    init_lik <- loglik_hawkesGrowthNet(params = params_init_old,
+    init_lik <- loglik_hawkesNet(params = params_init_old,
                                      time_window = time_window,
                                      mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
@@ -643,9 +643,9 @@ fit_hawkesGrowthNet <- function(params_init,
     if (!point_process_params_valid(params_curr)) return(-1e10)
     
     # 2. Pass NULL to intens_funcs if caching is disabled
-    # This forces loglik_hawkesGrowthNet to rebuild the density from scratch
+    # This forces loglik_hawkesNet to rebuild the density from scratch
     result <- tryCatch({
-      do.call(loglik_hawkesGrowthNet, c(
+      do.call(loglik_hawkesNet, c(
         list(params = params_curr,
              time_window = time_window,
              mark_filtration = mark_filtration,
@@ -723,7 +723,7 @@ fit_hawkesGrowthNet <- function(params_init,
 #' @param mark_filtration Observed network.
 #' @return Numeric vector of compensator values at each event time.
 #' @export
-compensators_hawkesGrowthNet <- function(params,
+compensators_hawkesNet <- function(params,
                                          time_window,
                                          mark_filtration){
   times <- get_times(mark_filtration)
@@ -750,10 +750,10 @@ compensators_hawkesGrowthNet <- function(params,
 #' @param mark_filtration Observed network.
 #' @return P-value of the KS test under the null that rescaled times are uniform.
 #' @export
-ks_test_pval_hawkesGrowthNet <- function(params,
+ks_test_pval_hawkesNet <- function(params,
                                          time_window,
                                          mark_filtration){
-  compensators <- compensators_hawkesGrowthNet(params = unlist(params),
+  compensators <- compensators_hawkesNet(params = unlist(params),
                                                time_window = time_window,
                                                mark_filtration = mark_filtration
                                                )

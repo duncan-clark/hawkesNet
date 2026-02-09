@@ -25,5 +25,5 @@ List with mu_vec, integral_bg, times, mu_fit, Lambda_fun
 }
 \description{
 Returns mu_vec aligned with get_times(mark_filtration)$times for use in
-loglik_hawkesGrowthNet_inhom and fit_hawkesGrowthNet_inhom.
+loglik_hawkesNet_inhom and fit_hawkesNet_inhom.
 }

@@ -1,4 +1,4 @@
-library(hawkesGrowthNet)
+library(hawkesNet)
 library(network)
 library(sna)
 library(ernm)
@@ -10,7 +10,7 @@ N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
 
 # read data in:
 # data collected from : https://snap.stanford.edu/data/CollegeMsg.html
-dat <- read.table('hawkesGrowthNet/data/CollegeMsg.txt')
+dat <- read.table('hawkesNet/data/CollegeMsg.txt')
 names(dat) <- c('from', 'to', 'time')
 # convert to days:
 dat$time <- (dat$time - min(dat$tim))/(24*60*60)
@@ -60,7 +60,7 @@ params_init <- list(mu = length(get_times(net)$times)/max(get_times(net)$times),
 )
 
 if(FALSE){
-  init_lik <- loglik_hawkesGrowthNet(params = params_init,
+  init_lik <- loglik_hawkesNet(params = params_init,
                                      time_window = c(0,max(edges$time)),
                                      mark_filtration = filtration_to_net(net,10) ,
                                      PMF_mark = PMF_mark_CS,
@@ -81,7 +81,7 @@ if(FALSE){
   summary(tmp,print.adj = F)
   plot(tmp)
   
-  init_lik <- loglik_hawkesGrowthNet(params = params_init,
+  init_lik <- loglik_hawkesNet(params = params_init,
                                      time_window = c(0,max(edges$time)),
                                      mark_filtration = tmp,
                                      PMF_mark = PMF_mark_CS,
@@ -108,7 +108,7 @@ delete.vertices(net_21,isolates(net_21))
 net_list <- list(net_7,net_14)
 
 fits <- lapply(net_list,function(net){
-  fit <- fit_hawkesGrowthNet(params_init = params_init,
+  fit <- fit_hawkesNet(params_init = params_init,
                              time_window = c(0,max(get_times(net)$times)),
                              mark_filtration = net,
                              PMF_mark = PMF_mark_CS,

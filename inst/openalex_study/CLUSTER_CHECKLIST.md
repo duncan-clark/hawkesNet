@@ -45,8 +45,8 @@
 ## ⚠️ Potential Issues to Verify
 
 ### 1. Package Installation on Cluster
-- **Action**: Ensure `hawkesGrowthNet` is installed on cluster
-- **Check**: Run `Rscript -e "library(hawkesGrowthNet)"` before submitting job
+- **Action**: Ensure `hawkesNet` is installed on cluster
+- **Check**: Run `Rscript -e "library(hawkesNet)"` before submitting job
 
 ### 2. R Module Version
 - **Action**: Verify R module version is compatible
@@ -74,7 +74,7 @@
 
 ## 📋 Pre-Submission Checklist
 
-- [ ] Package `hawkesGrowthNet` is installed on cluster
+- [ ] Package `hawkesNet` is installed on cluster
 - [ ] R module is loaded (`module load R`)
 - [ ] `cluster_output/` directory exists or will be created
 - [ ] Network access to OpenAlex API is available
@@ -85,7 +85,7 @@
 ## 🚀 Submission Command
 
 ```bash
-cd /path/to/hawkesGrowthNet
+cd /path/to/hawkesNet
 mkdir -p cluster_output
 sbatch inst/openalex_study/run_openalex.slurm
 ```

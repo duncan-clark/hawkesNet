@@ -1,8 +1,8 @@
 # Minimal example: Change-statistic (CS) mark model
 # Run from package root: source("inst/examples/example_CS.R")
-# Or in R: setwd("/path/to/hawkesGrowthNet"); source("inst/examples/example_CS.R")
+# Or in R: setwd("/path/to/hawkesNet"); source("inst/examples/example_CS.R")
 
-library(hawkesGrowthNet)
+library(hawkesNet)
 
 # Short time window so this finishes in a few minutes
 TIME <- 50
@@ -19,7 +19,7 @@ formula_RHS <- "edges + triangles() + star(c(2,3))"
 
 cat("Simulating one CS network...\n")
 set.seed(1)
-sim <- sim_hawkesGrowthNet(
+sim <- sim_hawkesNet(
   params = params,
   time_window = c(0, TIME),
   PMF_mark = PMF_mark_CS,
@@ -45,7 +45,7 @@ params_init <- list(
   CS_params = c(-10, 0, 0, 0)
 )
 fit <- tryCatch(
-  fit_hawkesGrowthNet(
+  fit_hawkesNet(
     params_init = params_init,
     time_window = c(0, TIME),
     mark_filtration = sim$net,

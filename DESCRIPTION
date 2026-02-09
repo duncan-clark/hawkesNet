@@ -1,6 +1,8 @@
-Package: hawkesGrowthNet
+Package: hawkesNet
 Title: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models
 Version: 0.0.1
+Author: Duncan A. Clark
+Maintainer: Duncan A. Clark <dac6@williams.edu>
 Authors@R: 
     person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
 Description: Simulate and fit maximum likelihood for Hawkesian network growth models.

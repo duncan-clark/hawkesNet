@@ -1,14 +1,14 @@
-# hawkesGrowthNet
+# hawkesNet
 
-[![R-CMD-check](https://github.com/duncan-clark/hawkesGrowthNet/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/duncan-clark/hawkesGrowthNet/actions/workflows/R-CMD-check.yaml)
+[![R-CMD-check](https://github.com/duncan-clark/hawkesNet/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/duncan-clark/hawkesNet/actions/workflows/R-CMD-check.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **New users:** try the minimal examples first — see [**Try the examples first**](#new-users-try-the-examples-first) below.
 
-**hawkesGrowthNet** is an R package that provides tools for simulating and analyzing networks that grow with **Hawkes process** arrival times.
+**hawkesNet** is an R package that provides tools for simulating and analyzing networks that grow with **Hawkes process** arrival times.
 
 - Generate events under various Hawkesian network growth formulations
-- Estimate model parameters for hawkesGrowthNet models (homogeneous and inhomogeneous background rates)
+- Estimate model parameters for hawkesNet models (homogeneous and inhomogeneous background rates)
 - Goodness-of-fit (GOF) diagnostics with simulations matching the fitted model
 - Visualize network growth over time (see `make_network_growth_animation`; requires suggested packages `networkDynamic` and `animation`)
 
@@ -33,11 +33,11 @@ Details: **[inst/examples/README.md](inst/examples/README.md)**. For full studie
 
 ## Installation
 
-You can install the development version of **hawkesGrowthNet** from GitHub:
+You can install the development version of **hawkesNet** from GitHub:
 
 ```r
 # install.packages("devtools")  # if needed
-devtools::install_github("duncan-clark/hawkesGrowthNet")
+devtools::install_github("duncan-clark/hawkesNet")
 ```
 
 ---

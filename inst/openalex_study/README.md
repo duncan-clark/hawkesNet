@@ -47,7 +47,7 @@ Yes. With the default settings the job should finish in **reasonable time** (typ
 
 ## Requirements
 
-The **hawkesGrowthNet** package must be installed (e.g. `devtools::install()` from the package root). It includes the inhomogeneous (KDE) fit and all helpers; no external scripts are needed. After cloning the repo, install the package and run the study from the package root.
+The **hawkesNet** package must be installed (e.g. `devtools::install()` from the package root). It includes the inhomogeneous (KDE) fit and all helpers; no external scripts are needed. After cloning the repo, install the package and run the study from the package root.
 
 ## Environment
 

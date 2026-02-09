@@ -947,10 +947,10 @@ PMF_mark_CS <- function(time,
       }
       
       # Reuse ERNM model per formula (avoids createCppModel every event; big speedup for nodeMatch)
-      cache <- get0(".ernm_model_cache", envir = asNamespace("hawkesGrowthNet"), inherits = FALSE)
+      cache <- get0(".ernm_model_cache", envir = asNamespace("hawkesNet"), inherits = FALSE)
       if (is.null(cache)) {
         cache <- new.env()
-        assign(".ernm_model_cache", cache, envir = asNamespace("hawkesGrowthNet"))
+        assign(".ernm_model_cache", cache, envir = asNamespace("hawkesNet"))
       }
       key <- formula_RHS
       if (is.null(cache[[key]])) {

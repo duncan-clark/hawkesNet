@@ -86,7 +86,7 @@ cond_intensity_inhom <- function(new_net,
 #' @param ... Passed to PMF_mark (formula_RHS, truncation, etc.)
 #' @return List with loglik, intens_funcs
 #' @noRd
-loglik_hawkesGrowthNet_inhom <- function(params,
+loglik_hawkesNet_inhom <- function(params,
                                          time_window,
                                          mark_filtration,
                                          PMF_mark,
@@ -165,7 +165,7 @@ loglik_hawkesGrowthNet_inhom <- function(params,
   # Guard: ensure loglik is finite for L-BFGS-B
   if (!is.finite(loglik) || !is.finite(intens_sum) || !is.finite(integral)) {
     if (verbose) {
-      warning("loglik_hawkesGrowthNet_inhom: non-finite loglik detected. intens_sum=", intens_sum,
+      warning("loglik_hawkesNet_inhom: non-finite loglik detected. intens_sum=", intens_sum,
               ", integral=", integral, ", returning -1e10")
     }
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
@@ -183,7 +183,7 @@ loglik_hawkesGrowthNet_inhom <- function(params,
 #' mu_vec and integral_bg come from prepare_inhomogeneous_background (which uses estimate_mu_kde).
 #' params_init can include mu but it is not used in the model.
 #'
-#' @param params_init List of initial parameters (same shape as for fit_hawkesGrowthNet)
+#' @param params_init List of initial parameters (same shape as for fit_hawkesNet)
 #' @param time_window c(t0, t1)
 #' @param mark_filtration Network with vertex/edge times
 #' @param PMF_mark Mark PMF (e.g. PMF_mark_CS)
@@ -201,7 +201,7 @@ loglik_hawkesGrowthNet_inhom <- function(params,
 #' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.)
 #' @return List with fit (optim result), intens_funcs, params_init_old, fit_table (parameter estimates and standard errors), and hessian (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @export
-fit_hawkesGrowthNet_inhom <- function(params_init,
+fit_hawkesNet_inhom <- function(params_init,
                                       time_window,
                                       mark_filtration,
                                       PMF_mark,
@@ -235,7 +235,7 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
   cached_funcs <- NULL
   if (cache_intensity) {
     message("Pre-calculating intensity closures (inhomogeneous background)...")
-    init_lik <- loglik_hawkesGrowthNet_inhom(
+    init_lik <- loglik_hawkesNet_inhom(
       params = params_init_old,
       time_window = time_window,
       mark_filtration = mark_filtration,
@@ -257,7 +257,7 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
     }
     if (!point_process_params_valid(params_curr)) return(-1e10)
     result <- tryCatch({
-      do.call(loglik_hawkesGrowthNet_inhom, c(
+      do.call(loglik_hawkesNet_inhom, c(
         list(params = params_curr,
              time_window = time_window,
              mark_filtration = mark_filtration,
@@ -337,7 +337,7 @@ fit_hawkesGrowthNet_inhom <- function(params_init,
 #' Build mu_vec and integral_bg from mark_filtration (network) using KDE
 #'
 #' Returns mu_vec aligned with get_times(mark_filtration)$times for use in
-#' loglik_hawkesGrowthNet_inhom and fit_hawkesGrowthNet_inhom.
+#' loglik_hawkesNet_inhom and fit_hawkesNet_inhom.
 #'
 #' @param mark_filtration Network with vertex and edge time attributes
 #' @param time_attr Name of the time attribute (default "time")

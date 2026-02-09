@@ -1,8 +1,8 @@
 # Minimal example: Barabási–Albert (BA) mark model
 # Run from package root: source("inst/examples/example_BA.R")
-# Or in R: setwd("/path/to/hawkesGrowthNet"); source("inst/examples/example_BA.R")
+# Or in R: setwd("/path/to/hawkesNet"); source("inst/examples/example_BA.R")
 
-library(hawkesGrowthNet)
+library(hawkesNet)
 
 # Short time window so this finishes in under a minute
 TIME <- 50
@@ -10,7 +10,7 @@ params <- list(mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1.5)
 
 cat("Simulating one BA network...\n")
 set.seed(1)
-sim <- sim_hawkesGrowthNet(
+sim <- sim_hawkesNet(
   params = params,
   time_window = c(0, TIME),
   PMF_mark = PMF_mark_BA,
@@ -28,7 +28,7 @@ cat("Network size (vertices):", network::network.size(sim$net), "\n")
 cat("Fitting BA model...\n")
 params_init <- list(mu = 0.1, beta_overall = 0.5, beta_edges = 0.5, K = 0.5, m = 0.8)
 fit <- tryCatch(
-  fit_hawkesGrowthNet(
+  fit_hawkesNet(
     params_init = params_init,
     time_window = c(0, TIME),
     mark_filtration = sim$net,

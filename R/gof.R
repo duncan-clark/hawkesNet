@@ -1,5 +1,5 @@
 # =============================================================================
-# Goodness-of-Fit (GOF) functions for hawkesGrowthNet
+# Goodness-of-Fit (GOF) functions for hawkesNet
 # =============================================================================
 
 #' Degree distribution as vector of counts (degree 0, 1, 2, ... up to max_deg).
@@ -243,12 +243,12 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   out
 }
 
-#' Goodness-of-fit analysis for hawkesGrowthNet models.
+#' Goodness-of-fit analysis for hawkesNet models.
 #'
 #' Simulates networks from a fitted model and compares observed vs simulated
 #' network statistics (degree distribution, ESP, geodesic distances, waiting times).
 #'
-#' @param fit Fitted hawkesGrowthNet model object (from \code{fit_hawkesGrowthNet} or \code{fit_hawkesGrowthNet_inhom}).
+#' @param fit Fitted hawkesNet model object (from \code{fit_hawkesNet} or \code{fit_hawkesNet_inhom}).
 #' @param net_obs Observed network (used for computing observed statistics).
 #' @param params_init Initial parameter list used for fitting (needed to reconstruct full parameter structure).
 #' @param PMF_mark Mark probability mass function (e.g., \code{PMF_mark_CS}).
@@ -386,7 +386,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   sim_results <- tryCatch({
     parallel::mclapply(seq_len(n_sim), function(i) {
       s <- tryCatch(
-        sim_hawkesGrowthNet(
+        sim_hawkesNet(
           params = pfit,
           time_window = time_window,
           PMF_mark = PMF_mark,

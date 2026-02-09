@@ -2,7 +2,7 @@
 # Inhomogeneous background rate estimation with KDE
 # =============================================================================
 # Estimates a time-varying baseline rate mu(t) via kernel density estimation,
-# and provides integrated baseline Lambda(t). Used by fit_hawkesGrowthNet_inhom
+# and provides integrated baseline Lambda(t). Used by fit_hawkesNet_inhom
 # and prepare_inhomogeneous_background.
 # =============================================================================
 

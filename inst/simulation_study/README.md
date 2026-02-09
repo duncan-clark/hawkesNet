@@ -8,7 +8,7 @@ This directory contains the main simulation studies for the **Barabási–Albert
 
    - From the terminal (one-time install):
      ```bash
-     cd /path/to/hawkesGrowthNet
+     cd /path/to/hawkesNet
      R -e "devtools::install()"
      ```
    - Or in RStudio: open the project at the package root, then run `devtools::install()` or `devtools::load_all()`.
@@ -19,11 +19,11 @@ This directory contains the main simulation studies for the **Barabási–Albert
 
 ## Option A: Interactive RStudio (cloud or local)
 
-1. Set the working directory to the **package root** (e.g. in RStudio: *Session → Set Working Directory → To Project Directory*, or `setwd("/path/to/hawkesGrowthNet")`).
+1. Set the working directory to the **package root** (e.g. in RStudio: *Session → Set Working Directory → To Project Directory*, or `setwd("/path/to/hawkesNet")`).
 2. Load the package:
    ```r
    devtools::load_all()   # development load, or
-   library(hawkesGrowthNet)  # if already installed
+   library(hawkesNet)  # if already installed
    ```
 3. Source the study script:
    ```r
@@ -42,7 +42,7 @@ Submit from the **package root** so that `Rscript` can find the package and the 
 
 1. `cd` to the package root:
    ```bash
-   cd /path/to/hawkesGrowthNet
+   cd /path/to/hawkesNet
    ```
 2. Submit the job:
    ```bash

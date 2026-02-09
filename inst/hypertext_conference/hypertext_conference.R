@@ -1,4 +1,4 @@
-library(hawkesGrowthNet)
+library(hawkesNet)
 library(network)
 library(sna)
 library(ernm)
@@ -144,7 +144,7 @@ process_dat <- function(dat,
               fit_temp = fit_temp))
 }
 
-net_dat <- read.table('hawkesGrowthNet/data/ht09_contact_list.dat')
+net_dat <- read.table('hawkesNet/data/ht09_contact_list.dat')
 net_dat <- data.frame(
   from = net_dat$V2,
   to = net_dat$V3,
@@ -204,7 +204,7 @@ max(times$node_times)
 max(times$edge_times)
 
 if(FALSE){
-  init_lik <- loglik_hawkesGrowthNet(params = params_init,
+  init_lik <- loglik_hawkesNet(params = params_init,
                                      time_window = c(0,1),
                                      mark_filtration = net,
                                      PMF_mark = PMF_mark_CS,
@@ -218,7 +218,7 @@ if(FALSE){
   init_lik$loglik
 }
 
-fit <- fit_hawkesGrowthNet(params_init = params_init,
+fit <- fit_hawkesNet(params_init = params_init,
                            time_window = c(0,max(get_times(net)$times)),
                            mark_filtration = net,
                            PMF_mark = PMF_mark_CS,
@@ -272,7 +272,7 @@ cl <- makeForkCluster(N_CORES)
 net_list <- parLapply(1:100,
                       cl=cl,
                       function(x){
-                        sim_hawkesGrowthNet(params = relist(fit$fit$par, skeleton = params_init),
+                        sim_hawkesNet(params = relist(fit$fit$par, skeleton = params_init),
                                             time_window = c(0,1),
                                             PMF_mark = PMF_mark_CS,
                                             cond_intensity = cond_intensity,

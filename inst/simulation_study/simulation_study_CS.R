@@ -20,7 +20,7 @@ library(network)
 library(sna)
 library(hash)
 library(ernm)
-library(hawkesGrowthNet)
+library(hawkesNet)
 
 # Paths: run from package root (directory containing inst/)
 PKG_ROOT <- getwd()
@@ -85,7 +85,7 @@ make_cluster <- function(N_CORES){
     library(network)
     library(sna)
     library(hash)
-    library(hawkesGrowthNet)
+    library(hawkesNet)
   })
   clusterExport(cl, c("params",
                       "TIME",
@@ -114,7 +114,7 @@ if(SIMULATE){
   print(paste("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each"))
   sims <- parLapply(cl=cl,1:N_SIMS,function(x){
     results <- tryCatch({
-      sim_hawkesGrowthNet(params =  params,
+      sim_hawkesNet(params =  params,
                           time_window = c(0,TIME),
                           PMF_mark = PMF_mark_CS,
                           cond_intensity = cond_intensity,
@@ -126,7 +126,7 @@ if(SIMULATE){
                           formula_RHS = "edges  + triangles() + star(c(2,3))")
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
-      message("Error in sim_hawkesGrowthNet: ", e$message)
+      message("Error in sim_hawkesNet: ", e$message)
       return(NULL)
     })
     return(results)
@@ -151,7 +151,7 @@ if(SIMULATE){
   t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
-      fit_hawkesGrowthNet(
+      fit_hawkesNet(
         params_init = params_init,
         time_window = c(0, TIME),
         mark_filtration = x$net,
@@ -167,7 +167,7 @@ if(SIMULATE){
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
-      message("Error in fit_hawkesGrowthNet: ", e$message)
+      message("Error in fit_hawkesNet: ", e$message)
       return(e$message)
     })
     return(fit)
@@ -252,7 +252,7 @@ if(RUN_CONSISTENCY){
 
       # A. Simulate
       sim_res <- tryCatch({
-        sim_hawkesGrowthNet(params = params_true,
+        sim_hawkesNet(params = params_true,
                             time_window = c(0, curr_time),
                             PMF_mark = PMF_mark_CS,
                             cond_intensity = cond_intensity,
@@ -280,7 +280,7 @@ if(RUN_CONSISTENCY){
       params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
 
       fit_res <- tryCatch({
-        fit_hawkesGrowthNet(params_init = params_init,
+        fit_hawkesNet(params_init = params_init,
                             time_window = c(0, curr_time),
                             mark_filtration = sim_res$net,
                             PMF_mark = PMF_mark_CS,
@@ -426,7 +426,7 @@ if(RUN_EXPLOSIVE){
   T_explode <- 5
 
   # Simulate Explosive
-  sim_exp <- sim_hawkesGrowthNet(params = params_explosive,
+  sim_exp <- sim_hawkesNet(params = params_explosive,
                                  time_window = c(0, T_explode),
                                  PMF_mark = PMF_mark_CS,
                                  cond_intensity = cond_intensity,
@@ -437,7 +437,7 @@ if(RUN_EXPLOSIVE){
                                  mu_multiplier = 50)
 
   print("Simulating Stable Regime (CS model)...")
-  sim_stable <- sim_hawkesGrowthNet(params = params_stable,
+  sim_stable <- sim_hawkesNet(params = params_stable,
                                     time_window = c(0, T_explode),
                                     PMF_mark = PMF_mark_CS,
                                     cond_intensity = cond_intensity,
@@ -603,7 +603,7 @@ if(PAPER_OUTPUT){
       labs(title = "Distribution of parameter estimates (CS)", subtitle = "Red dashed = true; green dotted = init", x = "Estimate") + theme_minimal()
     print(p_est_dist)
 
-    comps <- lapply(sims, function(x) compensators_hawkesGrowthNet(params = params, mark_filtration = x$net, time_window = c(0, TIME)))
+    comps <- lapply(sims, function(x) compensators_hawkesNet(params = params, mark_filtration = x$net, time_window = c(0, TIME)))
     marked_p_vals <- mapply(seq_along(keep), FUN = function(i){
       sim_idx <- keep[i]
       sim <- sims[[sim_idx]]

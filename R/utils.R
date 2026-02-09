@@ -331,7 +331,7 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
 #' probability). Uses the n-1 parametrization: user supplies n-1 probabilities
 #' and the last level's probability is \code{1 - sum(p)}.
 #'
-#' @param params List of parameters (e.g. from \code{relist} or passed to \code{sim_hawkesGrowthNet}).
+#' @param params List of parameters (e.g. from \code{relist} or passed to \code{sim_hawkesNet}).
 #' @param eps Scalar rate/scale params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{TRUE} if all present parameters are valid, \code{FALSE} otherwise.
 #' @noRd
@@ -366,7 +366,7 @@ point_process_params_valid <- function(params, eps = 1e-10) {
 #' finite, and sum to strictly less than 1 (so the reference level gets positive
 #' probability). If any check fails, \code{stop()} is called with a message.
 #'
-#' @param params List of parameters (e.g. passed to \code{sim_hawkesGrowthNet}).
+#' @param params List of parameters (e.g. passed to \code{sim_hawkesNet}).
 #' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{invisible(params)} if valid.
 #' @export

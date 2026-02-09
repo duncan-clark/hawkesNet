@@ -5,8 +5,8 @@
 # Run interactively in RStudio on the cluster
 # =============================================================================
 
-# Load hawkesGrowthNet package
-library(hawkesGrowthNet)
+# Load hawkesNet package
+library(hawkesNet)
 
 # Load required libraries
 library(dplyr)
@@ -70,8 +70,8 @@ net_raw <- out$net
 edges <- out$edges
 network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
 network::set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
-net_raw <- hawkesGrowthNet::normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
-n_events <- length(hawkesGrowthNet::get_times(net_raw)$times)
+net_raw <- hawkesNet::normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
+n_events <- length(hawkesNet::get_times(net_raw)$times)
 n_nodes <- network::network.size(net_raw)
 cat("  Network:", n_events, "events,", n_nodes, "nodes\n")
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
@@ -118,7 +118,7 @@ if (!is.null(inhom_bg)) {
   t_fit_structural <- proc.time()
   
   fit_inhom_structural <- tryCatch(
-    fit_hawkesGrowthNet_inhom(
+    fit_hawkesNet_inhom(
       params_init = params_init_structural,
       time_window = time_window_01,
       mark_filtration = net_raw,

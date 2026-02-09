@@ -5,7 +5,7 @@
 Run from the **package root** (directory containing `R/`, `inst/`, `DESCRIPTION`). In R or RStudio:
 
 ```r
-# From package root (e.g. setwd("/path/to/hawkesGrowthNet") or open project)
+# From package root (e.g. setwd("/path/to/hawkesNet") or open project)
 source("inst/examples/example_BA.R")   # Barabási–Albert (degree-weighted) model
 source("inst/examples/example_CS.R")  # Change-statistic (ERGM-style) model
 ```

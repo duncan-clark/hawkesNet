@@ -1,4 +1,4 @@
 library(testthat)
-library(hawkesGrowthNet)
+library(hawkesNet)
 
-test_check("hawkesGrowthNet")
+test_check("hawkesNet")

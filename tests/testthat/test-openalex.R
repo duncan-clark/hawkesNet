@@ -20,7 +20,7 @@ test_that("OpenAlex network loading works with minimal data", {
   skip_on_cran()
   
   # Use minimal configuration for speed
-  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesGrowthNet"))
+  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesNet"))
   
   # Load minimal network (1 page = 100 works max)
   out <- tryCatch({
@@ -71,7 +71,7 @@ test_that("OpenAlex network can be normalized", {
   skip_if_no_openalex()
   skip_on_cran()
   
-  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesGrowthNet"))
+  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesNet"))
   
   out <- tryCatch({
     get_network(
@@ -100,7 +100,7 @@ test_that("waiting_times_between_formations works on OpenAlex network", {
   skip_if_no_openalex()
   skip_on_cran()
   
-  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesGrowthNet"))
+  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesNet"))
   
   out <- tryCatch({
     get_network(
@@ -124,7 +124,7 @@ test_that("waiting_times_between_formations works on OpenAlex network", {
   if (network::network.edgecount(net_raw) > 0) {
     formula_RHS <- "edges + triangles + star(c(2,3))"
     wait_results <- tryCatch({
-      hawkesGrowthNet:::waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
+      hawkesNet:::waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
     }, error = function(e) {
       skip(paste("waiting_times_between_formations failed:", e$message))
     })
@@ -146,7 +146,7 @@ test_that("GOF function can run on OpenAlex network (slow)", {
     skip("Skipping slow GOF test. Set RUN_SLOW_TESTS=true to run.")
   }
   
-  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesGrowthNet"))
+  source(system.file("openalex_study", "get_network_openalex.R", package = "hawkesNet"))
   
   out <- tryCatch({
     get_network(

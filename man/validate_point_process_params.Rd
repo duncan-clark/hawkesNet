@@ -7,7 +7,7 @@
 validate_point_process_params(params, eps = 1e-10)
 }
 \arguments{
-\item{params}{List of parameters (e.g. passed to \code{sim_hawkesGrowthNet}).}
+\item{params}{List of parameters (e.g. passed to \code{sim_hawkesNet}).}
 
 \item{eps}{Scalar params must be \code{> eps} (default \code{1e-10}).}
 }
