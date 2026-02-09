@@ -391,25 +391,57 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   if (verbose) cat("  GOF simulations:", n_success, "succeeded,", n_fail, "failed\n")
   
-  # Initialize results
+  # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                       geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
                       nodemix_obs = NULL, nodemix_sim = NULL, plots = list())
   
   if (length(sim_nets) > 0) {
-    if (verbose) cat("  Computing GOF statistics (parallelized)...\n")
-    t_stats <- proc.time()
+    # Wrap entire statistics computation in tryCatch to ensure we always return partial results
+    tryCatch({
+      if (verbose) cat("  Computing GOF statistics (parallelized)...\n")
+      t_stats <- proc.time()
     
     # Observed statistics (single network)
     if (verbose) cat("    Computing observed statistics...\n")
     # Ensure vertex attributes are set if formula includes nodeMatch/nodeMix
     if (any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-      net_obs <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+      net_obs <- tryCatch({
+        ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+      }, error = function(e) {
+        if (verbose) cat("      Warning: Could not ensure gender attribute:", e$message, "\n")
+        net_obs
+      })
     }
-    GOF_results$degree_obs <- degree_dist(net_obs, max_deg)
-    GOF_results$esp_obs <- esp_dist(net_obs, k_esp)
-    GOF_results$geodist_obs <- geodist_dist(net_obs)
-    GOF_results$wait_obs <- waiting_times_between_formations(net_obs, formula_RHS = formula_RHS)
+    
+    # Compute each observed statistic independently (failures don't stop others)
+    GOF_results$degree_obs <- tryCatch({
+      degree_dist(net_obs, max_deg)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed degree distribution:", e$message, "\n")
+      NULL
+    })
+    
+    GOF_results$esp_obs <- tryCatch({
+      esp_dist(net_obs, k_esp)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed ESP distribution:", e$message, "\n")
+      NULL
+    })
+    
+    GOF_results$geodist_obs <- tryCatch({
+      geodist_dist(net_obs)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed geodesic distances:", e$message, "\n")
+      NULL
+    })
+    
+    GOF_results$wait_obs <- tryCatch({
+      waiting_times_between_formations(net_obs, formula_RHS = formula_RHS)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
+      NULL
+    })
     
     # Observed nodeMix statistics (if gender attribute exists)
     if (verbose) cat("    Computing observed nodeMix statistics...\n")
@@ -424,79 +456,127 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
     })
     
-    # Simulated statistics (parallelized)
+    # Simulated statistics (parallelized) - each wrapped in tryCatch
     if (verbose) cat("    Computing degree distributions...\n")
-    GOF_results$degree_sim <- do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-      degree_dist(n, max_deg)
-    }, mc.cores = cores))
+    GOF_results$degree_sim <- tryCatch({
+      do.call(rbind, parallel::mclapply(sim_nets, function(n) {
+        tryCatch({
+          degree_dist(n, max_deg)
+        }, error = function(e) rep(NA_real_, max_deg + 1))
+      }, mc.cores = cores))
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated degree distributions:", e$message, "\n")
+      NULL
+    })
     
     if (verbose) cat("    Computing ESP distributions...\n")
-    GOF_results$esp_sim <- do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-      esp_dist(n, k_esp)
-    }, mc.cores = cores))
+    GOF_results$esp_sim <- tryCatch({
+      do.call(rbind, parallel::mclapply(sim_nets, function(n) {
+        tryCatch({
+          esp_dist(n, k_esp)
+        }, error = function(e) rep(NA_real_, k_esp + 1))
+      }, mc.cores = cores))
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated ESP distributions:", e$message, "\n")
+      NULL
+    })
     
     if (verbose) cat("    Computing geodesic distances...\n")
-    GOF_results$geodist_sim <- parallel::mclapply(sim_nets, function(n) {
-      geodist_dist(n)
-    }, mc.cores = cores)
+    GOF_results$geodist_sim <- tryCatch({
+      parallel::mclapply(sim_nets, function(n) {
+        tryCatch({
+          geodist_dist(n)
+        }, error = function(e) numeric(0))
+      }, mc.cores = cores)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated geodesic distances:", e$message, "\n")
+      NULL
+    })
     
     if (verbose) cat("    Computing waiting times...\n")
-    GOF_results$wait_sim <- parallel::mclapply(sim_nets, function(n) {
-      waiting_times_between_formations(n, formula_RHS = formula_RHS)
-    }, mc.cores = cores)
+    GOF_results$wait_sim <- tryCatch({
+      parallel::mclapply(sim_nets, function(n) {
+        tryCatch({
+          waiting_times_between_formations(n, formula_RHS = formula_RHS)
+        }, error = function(e) {
+          if (verbose && length(sim_nets) <= 5) cat("        Warning: Could not compute waiting times for one sim:", e$message, "\n")
+          list()
+        })
+      }, mc.cores = cores)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated waiting times:", e$message, "\n")
+      NULL
+    })
     
     # Simulated nodeMix statistics (parallelized)
     if (verbose) cat("    Computing simulated nodeMix statistics...\n")
-    # Determine expected length from observed nodeMix
-    nodemix_obs_len <- if (!is.null(GOF_results$nodemix_obs)) length(GOF_results$nodemix_obs) else {
-      # Try to compute length from observed network
-      tryCatch({
-        if ("gender" %in% network::list.vertex.attributes(net_obs) || 
-            any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-          net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
-          length(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
-        } else {
-          0
-        }
-      }, error = function(e) 0)
-    }
-    
-    GOF_results$nodemix_sim <- do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-      tryCatch({
-        if ("gender" %in% network::list.vertex.attributes(n) || 
-            any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-          # Ensure gender attribute is properly set before ERNM operations
-          n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
-          as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
-        } else {
-          rep(NA_real_, nodemix_obs_len)
-        }
-      }, error = function(e) {
-        rep(NA_real_, nodemix_obs_len)
-      })
-    }, mc.cores = cores))
+    GOF_results$nodemix_sim <- tryCatch({
+      # Determine expected length from observed nodeMix
+      nodemix_obs_len <- if (!is.null(GOF_results$nodemix_obs)) length(GOF_results$nodemix_obs) else {
+        # Try to compute length from observed network
+        tryCatch({
+          if ("gender" %in% network::list.vertex.attributes(net_obs) || 
+              any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+            net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+            length(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
+          } else {
+            0
+          }
+        }, error = function(e) 0)
+      }
+      
+      if (nodemix_obs_len > 0) {
+        do.call(rbind, parallel::mclapply(sim_nets, function(n) {
+          tryCatch({
+            if ("gender" %in% network::list.vertex.attributes(n) || 
+                any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+              # Ensure gender attribute is properly set before ERNM operations
+              n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
+              as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
+            } else {
+              rep(NA_real_, nodemix_obs_len)
+            }
+          }, error = function(e) {
+            rep(NA_real_, nodemix_obs_len)
+          })
+        }, mc.cores = cores))
+      } else {
+        NULL
+      }
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated nodeMix statistics:", e$message, "\n")
+      NULL
+    })
     
     if (verbose) {
       cat("    Waiting times: done\n")
       cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")
     }
     
-    # Generate plots (if ggplot2 is available)
-    if (verbose) cat("  Generating GOF plots...\n")
-    if (requireNamespace("ggplot2", quietly = TRUE)) {
-      GOF_results$plots <- tryCatch(
-        create_gof_plots(GOF_results),
-        error = function(e) {
-          if (verbose) cat("    Warning: Could not generate plots:", e$message, "\n")
-          list()
-        }
-      )
-    } else {
-      if (verbose) cat("    ggplot2 not available; skipping plots\n")
-      GOF_results$plots <- list()
-    }
+      # Generate plots (if ggplot2 is available)
+      if (verbose) cat("  Generating GOF plots...\n")
+      if (requireNamespace("ggplot2", quietly = TRUE)) {
+        GOF_results$plots <- tryCatch(
+          create_gof_plots(GOF_results),
+          error = function(e) {
+            if (verbose) cat("    Warning: Could not generate plots:", e$message, "\n")
+            list()
+          }
+        )
+      } else {
+        if (verbose) cat("    ggplot2 not available; skipping plots\n")
+        GOF_results$plots <- list()
+      }
+    }, error = function(e) {
+      # If statistics computation fails completely, return whatever we have
+      if (verbose) cat("  ERROR in GOF statistics computation:", e$message, "\n")
+      if (verbose) cat("  Returning partial results (some statistics may be NULL)\n")
+    })
+  } else {
+    if (verbose) cat("  No successful simulations; returning empty GOF results\n")
   }
   
+  # Always return results, even if some computations failed
   GOF_results
 }
 

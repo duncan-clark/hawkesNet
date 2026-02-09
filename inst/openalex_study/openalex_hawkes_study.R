@@ -584,25 +584,33 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
   params_init_structural_gof$mu <- params_init_structural$mu
   
   # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
-  GOF_results_structural <- gof(
-    fit = fit_inhom_structural,
-    net_obs = net_raw,
-    params_init = params_init_structural_gof,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
-    formula_RHS = FORMULA_RHS_STRUCTURAL,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    max_node_time = 1,
-    inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    mu_multiplier = 5,
-    verbose = TRUE
-  )
+  GOF_results_structural <- tryCatch({
+    gof(
+      fit = fit_inhom_structural,
+      net_obs = net_raw,
+      params_init = params_init_structural_gof,
+      PMF_mark = PMF_mark_CS,
+      cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+      formula_RHS = FORMULA_RHS_STRUCTURAL,
+      time_window = GOF_TIME_WINDOW,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      inhom_bg = inhom_bg,
+      n_sim = N_GOF,
+      cores = N_CORES,
+      max_deg = 15,
+      k_esp = 15,
+      mu_multiplier = 5,
+      verbose = TRUE
+    )
+  }, error = function(e) {
+    cat("  ERROR: GOF failed completely:", e$message, "\n")
+    cat("  Returning empty GOF results\n")
+    list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+         geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
+         nodemix_obs = NULL, nodemix_sim = NULL, plots = list())
+  })
 } else {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping structural GOF\n")
   if (is.null(fit_inhom_structural)) cat("  No structural fit available; skipping structural GOF\n")
@@ -626,25 +634,33 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   
   # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
   # The average mu from inhom_bg will be used (computed in gof() function)
-  GOF_results_nodematch <- gof(
-    fit = fit_inhom_nodematch,
-    net_obs = net_raw,
-    params_init = params_init_nodematch_gof,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
-    formula_RHS = FORMULA_RHS_NODEMATCH,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    max_node_time = 1,
-    inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    mu_multiplier = 5,
-    verbose = TRUE
-  )
+  GOF_results_nodematch <- tryCatch({
+    gof(
+      fit = fit_inhom_nodematch,
+      net_obs = net_raw,
+      params_init = params_init_nodematch_gof,
+      PMF_mark = PMF_mark_CS,
+      cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+      formula_RHS = FORMULA_RHS_NODEMATCH,
+      time_window = GOF_TIME_WINDOW,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      inhom_bg = inhom_bg,
+      n_sim = N_GOF,
+      cores = N_CORES,
+      max_deg = 15,
+      k_esp = 15,
+      mu_multiplier = 5,
+      verbose = TRUE
+    )
+  }, error = function(e) {
+    cat("  ERROR: GOF failed completely:", e$message, "\n")
+    cat("  Returning empty GOF results\n")
+    list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+         geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
+         nodemix_obs = NULL, nodemix_sim = NULL, plots = list())
+  })
 } else {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMatch GOF\n")
   if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
@@ -668,25 +684,33 @@ if (RUN_GOF && !is.null(fit_inhom)) {
   
   # For GOF simulations, use cond_intensity (not cond_intensity_inhom)
   # The average mu from inhom_bg will be used (computed in gof() function)
-  GOF_results <- gof(
-    fit = fit_inhom,
-    net_obs = net_raw,
-    params_init = params_init_nodemix_gof,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Use homogeneous version for simulations
-    formula_RHS = FORMULA_RHS,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    max_node_time = 1,
-    inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    mu_multiplier = 5,
-    verbose = TRUE
-  )
+  GOF_results <- tryCatch({
+    gof(
+      fit = fit_inhom,
+      net_obs = net_raw,
+      params_init = params_init_nodemix_gof,
+      PMF_mark = PMF_mark_CS,
+      cond_intensity = cond_intensity,  # Use homogeneous version for simulations
+      formula_RHS = FORMULA_RHS,
+      time_window = GOF_TIME_WINDOW,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      inhom_bg = inhom_bg,
+      n_sim = N_GOF,
+      cores = N_CORES,
+      max_deg = 15,
+      k_esp = 15,
+      mu_multiplier = 5,
+      verbose = TRUE
+    )
+  }, error = function(e) {
+    cat("  ERROR: GOF failed completely:", e$message, "\n")
+    cat("  Returning empty GOF results\n")
+    list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+         geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
+         nodemix_obs = NULL, nodemix_sim = NULL, plots = list())
+  })
 } else {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMix GOF\n")
   if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
