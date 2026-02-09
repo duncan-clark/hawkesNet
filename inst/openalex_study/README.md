@@ -49,10 +49,6 @@ The **hawkesGrowthNet** package must be installed (e.g. `devtools::install()` fr
   Number of pages to fetch (100 works per page).  
   Default: `50`.
 
-- **`RUN_NODEMIX`** (in script)  
-  If `TRUE`, run the nodeMix fit and nodeMix GOF (structural + nodeMatch + nodeMix).  
-  Default: `FALSE`. Set to `TRUE` only when you need nodeMix; nodeMatch fit is still problematic and nodeMix is heavier and can cause OOM.
-
 Example:
 
 ```bash

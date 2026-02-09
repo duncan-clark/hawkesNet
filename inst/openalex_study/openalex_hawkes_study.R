@@ -57,10 +57,10 @@ GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
-# Set FALSE to skip nodeMix fit and GOF (nodeMatch fit still problematic; nodeMix is heavier and often OOM)
-RUN_NODEMIX <- FALSE
 TOPIC <- "Point processes and geometric inequalities"
 
+# Reproducibility
+set.seed(42L)
 
 # =============================================================================
 # GOF functions are now in R/gof.R (exported from package)
@@ -71,7 +71,7 @@ TOPIC <- "Point processes and geometric inequalities"
 # =============================================================================
 t_total <- proc.time()
 cat("=== OpenAlex Hawkes Study ===\n")
-cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "| RUN_NODEMIX:", RUN_NODEMIX, "\n")
+cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "\n")
 cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n")
 cat("  Package root:", PKG_ROOT, "\n")
 cat("  Working directory:", getwd(), "\n")
@@ -120,7 +120,7 @@ if ("gender" %in% network::list.vertex.attributes(net_raw)) {
   gender_counts <- table(gender_vals, useNA = "ifany")
   cat("  Gender distribution:", paste(names(gender_counts), "=", gender_counts, collapse = ", "), "\n")
   if (all(gender_vals == "unknown", na.rm = TRUE)) {
-    warning("⚠ WARNING: All genders are 'unknown'. This will cause nodeMix to only detect 1 statistic instead of 6.")
+    warning("⚠ WARNING: All genders are 'unknown'. This may affect nodeMatch and homophily statistics.")
     warning("⚠ Install 'gender' and 'genderdata' packages for gender prediction: install.packages(c('gender', 'genderdata'))")
   }
 } else {
@@ -129,7 +129,7 @@ if ("gender" %in% network::list.vertex.attributes(net_raw)) {
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
-# 2. Inhomogeneous (KDE) + CS fits: structural -> nodeMatch -> nodeMix
+# 2. Inhomogeneous (KDE) + CS fits: structural -> nodeMatch
 # =============================================================================
 cat("--- Step 2: Inhomogeneous (KDE) + CS fits ---\n")
 t_step <- proc.time()
@@ -373,178 +373,6 @@ if (!is.null(inhom_bg)) {
   cat("  No inhomogeneous background; skipping nodeMatch fit\n")
 }
 
-# =============================================================================
-# 2c. nodeMix fit (initialized from nodeMatch fit)
-# =============================================================================
-fit_inhom <- NULL
-params_init_inhom <- NULL
-FORMULA_RHS <- "edges + triangles + star(c(2,3)) + nodeMix('gender')"
-if (!is.null(inhom_bg) && RUN_NODEMIX) {
-  cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
-  cat("  Formula:", FORMULA_RHS, "\n")
-  t_step_nodemix <- proc.time()
-  
-  # Get expected parameters for nodeMix formula
-  exp_cs <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS)
-  n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 5L
-  
-  # Initialize nodeMix fit from nodeMatch fit results
-  if (!is.null(fit_inhom_nodematch) && fit_inhom_nodematch$fit$convergence == 0) {
-    # Extract parameters from nodeMatch fit
-    # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
-    # (params_init_nodematch with vertex_categorical_levels stripped)
-    skel_nodematch <- list(
-      mu = params_init_nodematch$mu,
-      beta_overall = params_init_nodematch$beta_overall,
-      K = params_init_nodematch$K,
-      beta_edges = params_init_nodematch$beta_edges,
-      node_lambda = params_init_nodematch$node_lambda,
-      CS_params = params_init_nodematch$CS_params,
-      vertex_categorical = params_init_nodematch$vertex_categorical
-    )
-    pfit_nodematch <- tryCatch({
-      relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch)
-    }, error = function(e) {
-      cat("  Warning: Failed to extract nodeMatch parameters:", e$message, "\n")
-      cat("  Using independent initialization\n")
-      NULL
-    })
-    
-    if (!is.null(pfit_nodematch)) {
-      pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
-      
-      # Restore names and repair vertex_categorical parameters (may be invalid after optimization)
-      pfit_nodematch <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-        pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
-      pfit_nodematch <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
-      
-      # Validate extracted parameters - check each field individually
-      mu_valid <- is.finite(pfit_nodematch$mu) && pfit_nodematch$mu > 0
-      beta_overall_valid <- is.finite(pfit_nodematch$beta_overall)
-      K_valid <- is.finite(pfit_nodematch$K)
-      beta_edges_valid <- is.finite(pfit_nodematch$beta_edges)
-      node_lambda_valid <- is.finite(pfit_nodematch$node_lambda) && pfit_nodematch$node_lambda > 0
-      cs_valid <- all(is.finite(pfit_nodematch$CS_params)) && length(pfit_nodematch$CS_params) >= 4L
-      vcat_valid <- !is.null(pfit_nodematch$vertex_categorical) && 
-                     is.list(pfit_nodematch$vertex_categorical) &&
-                     "gender" %in% names(pfit_nodematch$vertex_categorical) &&
-                     length(pfit_nodematch$vertex_categorical$gender) == 2L &&
-                     all(is.finite(pfit_nodematch$vertex_categorical$gender)) &&
-                     all(pfit_nodematch$vertex_categorical$gender >= 0) &&
-                     sum(pfit_nodematch$vertex_categorical$gender) < 1
-      
-      if (mu_valid && beta_overall_valid && K_valid && beta_edges_valid && 
-          node_lambda_valid && cs_valid && vcat_valid) {
-        # Initialize nodeMix: use nodeMatch CS_params for first 4 terms, add nodeMix terms
-        cs_nodematch <- pfit_nodematch$CS_params[seq_len(min(4L, length(pfit_nodematch$CS_params)))]
-        cs_padding <- rep(0, max(0L, n_cs - length(cs_nodematch)))
-        cs_init_nodemix <- c(cs_nodematch, cs_padding)[seq_len(n_cs)]
-        
-        # Ensure mu is calculated correctly
-        mu_val <- pfit_nodematch$mu
-        
-        params_init_inhom <- list(
-          mu = mu_val,
-          beta_overall = pfit_nodematch$beta_overall,
-          K = pfit_nodematch$K,
-          beta_edges = pfit_nodematch$beta_edges,
-          node_lambda = pfit_nodematch$node_lambda,
-          CS_params = cs_init_nodemix,
-          vertex_categorical = pfit_nodematch$vertex_categorical,
-          vertex_categorical_levels = pfit_nodematch$vertex_categorical_levels
-        )
-        cat("  Initialized from nodeMatch fit\n")
-      } else {
-        cat("  nodeMatch fit parameters invalid:\n")
-        cat("    mu:", mu_valid, "beta_overall:", beta_overall_valid, "K:", K_valid, "\n")
-        cat("    beta_edges:", beta_edges_valid, "node_lambda:", node_lambda_valid, "\n")
-        cat("    CS_params:", cs_valid, "vertex_categorical:", vcat_valid, "\n")
-        pfit_nodematch <- NULL  # Force fallback
-      }
-    }
-    
-    if (is.null(pfit_nodematch)) {
-      # Fallback: independent initialization
-      params_init_inhom <- list(
-        mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-        beta_overall = 1,
-        K = 0.5,
-        beta_edges = 1,
-        node_lambda = 1,
-        CS_params = c(-10, rep(0, n_cs - 1)),
-        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-      )
-      cat("  nodeMatch fit parameters invalid; using independent initialization\n")
-    }
-  } else {
-    # Fallback: independent initialization if nodeMatch fit failed
-    params_init_inhom <- list(
-      mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-      beta_overall = 1,
-      K = 0.5,
-      beta_edges = 1,
-      node_lambda = 1,
-      CS_params = c(-10, rep(0, n_cs - 1)),
-      vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-      vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-    )
-    cat("  nodeMatch fit not available; using independent initialization\n")
-  }
-  
-  p_scale_inhom <- c(
-    beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-    setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs))),
-    vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
-  )
-  
-  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
-  t_fit <- proc.time()
-  
-  fit_inhom <- tryCatch(
-    fit_hawkesGrowthNet_inhom(
-      params_init = params_init_inhom,
-      time_window = time_window_01,
-      mark_filtration = net_raw,
-      PMF_mark = PMF_mark_CS,
-      mu_vec = inhom_bg$mu_vec,
-      integral_bg = inhom_bg$integral_bg,
-      formula_RHS = FORMULA_RHS,
-      truncation = TRUNCATION,
-      mark_decay = "activity",
-      max_node_time = 1,
-      method = "Nelder-Mead",
-      maxit = MAX_ITER,
-      trace = 1,
-      reltol = 1e-8,
-      verbose = FALSE,
-      fixed_params = c("K", "mu"),
-      parscale = p_scale_inhom,
-      cache_intensity = TRUE,
-      cores = N_CORES
-    ),
-    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
-  )
-  
-  elapsed_fit <- (proc.time() - t_fit)[3]
-  if (!is.null(fit_inhom)) {
-    cat("  Fit completed:", round(elapsed_fit, 1), "s (", round(elapsed_fit / 60, 1), "min)\n")
-    cat("  Convergence:", fit_inhom$fit$convergence, "\n")
-    cat("  Iterations:", fit_inhom$fit$counts[1], "\n")
-    # Print fit table
-    if (!is.null(fit_inhom$fit_table)) {
-      cat("\n  nodeMix fit results:\n")
-      print(fit_inhom$fit_table, max = NULL)
-    }
-  } else {
-    cat("  Fit FAILED after", round(elapsed_fit, 1), "s\n")
-  }
-  cat("  Step 2c total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
-} else {
-  if (is.null(inhom_bg)) cat("  No inhomogeneous background; skipping nodeMix fit\n")
-  else cat("  RUN_NODEMIX = FALSE; skipping nodeMix fit\n")
-}
-
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # =============================================================================
@@ -605,12 +433,10 @@ GOF_results_structural <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = N
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
-                               wait_obs = NULL, wait_sim = NULL,
-                               nodemix_obs = NULL, nodemix_sim = NULL)
+                               wait_obs = NULL, wait_sim = NULL)
 GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                     geodist_obs = NULL, geodist_sim = NULL,
-                    wait_obs = NULL, wait_sim = NULL,
-                    nodemix_obs = NULL, nodemix_sim = NULL)
+                    wait_obs = NULL, wait_sim = NULL)
 
 # GOF for structural-only model (first)
 if (RUN_GOF && !is.null(fit_inhom_structural)) {
@@ -690,47 +516,9 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
 }
 
-# GOF for nodeMix model (third)
-if (RUN_GOF && RUN_NODEMIX && !is.null(fit_inhom)) {
-  cat("\n  GOF for nodeMix model...\n")
-  
-  # Reconstruct params_init for nodeMix
-  skel_nodemix_gof <- params_init_inhom
-  skel_nodemix_gof$vertex_categorical_levels <- NULL
-  params_init_nodemix_gof <- relist(fit_inhom$fit$par, skeleton = skel_nodemix_gof)
-  params_init_nodemix_gof$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-  params_init_nodemix_gof$K <- params_init_inhom$K
-  params_init_nodemix_gof$mu <- params_init_inhom$mu
-  # Restore names and repair parameters before GOF
-  params_init_nodemix_gof <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-    params_init_nodemix_gof, params_init_inhom$vertex_categorical_levels)
-  params_init_nodemix_gof <- hawkesGrowthNet:::repair_vertex_categorical_params(params_init_nodemix_gof, eps = 1e-6)
-  
-  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
-  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
-  GOF_results <- gof(
-    fit = fit_inhom,
-    net_obs = net_raw,
-    params_init = params_init_nodemix_gof,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
-    formula_RHS = FORMULA_RHS,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    max_node_time = 1,
-    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    mu_multiplier = 5,
-    verbose = TRUE
-  )
-} else {
-  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMix GOF\n")
-  else if (!RUN_NODEMIX) cat("  RUN_NODEMIX = FALSE; skipping nodeMix GOF\n")
-  else if (is.null(fit_inhom)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
+# Use nodeMatch GOF as primary for display
+if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
+  GOF_results <- GOF_results_nodematch
 }
 
 cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
@@ -743,13 +531,10 @@ save_list <- list(
   net_raw = net_raw,
   edges = edges,
   inhom_bg = inhom_bg,
-  fit_inhom = fit_inhom,
   fit_inhom_nodematch = fit_inhom_nodematch,
   fit_inhom_structural = fit_inhom_structural,
-  params_init_inhom = params_init_inhom,
   params_init_nodematch = params_init_nodematch,
   params_init_structural = params_init_structural,
-  FORMULA_RHS = FORMULA_RHS,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
   FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
   fit_temporal = fit_temporal,
@@ -815,51 +600,6 @@ if (PAPER_OUTPUT) {
   list2env(dat, envir = .GlobalEnv)
   cat("  Rehydrated; producing figures and tables.\n")
 
-  # Print nodeMix fit results
-  if (!is.null(dat$fit_inhom)) {
-    cat("\n--- nodeMix Fit Results ---\n")
-    if (!is.null(dat$fit_inhom$fit_table)) {
-      cat("  Inhomogeneous fit (nodeMix): parameter estimates and standard errors\n")
-      print(dat$fit_inhom$fit_table, max = NULL)
-    } else {
-      cat("  Inhomogeneous fit (nodeMix): raw parameters\n")
-      print(fit_inhom$fit$par)
-    }
-    if (exists("params_init_inhom") && !is.null(params_init_inhom$vertex_categorical) &&
-        !is.null(dat$fit_inhom) && !is.null(dat$fit_inhom$fit$par)) {
-      # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
-      skel2 <- list(
-        mu = params_init_inhom$mu,
-        beta_overall = params_init_inhom$beta_overall,
-        K = params_init_inhom$K,
-        beta_edges = params_init_inhom$beta_edges,
-        node_lambda = params_init_inhom$node_lambda,
-        CS_params = params_init_inhom$CS_params,
-        vertex_categorical = params_init_inhom$vertex_categorical
-      )
-      pfit2 <- tryCatch({
-        relist(dat$fit_inhom$fit$par, skeleton = skel2)
-      }, error = function(e) NULL)
-      
-      if (!is.null(pfit2)) {
-        pfit2$vertex_categorical_levels <- params_init_inhom$vertex_categorical_levels
-        # Restore names and repair parameters before expanding
-        pfit2 <- hawkesGrowthNet:::reconstruct_vertex_categorical_names(
-          pfit2, params_init_inhom$vertex_categorical_levels)
-        pfit2 <- hawkesGrowthNet:::repair_vertex_categorical_params(pfit2, eps = 1e-6)
-        if (!is.null(pfit2$vertex_categorical$gender)) {
-          levs <- params_init_inhom$vertex_categorical_levels$gender
-          pgender <- expand_vertex_categorical_probs(pfit2$vertex_categorical$gender, levs)
-          if (!is.null(pgender)) {
-            cat("  Fitted gender proportions (n-1 expanded):\n"); print(pgender)
-          } else {
-            cat("  Fitted gender proportions: could not expand (invalid parameters)\n")
-          }
-        }
-      }
-    }
-  }
-  
   # Print nodeMatch fit results
   if (!is.null(dat$fit_inhom_nodematch)) {
     cat("\n--- nodeMatch Fit Results ---\n")
@@ -932,7 +672,6 @@ if (PAPER_OUTPUT) {
       if (!is.null(dat$GOF_results$plots$degree_plot)) print(dat$GOF_results$plots$degree_plot)
       if (!is.null(dat$GOF_results$plots$esp_plot)) print(dat$GOF_results$plots$esp_plot)
       if (!is.null(dat$GOF_results$plots$geodist_plot)) print(dat$GOF_results$plots$geodist_plot)
-      if (!is.null(dat$GOF_results$plots$nodemix_plot)) print(dat$GOF_results$plots$nodemix_plot)
       if (!is.null(dat$GOF_results$plots$waiting_times_plot)) print(dat$GOF_results$plots$waiting_times_plot)
     } else if (requireNamespace("ggplot2", quietly = TRUE) && !is.null(dat$GOF_results$degree_obs)) {
       # Fallback: generate plots here (legacy code)
