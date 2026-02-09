@@ -146,7 +146,8 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 # 2a. Structural-only fit (first, independent)
 # =============================================================================
 fit_inhom_structural <- NULL
-FORMULA_RHS_STRUCTURAL <- "edges + triangles + star(c(2,3))"
+# degree(0) captures isolate distribution so GOF is not overly connected
+FORMULA_RHS_STRUCTURAL <- "edges + degree(0) + triangles + star(c(2,3))"
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
@@ -222,7 +223,7 @@ if (!is.null(inhom_bg)) {
 # 2b. nodeMatch fit (initialized from structural fit)
 # =============================================================================
 fit_inhom_nodematch <- NULL
-FORMULA_RHS_NODEMATCH <- "edges + triangles + star(c(2,3)) + nodeMatch('gender')"
+FORMULA_RHS_NODEMATCH <- "edges + degree(0) + triangles + star(c(2,3)) + nodeMatch('gender')"
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
@@ -259,12 +260,12 @@ if (!is.null(inhom_bg)) {
       K_valid <- is.finite(pfit_structural$K)
       beta_edges_valid <- is.finite(pfit_structural$beta_edges)
       node_lambda_valid <- is.finite(pfit_structural$node_lambda) && pfit_structural$node_lambda > 0
-      cs_valid <- all(is.finite(pfit_structural$CS_params)) && length(pfit_structural$CS_params) >= 4L
+      cs_valid <- all(is.finite(pfit_structural$CS_params)) && length(pfit_structural$CS_params) >= n_cs_structural
       
       if (mu_valid && beta_overall_valid && K_valid && beta_edges_valid && 
           node_lambda_valid && cs_valid) {
-        # Initialize nodeMatch: use structural CS_params for first 4 terms, add nodeMatch term
-        cs_structural <- pfit_structural$CS_params[seq_len(min(4L, length(pfit_structural$CS_params)))]
+        # Initialize nodeMatch: use structural CS_params (edges, degree(0), triangles, stars), add nodeMatch term
+        cs_structural <- pfit_structural$CS_params[seq_len(min(n_cs_structural, length(pfit_structural$CS_params)))]
         cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
         cs_init_nodematch <- c(cs_structural, cs_padding)[seq_len(n_cs_nodematch)]
         

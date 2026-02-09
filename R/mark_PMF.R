@@ -78,7 +78,7 @@ PMF_mark_BA <- function(time,
     tails <- tails[!in_old_net]
     heads <- heads[!in_old_net]
   }
-  
+
   if(!is.null(last_net) && (last_net %n% 'n' > 2)){
     times <- get.vertex.attribute(last_net, "time")
     node_degrees <- degree(last_net)
@@ -606,9 +606,8 @@ PMF_mark_CS <- function(time,
         change_stats <- matrix(0, nrow = NROW(change_stats), ncol = n_cs)
       }
       
-      probs <- apply(change_stats, 1, function(c){
-        1/(1+exp(-sum(c*params$CS_params)))
-      })
+      eta <- as.vector(change_stats %*% params$CS_params)
+      probs <- plogis(eta)
       # --- Safety: sanitize probs after logistic (suggestions 1 & 9) ---
       if (any(!is.finite(probs))) {
         warning("PMF_mark_CS: NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")
@@ -909,7 +908,6 @@ PMF_mark_CS <- function(time,
         heads <- heads[!in_old_net]
       }
 
-
       delete.vertex.attribute(mark_sample,'na')
       
       # CRITICAL: Ensure ALL nodes have required vertex attributes before createCppModel
@@ -948,13 +946,24 @@ PMF_mark_CS <- function(time,
         delete.vertex.attribute(mark_sample, "na")
       }
       
-      model <- createCppModel(as.formula(paste("mark_sample ~ ",formula_RHS)))
+      # Reuse ERNM model per formula (avoids createCppModel every event; big speedup for nodeMatch)
+      cache <- get0(".ernm_model_cache", envir = asNamespace("hawkesGrowthNet"), inherits = FALSE)
+      if (is.null(cache)) {
+        cache <- new.env()
+        assign(".ernm_model_cache", cache, envir = asNamespace("hawkesGrowthNet"))
+      }
+      key <- formula_RHS
+      if (is.null(cache[[key]])) {
+        g0 <- network::network.initialize(0L, directed = FALSE)
+        cache[[key]] <- createCppModel(as.formula(paste("g0 ~ ", formula_RHS)))
+        cache[[key]]$setNetwork(as.BinaryNet(g0))
+      }
+      model <- cache[[key]]
+      model$setNetwork(as.BinaryNet(mark_sample))
       model$calculate()
-      
       change_stats <- model$computeChangeStats(tails, heads)
-      probs <- apply(change_stats, 1, function(c){
-        1/(1+exp(-sum(c*params$CS_params)))
-      })
+      eta <- as.vector(change_stats %*% params$CS_params)
+      probs <- plogis(eta)
       # --- Safety: sanitize probs after logistic in generate_mark (suggestions 1 & 9) ---
       if (any(!is.finite(probs))) {
         warning("PMF_mark_CS (generate_mark): NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")

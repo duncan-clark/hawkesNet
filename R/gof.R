@@ -279,6 +279,7 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #'     \item \code{wait_sim}: List of simulated waiting times
 #'     \item \code{nodemix_obs}: Observed nodeMix statistics
 #'     \item \code{nodemix_sim}: Matrix of simulated nodeMix statistics (rows = simulations)
+#'     \item \code{nets_sim}: List of simulated network objects (for further comparison)
 #'     \item \code{plots}: List of ggplot objects (if ggplot2 available):
 #'       \itemize{
 #'         \item \code{degree_plot}: Boxplot of degree distributions
@@ -297,7 +298,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                       geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
-                      nodemix_obs = NULL, nodemix_sim = NULL, plots = list())
+                      nodemix_obs = NULL, nodemix_sim = NULL, nets_sim = NULL, plots = list())
   
   if (is.null(fit)) {
     if (verbose) cat("  No fit available; skipping GOF\n")
@@ -423,6 +424,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   sim_nets <- sim_nets[!sapply(sim_nets, is.null)]
   n_success <- length(sim_nets)
   n_fail <- n_sim - n_success
+  GOF_results$nets_sim <- sim_nets
   
   # Report errors if any
   if (n_fail > 0 && verbose) {
@@ -829,15 +831,19 @@ create_gof_plots <- function(GOF_results) {
       # Create combined data frame with type and statistic
       df_wait <- rbind(df_obs_all, df_sim_all)
       
-      # Use facet_grid with 2 columns (Observed, Simulated) and rows by statistic
-      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time)) +
-        ggplot2::geom_histogram(alpha = 0.7, bins = 30, fill = "#56B4E9") +
+      # Use facet_grid with 2 columns (Observed, Simulated) and rows by statistic.
+      # Fill by type to match boxplots: Observed = orange, Simulated = blue.
+      # Density (relative scale) so shapes are comparable across panels.
+      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
+        ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density)),
+                                alpha = 0.7, bins = 30, position = "identity") +
+        ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
         ggplot2::facet_grid(statistic ~ type, scales = "free", 
                             labeller = ggplot2::labeller(statistic = ggplot2::label_value)) +
         ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
           x = "Waiting Time",
-          y = "Frequency"
+          y = "Density"
         ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(
