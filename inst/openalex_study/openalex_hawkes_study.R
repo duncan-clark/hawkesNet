@@ -52,7 +52,7 @@ MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 MAX_ITER <- 5000
-TRUNCATION <- 100L
+TRUNCATION <- 150L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
@@ -467,6 +467,8 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
     cores = N_CORES,
     max_deg = 15,
     k_esp = 15,
+    degree = 0,
+    esp = 0,
     mu_multiplier = 5,
     verbose = TRUE
   )
@@ -509,6 +511,8 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     cores = N_CORES,
     max_deg = 15,
     k_esp = 15,
+    degree = 0,
+    esp = 0,
     mu_multiplier = 5,
     verbose = TRUE
   )

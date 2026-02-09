@@ -2,28 +2,30 @@
 # Goodness-of-Fit (GOF) functions for hawkesNet
 # =============================================================================
 
-#' Degree distribution as vector of counts (degree 0, 1, 2, ... up to max_deg).
+#' Degree distribution as vector of counts (degree min_deg, ..., max_deg).
 #'
 #' @param net Network object.
 #' @param max_deg Maximum degree to count (default 20).
-#' @return Numeric vector of counts for degrees 0 through max_deg.
+#' @param min_deg Minimum degree to count (default 0).
+#' @return Numeric vector of counts for degrees min_deg through max_deg.
 #' @noRd
-degree_dist <- function(net, max_deg = 20) {
+degree_dist <- function(net, max_deg = 20, min_deg = 0) {
   degs <- sna::degree(net, gmode = "graph")
-  tab <- table(factor(degs, levels = 0:max_deg))
+  tab <- table(factor(degs, levels = min_deg:max_deg))
   as.vector(tab)
 }
 
-#' ESP distribution via ernm (edge-wise shared partners 0, 1, ... k).
+#' ESP distribution via ernm (edge-wise shared partners min_esp, ..., k_max).
 #'
 #' @param net Network object.
 #' @param k_max Maximum ESP count (default 15).
-#' @return Numeric vector of ESP counts for 0 through k_max.
+#' @param min_esp Minimum ESP to count (default 0).
+#' @return Numeric vector of ESP counts for min_esp through k_max.
 #' @noRd
-esp_dist <- function(net, k_max = 15) {
+esp_dist <- function(net, k_max = 15, min_esp = 0) {
   tryCatch({
-    as.vector(ernm::calculateStatistics(net ~ esp(0:k_max)))
-  }, error = function(e) rep(NA_real_, k_max + 1))
+    as.vector(ernm::calculateStatistics(net ~ esp(min_esp:k_max)))
+  }, error = function(e) rep(NA_real_, k_max - min_esp + 1))
 }
 
 #' Geodesic distance distribution (upper triangle of distance matrix, excluding Inf).
@@ -265,6 +267,8 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @param cores Number of cores for parallelization (default 7).
 #' @param max_deg Maximum degree for degree distribution (default 15).
 #' @param k_esp Maximum ESP count for ESP distribution (default 15).
+#' @param degree Minimum degree to include in degree distribution (default 0).
+#' @param esp Minimum ESP to include in ESP distribution (default 0).
 #' @param mu_multiplier Multiplier for mu in simulations (default 5).
 #' @param verbose Print progress messages (default TRUE).
 #' @return List with observed and simulated statistics and plots:
@@ -293,7 +297,7 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS,
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
-                max_deg = 15L, k_esp = 15L, mu_multiplier = 5, verbose = TRUE) {
+                max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5, verbose = TRUE) {
   
   # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -458,14 +462,14 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     
     # Compute each observed statistic independently (failures don't stop others)
     GOF_results$degree_obs <- tryCatch({
-      degree_dist(net_obs, max_deg)
+      degree_dist(net_obs, max_deg, min_deg = degree)
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute observed degree distribution:", e$message, "\n")
       NULL
     })
     
     GOF_results$esp_obs <- tryCatch({
-      esp_dist(net_obs, k_esp)
+      esp_dist(net_obs, k_esp, min_esp = esp)
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute observed ESP distribution:", e$message, "\n")
       NULL
@@ -508,12 +512,14 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     })
     
     # Simulated statistics (parallelized) - each wrapped in tryCatch
+    n_deg_bins <- max_deg - degree + 1L
+    n_esp_bins <- k_esp - esp + 1L
     if (verbose) cat("    Computing degree distributions...\n")
     GOF_results$degree_sim <- tryCatch({
       do.call(rbind, parallel::mclapply(sim_nets, function(n) {
         tryCatch({
-          degree_dist(n, max_deg)
-        }, error = function(e) rep(NA_real_, max_deg + 1))
+          degree_dist(n, max_deg, min_deg = degree)
+        }, error = function(e) rep(NA_real_, n_deg_bins))
       }, mc.cores = cores))
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute simulated degree distributions:", e$message, "\n")
@@ -524,8 +530,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     GOF_results$esp_sim <- tryCatch({
       do.call(rbind, parallel::mclapply(sim_nets, function(n) {
         tryCatch({
-          esp_dist(n, k_esp)
-        }, error = function(e) rep(NA_real_, k_esp + 1))
+          esp_dist(n, k_esp, min_esp = esp)
+        }, error = function(e) rep(NA_real_, n_esp_bins))
       }, mc.cores = cores))
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute simulated ESP distributions:", e$message, "\n")
