@@ -567,7 +567,7 @@ fit_temporal <- tryCatch(
     params_init = params_init_exp,
     realiz = realiz,
     windowT = windowT,
-    method = "L-BFGS-B",
+    method = "Nelder-Mead",
     maxit = 500,
     kernel = "exp",
     trace = 0

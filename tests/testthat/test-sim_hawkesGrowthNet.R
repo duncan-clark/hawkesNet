@@ -1,7 +1,7 @@
 # Unit tests for sim_hawkesGrowthNet
 
 test_that("sim_hawkesGrowthNet errors when params are invalid", {
-  bad_params <- list(mu = 0, beta_overall = 1, K = 0.5, beta_edges = 1)
+  bad_params <- list(mu = 0, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1)
   expect_error(
     sim_hawkesGrowthNet(
       params = bad_params,
@@ -15,7 +15,7 @@ test_that("sim_hawkesGrowthNet errors when params are invalid", {
 })
 
 test_that("sim_hawkesGrowthNet returns list with events, net, accept_probs for valid params", {
-  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5)
+  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
   set.seed(42)
   out <- sim_hawkesGrowthNet(
     params = params,
@@ -38,7 +38,7 @@ test_that("sim_hawkesGrowthNet returns list with events, net, accept_probs for v
 })
 
 test_that("sim_hawkesGrowthNet event times lie in time_window", {
-  params <- list(mu = 0.3, beta_overall = 1, K = 0.4, beta_edges = 0.5)
+  params <- list(mu = 0.3, beta_overall = 1, K = 0.4, beta_edges = 0.5, m = 1)
   set.seed(123)
   out <- sim_hawkesGrowthNet(
     params = params,
@@ -55,7 +55,7 @@ test_that("sim_hawkesGrowthNet event times lie in time_window", {
 })
 
 test_that("sim_hawkesGrowthNet net has time attribute on vertices when non-empty", {
-  params <- list(mu = 1, beta_overall = 1, K = 0.5, beta_edges = 0.5)
+  params <- list(mu = 1, beta_overall = 1, K = 0.5, beta_edges = 0.5, m = 1)
   set.seed(999)
   out <- sim_hawkesGrowthNet(
     params = params,

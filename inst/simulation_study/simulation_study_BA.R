@@ -1,11 +1,9 @@
 # This script fits a LOLOG style model and a BA model to messaging data:
 #
-# RUNTIME ESTIMATE (16 cores, cluster):
-#   Main study (SIMULATE):  N_SIMS=14  sim+fit ~5-10 min total.
-#   Consistency:            5 windows x 100 reps = 500 (sim+fit) pairs;
-#                            ~3-5 min per run average -> 500*4/16 ~ 2-3.5 h.
-#   Explosive:               2 sims only, T=5 -> ~2-5 min.
-#   Total (all blocks):      ~2.5-4 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 16).
+# RUNTIME ESTIMATE:
+#   16 cores: Main SIMULATE ~5-10 min; Consistency ~2.5-3.5 h; Explosive ~2-5 min.
+#   128 cores: Use outer x inner (e.g. 32 x 4); faster fit via cores= in each worker.
+#   Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 128). Optional: CORES_INNER (default 4).
 
 library(spatstat)
 library(ggplot2)
@@ -27,7 +25,7 @@ CLUSTER_OUTPUT_DIR <- file.path(PKG_ROOT, "cluster_output")
 dir.create(CLUSTER_OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
 # ===================================================
-# Change Statistic Mark Generation
+# BA simulation and fitting
 # ===================================================
 SIMULATE <- TRUE
 PAPER_OUTPUT = TRUE
@@ -39,19 +37,22 @@ TIME <- 25
 params <- list(mu = 10,
                beta_overall = 1,
                K = 0.5,
-               beta_edges = 1
+               beta_edges = 1,
+               m = 1  # expected edges per event (Poisson); m=1 gives mean degree ~2
 )
 TRUNCATION  = 100
 MAX_ITER = 2000
 
 N_SIMS = 100
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 7))
-# Core allocation for consistency study:
-# N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
-# N_CORES_OUTER = parallel sim+fit workers (PSOCK cluster).
-# BA model is cheaper than CS, so fewer inner cores needed.
+N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 128))
+# Core allocation: outer = parallel sim+fit workers; inner = cores per fit (intensity cache).
+# For 128 cores: 4 inner x 32 outer keeps fits fast and uses all cores.
 N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
 N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
+  N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+}
 
 SEED <- 01267
 
@@ -85,10 +86,13 @@ make_cluster <- function(N_CORES){
 }
 
 if(SIMULATE){
-  # make the cluster:
+  # make the cluster: N_CORES_OUTER workers, each fit uses N_CORES_INNER for intensity list
   t <- proc.time()
-  cl <- make_cluster(N_CORES)
+  cl <- make_cluster(N_CORES_OUTER)
+  clusterExport(cl, c("N_CORES_INNER"))
   set.seed(SEED)
+  cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
+      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
   
   # Ensure the cluster will be stopped no matter what.
   on.exit({
@@ -125,7 +129,8 @@ if(SIMULATE){
   params_init <- list(mu = 0.1,
                       beta_overall = 0.1,
                       beta_edges = 0.1,
-                      K = 0.1
+                      K = 0.1,
+                      m = 0.5  # estimate m (true 1 in params)
                       )
   clusterExport(cl, c("params_init"))
   t1 <- proc.time()
@@ -139,7 +144,8 @@ if(SIMULATE){
         trace = 0,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        method = "L-BFGS-B"
+        method = "Nelder-Mead",
+        cores = N_CORES_INNER
         # fixed_params = c("K")
       )
     }, error = function(e) {
@@ -195,8 +201,8 @@ if(RUN_CONSISTENCY){
   params_true <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
-                      beta_edges = 1
-                      )
+                      beta_edges = 1,
+                      m = 1)
   
   # Setup Cluster — use N_CORES_OUTER workers, each fit gets N_CORES_INNER for intensity cache
   t_consistency_total <- proc.time()
@@ -243,10 +249,11 @@ if(RUN_CONSISTENCY){
       
       # B. Fit
       # Randomized init to test robustness
-      params_init <- list(mu = runif(1, 1, 10), 
+      params_init <- list(mu = runif(1, 1, 10),
                           beta_overall = runif(1, 0.5, 2),
-                          K = runif(1, 0.1, 0.9), 
-                          beta_edges = runif(1, 0.5, 2))
+                          K = runif(1, 0.1, 0.9),
+                          beta_edges = runif(1, 0.5, 2),
+                          m = runif(1, 0.3, 2))
       
       fit_res <- tryCatch({
         fit_hawkesGrowthNet(params_init = params_init,
@@ -257,7 +264,7 @@ if(RUN_CONSISTENCY){
                             cache_intensity = TRUE,
                             verbose = FALSE,
                             cores = N_CORES_INNER,
-                            method = "L-BFGS-B")
+                            method = "Nelder-Mead")
       }, error = function(e) return(NULL))
     
       keep <- (length(fit_res$fit)!=0 & fit_res$fit$convergence==0 & !any(fit_res$fit$par > 100) & !any(fit_res$fit$par[2] >10))
@@ -364,17 +371,18 @@ if(RUN_EXPLOSIVE){
   # Low beta with K close to beta (or K > beta) causes criticality/explosion
   params_explosive <- list(
     mu = 10,
-    beta_overall = 0.1, # Very slow decay (Long memory)
-    K = 0.99,             # Branching ratio n* = K/beta = 2 (Super-critical > 1)
-    beta_edges = 0.1    # Degrees from ancient history define attachment just as much as recent
+    beta_overall = 0.1,
+    K = 0.99,
+    beta_edges = 0.1,
+    m = 1
   )
-  
-  # Compare with Stable Parameters
+
   params_stable <- list(
     mu = 10,
     beta_overall = 2.0,
-    K = 0.5,             # Branching ratio n* = 0.25 (Sub-critical < 1)
-    beta_edges = 1.0
+    K = 0.5,
+    beta_edges = 1.0,
+    m = 1
   )
 
   print("Simulating Explosive Regime...")

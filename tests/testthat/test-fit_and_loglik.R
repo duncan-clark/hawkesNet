@@ -2,7 +2,7 @@
 
 # Helper: minimal filtration (small network with times) for BA
 make_minimal_filtration_BA <- function() {
-  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5)
+  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
   set.seed(1)
   sim <- sim_hawkesGrowthNet(
     params = params,
@@ -20,7 +20,7 @@ test_that("loglik_hawkesGrowthNet returns list with loglik and intens_funcs", {
   net <- make_minimal_filtration_BA()
   times <- get_times(net)$times
   skip_if(length(times) < 2, "Need at least 2 event times for loglik")
-  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5)
+  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
   out <- loglik_hawkesGrowthNet(
     params = params,
     time_window = range(times),
@@ -41,7 +41,7 @@ test_that("fit_hawkesGrowthNet returns expected structure", {
   net <- make_minimal_filtration_BA()
   times <- get_times(net)$times
   skip_if(length(times) < 2, "Need at least 2 event times for fit")
-  params_init <- list(mu = 0.3, beta_overall = 0.8, beta_edges = 0.4, K = 0.4)
+  params_init <- list(mu = 0.3, beta_overall = 0.8, beta_edges = 0.4, K = 0.4, m = 0.8)
   suppressMessages({
     fit <- fit_hawkesGrowthNet(
       params_init = params_init,
@@ -68,7 +68,7 @@ test_that("compensators_hawkesGrowthNet returns numeric vector", {
   net <- make_minimal_filtration_BA()
   times <- get_times(net)$times
   skip_if(length(times) < 2, "Need at least 2 event times")
-  params <- list(mu = 0.5, beta_overall = 1, K = 0.3)
+  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
   comp <- compensators_hawkesGrowthNet(
     params = params,
     time_window = range(times),
@@ -83,8 +83,7 @@ test_that("cond_intensity returns list with result and func", {
   net <- make_minimal_filtration_BA()
   times <- get_times(net)$times
   skip_if(length(times) < 2, "Need at least 2 event times")
-  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5)
-  # Use current net as mark and filtration up to first event
+  params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
   out <- cond_intensity(
     new_net = net,
     t = times[length(times)],

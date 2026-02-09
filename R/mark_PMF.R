@@ -1,14 +1,17 @@
 #' Mark PMF for Barabási–Albert-style (degree-weighted) attachment
 #'
-#' Probability mass function for the mark (new edge) given the filtration; uses degree-weighted attachment with exponential time decay.
+#' Probability mass function for the mark at each event: one new node and K edges from that node to existing nodes,
+#' where K ~ Poisson(m). So \code{m} is the expected number of edges added per time step. Edges are sampled
+#' without replacement with probabilities proportional to (degree * time decay); the likelihood uses the
+#' approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
 #'
 #' @param time Current event time.
-#' @param params List with \code{beta_edges} (and optionally \code{beta_overall}, \code{K}, \code{mu}).
+#' @param params List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally \code{beta_overall}, \code{K}, \code{mu}.
 #' @param mark_filtration Observed network up to \code{time}.
 #' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
-#' @param generate_mark If \code{TRUE}, also sample a new edge (default \code{FALSE}).
+#' @param generate_mark If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
-#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
+#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
 #' @export
@@ -22,7 +25,9 @@ PMF_mark_BA <- function(time,
                         truncation = NULL,
                         mark_decay = 'node_entrance',
                         ...){
-  
+  # Expected number of edges per event (Poisson rate)
+  m_val <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
+
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
   }
@@ -103,38 +108,29 @@ PMF_mark_BA <- function(time,
     } else {
       in_mark <- has_edge(heads, tails, new_edge_hash)
     }
-    
+    K_obs <- sum(in_mark, na.rm = TRUE)
+    log_poisson <- stats::dpois(K_obs, m_val, log = TRUE)
     p_in <- pmax(probs[in_mark], .Machine$double.eps)
     p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
-    log_mark_density <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
+    log_mark_density <- log_poisson + sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
     mark_density <- exp(log_mark_density)
   } else {
     in_mark <- rep(1, length(heads))
-    log_mark_density <- 0
-    mark_density <- 1
+    K_obs <- if (length(heads) > 0) sum(in_mark, na.rm = TRUE) else 0
+    log_mark_density <- stats::dpois(K_obs, m_val, log = TRUE)
+    mark_density <- exp(log_mark_density)
   }
   
-  # 1. Define the lightweight log-density function for BA
+  # 1. Define the lightweight log-density function for BA (includes Poisson(m) for K_obs edges)
   log_density_func_light <- function(params) {
-    # BA Logic:
-    # If using BA, the edge probabilities are often just based on degrees 
-    # and the beta_edges decay, calculated inside the main function.
-    # RE-CALCULATING this efficiently inside a closure is tricky because 
-    # BA depends on the full graph history (degrees), not just change stats.
-    
-    # IF you stored the calculated 'probs' and 'in_mark' relative to the specific 
-    # edge set at 'time', you can use them here *assuming params don't change degrees*.
-    # But usually, 'beta_edges' changes the degrees.
-    
-    # CRITICAL NOTE: Implementing a fast recalculation for BA inside a closure 
-    # is harder than CS because you need the degrees of the whole network.
-    # For now, if you just need it to run with *fixed* probs (approximate) 
-    # or if you are only optimizing params that don't change structure:
-    if(!is.null(node_degrees)){
+    m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
+    log_poisson <- stats::dpois(K_obs, m_p, log = TRUE)
+    if (!is.finite(log_poisson)) return(-1e10)
+    if (!is.null(node_degrees)) {
       degs <- node_degrees * exp(-params$beta_edges * (time - times))
       degs[is.na(degs) | is.nan(degs)] <- 0
       total_deg <- sum(degs)
-      if (!is.finite(total_deg) || total_deg <= 0) return(0)
+      if (!is.finite(total_deg) || total_deg <= 0) return(-1e10)
       probs <- degs[heads] / total_deg
       probs[is.na(probs) | is.nan(probs)] <- 0
       probs[probs < 0] <- 0
@@ -142,22 +138,22 @@ PMF_mark_BA <- function(time,
       if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
       p_in <- pmax(probs[in_mark], .Machine$double.eps)
       p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
-      return(sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE))
-    }else{
-      return(0)
+      edge_part <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
+      return(log_poisson + edge_part)
     }
+    return(log_poisson)
   }
-  
-  # 2. Capture the environment 
-  # (You need 'probs' and 'in_mark' to be captured)
+
+  # 2. Capture the environment (include K_obs for Poisson term)
   environment(log_density_func_light) <- list2env(
     list(
       heads = heads,
       time = time,
       times = times,
       node_degrees = node_degrees,
-      in_mark = in_mark
-    ), 
+      in_mark = in_mark,
+      K_obs = K_obs
+    ),
     parent = baseenv()
   )
   
@@ -174,18 +170,16 @@ PMF_mark_BA <- function(time,
   )
 
   if(generate_mark){
-    # use latest mark as baseline:
     last_net <- mark
     times <- get.vertex.attribute(last_net, "time")
-    if(!is.null(last_net) && (last_net %n% 'n') > 2){
+    if (!is.null(last_net) && (last_net %n% 'n') > 1) {
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
       new_nodes <- 1
-      mark_sample <- network::add.vertices(mark_sample,new_nodes)
-      set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
-      new_nodes <- mark_sample %n% 'n'
-      
-      # Truncate which old nodes are attachment targets (same logic as density path)
+      mark_sample <- network::add.vertices(mark_sample, new_nodes)
+      set.vertex.attribute(mark_sample, "time", c((last_net %v% 'time'), rep(time, new_nodes)))
+      new_node_idx <- old_nodes + 1
+
       if (!is.null(truncation) && old_nodes > truncation) {
         if (mark_decay == "activity") {
           activity_times <- get_latest_times(last_net)
@@ -197,58 +191,54 @@ PMF_mark_BA <- function(time,
       } else {
         eligible_heads <- seq_len(old_nodes)
       }
-      poss_tails <- (old_nodes+1) : (new_nodes)
-      poss_tails <- poss_tails[poss_tails>0]
-      poss_heads <- eligible_heads[eligible_heads > 0]
-      poss_edges <- expand.grid(poss_tails,poss_heads)
-      poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
-      tails <- poss_edges[,1]
-      heads <- poss_edges[,2]
-      
-      # only consider edges that are not in the old net
-      if(!is.null(last_net)){
-        in_old_net <- sapply(seq_along(heads), function(i) {
-          length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
-        })
-        tails <- tails[!in_old_net]
-        heads <- heads[!in_old_net]
-      }
       degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
       degs[is.na(degs) | is.nan(degs)] <- 0
       total_deg <- sum(degs)
       if (total_deg <= 0 || !is.finite(total_deg)) {
-        probs <- rep(1 / length(heads), length(heads))
+        probs <- rep(1 / length(eligible_heads), length(eligible_heads))
       } else {
-        probs <- degs[heads] / total_deg
+        probs <- degs[eligible_heads] / total_deg
       }
-      if (any(is.na(probs) | is.nan(probs))) warning("PMF_mark_BA: NA/NaN probs replaced with 0; check degree/time/params.")
       probs[is.na(probs) | is.nan(probs)] <- 0
       probs[probs < 0] <- 0
       probs[probs > 1] <- 1
       if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
-      add <- runif(length(probs)) < probs
-      add[is.na(add)] <- FALSE
-      network::add.edges(mark_sample, heads[add], tails[add])
-      p_add <- pmax(probs[add], .Machine$double.eps)
-      p_not <- pmax(1 - probs[!add], .Machine$double.eps)
-      log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) + sum(log(p_not), na.rm = TRUE)
+      # Ensure all probs > 0 so sample(..., replace = FALSE, prob = probs) never fails with "too few positive probabilities"
+      eps_p <- max(.Machine$double.eps, 1e-10)
+      probs[probs <= 0 | !is.finite(probs)] <- eps_p
+      probs <- probs / sum(probs)
+
+      K <- stats::rpois(1, m_val)
+      # Join to at most all eligible targets (one node added per event; edges capped by available targets)
+      K <- min(K, length(eligible_heads))
+      if (K > 0 && length(eligible_heads) > 0) {
+        sampled_idx <- sample(length(eligible_heads), size = K, replace = FALSE, prob = probs)
+        heads_to_add <- eligible_heads[sampled_idx]
+        tails_to_add <- rep(new_node_idx, K)
+        network::add.edges(mark_sample, heads_to_add, tails_to_add)
+        p_chosen <- pmax(probs[sampled_idx], .Machine$double.eps)
+        log_mark_sample_density <- stats::dpois(K, m_val, log = TRUE) + sum(log(p_chosen), na.rm = TRUE)
+      } else {
+        log_mark_sample_density <- stats::dpois(K, m_val, log = TRUE)
+      }
       mark_sample_density <- exp(log_mark_sample_density)
-    }else{
-      if(is.null(last_net)){
-        mark_sample <- network::network(matrix(1),directed = F)
-        set.vertex.attribute(mark_sample,"time",time)
-      }else{
-        mark_sample <- last_net
+    } else {
+      if (is.null(last_net) || (last_net %n% 'n') < 2) {
+        if (is.null(last_net)) {
+          mark_sample <- network::network(matrix(1), directed = FALSE)
+          set.vertex.attribute(mark_sample, "time", time)
+        } else {
+          mark_sample <- last_net
+        }
+        times <- mark_sample %v% 'time'
+        mark_sample <- network::add.vertices(mark_sample, 1)
+        if (mark_sample %n% 'n' == 2) {
+          network::add.edges(mark_sample, 2, 1)
+        }
+        set.vertex.attribute(mark_sample, "time", c(times, time))
+        log_mark_sample_density <- stats::dpois(1, m_val, log = TRUE)
+        mark_sample_density <- exp(log_mark_sample_density)
       }
-      times <- mark_sample %v% 'time'
-      mark_sample <- network::add.vertices(mark_sample,1)
-      if(mark_sample %n% 'n' == 2){
-        network::add.edges(mark_sample, 2, 1) # Force the first edge to create a seed
-      }
-      set.vertex.attribute(mark_sample,"time",c(times,time))
-      
-      mark_sample_density <- 1
-      log_mark_sample_density <- 0
     }
   } else {
     mark_sample <- new_net
@@ -347,10 +337,10 @@ vertex_categorical_level_names <- function(params, attr_name, mark = NULL) {
 
 #' Expected parameter names for PMF_mark_BA
 #'
-#' @return List with \code{required} (character vector of parameter names).
+#' @return List with \code{required} (character vector: \code{beta_edges}, \code{m}).
 #' @export
 expected_params_PMF_mark_BA <- function() {
-  list(required = c("beta_edges"))
+  list(required = c("beta_edges", "m"))
 }
 
 #' Expected parameter structure for PMF_mark_CS

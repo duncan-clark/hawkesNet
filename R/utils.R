@@ -344,6 +344,7 @@ point_process_params_valid <- function(params, eps = 1e-10) {
   if (!is.null(params$K) && !scalar_ok(params$K)) return(FALSE)
   if (!is.null(params$beta_edges) && !scalar_ok(params$beta_edges)) return(FALSE)
   if (!is.null(params$node_lambda) && !scalar_ok(params$node_lambda)) return(FALSE)
+  if (!is.null(params$m) && !scalar_ok(params$m)) return(FALSE)
   if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
     for (attr_name in names(params$vertex_categorical)) {
       p <- params$vertex_categorical[[attr_name]]
@@ -532,6 +533,7 @@ validate_point_process_params <- function(params, eps = 1e-10) {
   scalar_check("K", params$K)
   scalar_check("beta_edges", params$beta_edges)
   scalar_check("node_lambda", params$node_lambda)
+  scalar_check("m", params$m)
   if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
     for (attr_name in names(params$vertex_categorical)) {
       p <- params$vertex_categorical[[attr_name]]

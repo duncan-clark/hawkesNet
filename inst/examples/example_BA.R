@@ -6,7 +6,7 @@ library(hawkesGrowthNet)
 
 # Short time window so this finishes in under a minute
 TIME <- 50
-params <- list(mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1)
+params <- list(mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1.5)
 
 cat("Simulating one BA network...\n")
 set.seed(1)
@@ -16,7 +16,7 @@ sim <- sim_hawkesGrowthNet(
   PMF_mark = PMF_mark_BA,
   cond_intensity = cond_intensity,
   hashed_edges = TRUE,
-  verbose = FALSE,
+  verbose = TRUE,
   mu_multiplier = 3,
   truncation = 100
 )
@@ -26,7 +26,7 @@ cat("Network size (vertices):", network::network.size(sim$net), "\n")
 
 # Fit the model to the simulated network
 cat("Fitting BA model...\n")
-params_init <- list(mu = 0.1, beta_overall = 0.5, beta_edges = 0.5, K = 0.5)
+params_init <- list(mu = 0.1, beta_overall = 0.5, beta_edges = 0.5, K = 0.5, m = 0.8)
 fit <- tryCatch(
   fit_hawkesGrowthNet(
     params_init = params_init,

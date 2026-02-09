@@ -2,7 +2,7 @@
 # Parameters whose base name is in `positive_params` get lower = eps; all others get -Inf.
 # Upper bounds: vertex_categorical params get upper = 1 - eps; all others get Inf.
 build_optim_bounds <- function(par_names, eps = 1e-6) {
-  positive_params <- c("mu", "beta_overall", "beta_edges", "K", "node_lambda")
+  positive_params <- c("mu", "beta_overall", "beta_edges", "K", "node_lambda", "m")
   lower <- rep(-Inf, length(par_names))
   upper <- rep(Inf, length(par_names))
   for (i in seq_along(par_names)) {

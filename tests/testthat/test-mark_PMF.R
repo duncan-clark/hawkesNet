@@ -1,10 +1,11 @@
 # Unit tests for mark PMF helpers and expected params
 
-test_that("expected_params_PMF_mark_BA returns required beta_edges", {
+test_that("expected_params_PMF_mark_BA returns required beta_edges and m", {
   out <- expected_params_PMF_mark_BA()
   expect_type(out, "list")
   expect_true("required" %in% names(out))
   expect_true("beta_edges" %in% out$required)
+  expect_true("m" %in% out$required)
 })
 
 test_that("expected_params_PMF_mark_CS returns required and CS_params_length", {
@@ -31,13 +32,13 @@ test_that("validate_params_for_PMF errors when required param missing for BA", {
       PMF_mark_BA,
       mark_filtration = NULL
     ),
-    "beta_edges"
+    "beta_edges|m"
   )
 })
 
 test_that("validate_params_for_PMF passes when required params present for BA", {
   expect_invisible(validate_params_for_PMF(
-    list(mu = 1, beta_overall = 1, K = 0.5, beta_edges = 0.5),
+    list(mu = 1, beta_overall = 1, K = 0.5, beta_edges = 0.5, m = 1),
     PMF_mark_BA,
     mark_filtration = NULL
   ))
