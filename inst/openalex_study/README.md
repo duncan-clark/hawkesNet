@@ -25,11 +25,14 @@ Defaults: 8 CPUs, 32G mem, 24h. Edit `run_openalex.slurm` to change.
 From package root or from `inst/openalex_study/`:
 
 ```bash
-chmod +x inst/openalex_study/pull_install_submit.sh   # once
-./inst/openalex_study/pull_install_submit.sh
+./inst/openalex_study/pull_install_submit.sh <BA|CS|openalex>
 ```
 
-This runs: `git pull` → `module load R` → `R --no-save -e "devtools::install()"` → `sbatch inst/openalex_study/run_openalex.slurm`.
+- **openalex** – OpenAlex Hawkes study (`run_openalex.slurm`)
+- **BA** – Simulation study, Barabási–Albert (`inst/simulation_study/run_BA.slurm`)
+- **CS** – Simulation study, Change Statistics (`inst/simulation_study/run_CS.slurm`)
+
+The script runs: `git pull` → `module load R` → `R --no-save -e "devtools::install()"` → `sbatch <chosen slurm>`. Example: `./inst/openalex_study/pull_install_submit.sh openalex`
 
 ## Runtime (cloud / SLURM)
 

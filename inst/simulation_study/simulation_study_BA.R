@@ -311,8 +311,8 @@ if(RUN_CONSISTENCY){
   # Visualization
   # ==========================
   prop_keep <- consistency_results %>%
-    group_by(time_window,param) %>%
-    summarise(prop_keep = sum(keep)/N_SIMS_CONSISTENCY)
+    group_by(time_window, param) %>%
+    summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY, .groups = "drop")
   print(prop_keep)
   
   # Calculate Bias and RMSE (use all runs; keep filter commented)
@@ -324,6 +324,7 @@ if(RUN_CONSISTENCY){
       sd_est = sd(estimate),
       rmse = sqrt(mean((estimate - true_value)^2)),
       true_val = mean(true_value),
+      .groups = "drop"
     )
   
   print(summary_stats)
@@ -332,7 +333,7 @@ if(RUN_CONSISTENCY){
   p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep==TRUE)
     geom_boxplot(outlier.shape = NA, alpha = 0.5, fill="lightblue") +
     geom_jitter(width=0.2, alpha=0.3) +
-    geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size=1) +
+    geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", linewidth = 1) +
     facet_wrap(~param, scales = "free_y") +
     labs(title = "Parameter Consistency vs Time Window (T)",
          subtitle = "Red dashed line indicates true parameter value",
@@ -344,7 +345,7 @@ if(RUN_CONSISTENCY){
   
   # Plot 2: RMSE decay (The "Getting Better" plot)
   p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
-    geom_line(size = 1) +
+    geom_line(linewidth = 1) +
     geom_point(size = 3) +
     facet_wrap(~param, scales = "free_y") +
     labs(title = "RMSE Decay as Data Increases",
@@ -422,7 +423,7 @@ if(RUN_EXPLOSIVE){
   df_compare <- rbind(df_exp, df_stable)
   
   p_expl <- ggplot(df_compare, aes(x = t, y = N, color = Type)) +
-    geom_line(size = 1.2) +
+    geom_line(linewidth = 1.2) +
     labs(title = "Explosive vs Stable Process Dynamics",
          x = "Time",
          y = "Cumulative Number of Events (N)") +
@@ -442,7 +443,7 @@ if(RUN_EXPLOSIVE){
   df_nodes_stable <- data.frame(t = sim_stable$events$t, N_nodes = n_nodes_stable, Type = "Stable (K ~ 0.25)")
   df_nodes_compare <- rbind(df_nodes_exp, df_nodes_stable)
   p_node_growth <- ggplot(df_nodes_compare, aes(x = t, y = N_nodes, color = Type)) +
-    geom_line(size = 1.2) +
+    geom_line(linewidth = 1.2) +
     labs(title = "Node Growth Over Time: Explosive vs Stable (BA)",
          x = "Time",
          y = "Number of Nodes") +
@@ -564,7 +565,7 @@ if(PAPER_OUTPUT){
     print(results)
 
     estim_long <- data.frame(param = rep(colnames(par_estim), each = nrow(par_estim)), estimate = c(as.matrix(par_estim)))
-    ref_lines <- data.frame(param = colnames(par_estim), true = as.numeric(results["true",]), init = as.numeric(results["init",]))
+    ref_lines <- data.frame(param = colnames(par_estim), true = as.numeric(results[, "true"]), init = as.numeric(results[, "init"]))
     p_est_dist <- ggplot(estim_long, aes(x = estimate)) +
       geom_histogram(bins = 20, fill = "lightblue", alpha = 0.7) +
       geom_vline(data = ref_lines, aes(xintercept = true), color = "red", linetype = "dashed", linewidth = 1) +
@@ -591,7 +592,7 @@ if(PAPER_OUTPUT){
   
   # ---------- Consistency study output ----------
   if(!is.null(dat$consistency_results)){
-    prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+    prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY, .groups = "drop")
     print(prop_keep)
     print(summary_stats)
     print(p_cons)
