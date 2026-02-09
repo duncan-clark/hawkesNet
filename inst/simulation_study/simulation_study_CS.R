@@ -46,7 +46,7 @@ RUN_EXPLOSIVE <- TRUE
 RUN_CONSISTENCY <- FALSE
 MAX_ITER = 2000
 
-N_SIMS <- 100
+N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 # Core allocation: split roughly evenly between inner and outer
 # N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
@@ -55,7 +55,7 @@ N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 # CS model benefits from inner parallelism (ERNM change stats are expensive).
 # For 50 cores: split as 7 inner x 7 outer = 49 cores (efficient use)
 # Or 5 inner x 10 outer = 50 cores (uses all cores)
-N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 7))
+N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 2))
 N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
 # Ensure we don't exceed available cores
 if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
