@@ -40,6 +40,46 @@ geodist_dist <- function(net) {
   d
 }
 
+#' Ensure vertex attribute is properly set for all nodes before ERNM operations.
+#'
+#' Ensures all nodes have the attribute, replaces NA/missing values with default,
+#' and removes problematic 'na' attribute.
+#'
+#' @param net Network object.
+#' @param attr_name Name of vertex attribute to ensure.
+#' @param default_value Default value to use for missing/NA values (default "unknown").
+#' @return Network object with attribute properly set.
+#' @noRd
+ensure_vertex_attribute <- function(net, attr_name, default_value = "unknown") {
+  nv <- network::network.size(net)
+  if (nv == 0) return(net)
+  
+  # Remove problematic 'na' attribute if it exists
+  if ("na" %in% network::list.vertex.attributes(net)) {
+    network::delete.vertex.attribute(net, "na")
+  }
+  
+  # Check if attribute exists
+  if (!attr_name %in% network::list.vertex.attributes(net)) {
+    # Attribute doesn't exist: set all nodes to default
+    network::set.vertex.attribute(net, attr_name, rep(default_value, nv))
+  } else {
+    # Attribute exists: check and fix missing/NA values
+    attr_vals <- network::get.vertex.attribute(net, attr_name)
+    if (length(attr_vals) < nv) {
+      # Not enough values: pad with default
+      attr_vals <- c(attr_vals, rep(default_value, nv - length(attr_vals)))
+      network::set.vertex.attribute(net, attr_name, attr_vals)
+    } else if (any(is.na(attr_vals)) || any(attr_vals == "")) {
+      # Has NA or empty values: replace with default
+      attr_vals[is.na(attr_vals) | attr_vals == ""] <- default_value
+      network::set.vertex.attribute(net, attr_name, attr_vals)
+    }
+  }
+  
+  net
+}
+
 #' Waiting times between consecutive structure formations.
 #'
 #' Replays the network event-by-event (grouped by event time) and records
@@ -362,6 +402,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     
     # Observed statistics (single network)
     if (verbose) cat("    Computing observed statistics...\n")
+    # Ensure vertex attributes are set if formula includes nodeMatch/nodeMix
+    if (any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+      net_obs <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+    }
     GOF_results$degree_obs <- degree_dist(net_obs, max_deg)
     GOF_results$esp_obs <- esp_dist(net_obs, k_esp)
     GOF_results$geodist_obs <- geodist_dist(net_obs)
@@ -370,8 +414,11 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     # Observed nodeMix statistics (if gender attribute exists)
     if (verbose) cat("    Computing observed nodeMix statistics...\n")
     tryCatch({
-      if ("gender" %in% network::list.vertex.attributes(net_obs)) {
-        GOF_results$nodemix_obs <- as.vector(ernm::calculateStatistics(net_obs ~ nodeMix('gender')))
+      if ("gender" %in% network::list.vertex.attributes(net_obs) || 
+          any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+        # Ensure gender attribute is properly set for all nodes before ERNM operations
+        net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+        GOF_results$nodemix_obs <- as.vector(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
       }
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
@@ -404,8 +451,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     nodemix_obs_len <- if (!is.null(GOF_results$nodemix_obs)) length(GOF_results$nodemix_obs) else {
       # Try to compute length from observed network
       tryCatch({
-        if ("gender" %in% network::list.vertex.attributes(net_obs)) {
-          length(ernm::calculateStatistics(net_obs ~ nodeMix('gender')))
+        if ("gender" %in% network::list.vertex.attributes(net_obs) || 
+            any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+          net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+          length(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
         } else {
           0
         }
@@ -414,8 +463,11 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     
     GOF_results$nodemix_sim <- do.call(rbind, parallel::mclapply(sim_nets, function(n) {
       tryCatch({
-        if ("gender" %in% network::list.vertex.attributes(n)) {
-          as.vector(ernm::calculateStatistics(n ~ nodeMix('gender')))
+        if ("gender" %in% network::list.vertex.attributes(n) || 
+            any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+          # Ensure gender attribute is properly set before ERNM operations
+          n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
+          as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
         } else {
           rep(NA_real_, nodemix_obs_len)
         }
