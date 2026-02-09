@@ -4,7 +4,7 @@
 #   BA      - simulation_study (Barabási–Albert)
 #   CS      - simulation_study (Change Statistics)
 #   openalex - OpenAlex Hawkes study
-# Run from package root or from this script's directory.
+# Run from package root or from inst/.
 set -e
 
 STUDY="${1:-}"
@@ -22,14 +22,14 @@ case "$STUDY_LOWER" in
     ;;
 esac
 
-# Find package root (directory containing DESCRIPTION and the slurm script)
+# Find package root (directory containing DESCRIPTION and inst/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/../../DESCRIPTION" ] && [ -f "$SCRIPT_DIR/run_openalex.slurm" ]; then
-  PACKAGE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-elif [ -f "$(pwd)/DESCRIPTION" ] && [ -f "$(pwd)/inst/openalex_study/run_openalex.slurm" ]; then
+if [ -f "$SCRIPT_DIR/../DESCRIPTION" ] && [ -d "$SCRIPT_DIR/../R" ]; then
+  PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+elif [ -f "$(pwd)/DESCRIPTION" ] && [ -d "$(pwd)/inst" ]; then
   PACKAGE_ROOT="$(pwd)"
 else
-  echo "ERROR: Run from package root (directory containing R/, inst/, DESCRIPTION) or from inst/openalex_study/"
+  echo "ERROR: Run from package root (directory containing R/, inst/, DESCRIPTION) or from inst/"
   exit 1
 fi
 
