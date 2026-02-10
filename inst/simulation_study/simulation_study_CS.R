@@ -134,10 +134,10 @@ if(SIMULATE){
                           time_window = c(0,TIME),
                           PMF_mark = PMF_mark_CS,
                           cond_intensity = cond_intensity,
-                          hashed_edges = T,
-                          verbose = F,
+                          hashed_edges = TRUE,
+                          verbose = FALSE,
                           mu_multiplier = 3,
-                          joint_accept = F,
+                          joint_accept = FALSE,
                           truncation = TRUNCATION,
                           formula_RHS = "edges + triangles + star(c(2,3))")
     }, error = function(e) {
@@ -151,6 +151,9 @@ if(SIMULATE){
   
   # only keep non null sims:
   sims <- sims[sapply(sims,length)!=0]
+  
+  # --- Cleanup: free simulation overhead before fitting ---
+  gc()
   
   fits <- NULL
   params_init <- list(mu = 10,
@@ -220,6 +223,10 @@ if(SIMULATE){
                params_init = params_init),
           file = file.path(CLUSTER_OUTPUT_DIR, "results_CS.RDS"))
   cat("Simulating and fitting took:", round((proc.time() - t)[3], 1), "s\n")
+
+  # --- Cleanup: remove main study temporaries before next study ---
+  rm(t, t1)
+  gc()
 }
 
 # ==============================================================================
@@ -360,10 +367,16 @@ if(RUN_CONSISTENCY){
   }
 
   stopCluster(cl)
+  cl <- NULL
   elapsed_consistency <- (proc.time() - t_consistency_total)[3]
   cat("\n=== Consistency Study (CS) complete ===\n")
   cat("  Total time:", round(elapsed_consistency / 60, 1), "min (",
       round(elapsed_consistency / 3600, 2), "h)\n")
+
+  # --- Cleanup: remove consistency temporaries ---
+  rm(t_consistency_total, t_cluster, t_window, t_simfit, elapsed_simfit,
+     elapsed_window, res_list, res_df, n_success, n_fail, remaining_windows, elapsed_so_far)
+  gc()
 
   # ==========================
   # Visualization
@@ -422,6 +435,9 @@ if(RUN_CONSISTENCY){
 # 2. beta_edges -> 0 means the preferential attachment logic considers ALL past
 #    nodes equally (no time decay on degree relevance).
 # ==============================================================================
+
+# --- Cleanup before explosive study ---
+gc()
 
 if(RUN_EXPLOSIVE){
 

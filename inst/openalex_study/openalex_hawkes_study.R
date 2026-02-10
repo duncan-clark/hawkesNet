@@ -164,6 +164,14 @@ if ("gender" %in% network::list.vertex.attributes(net_raw)) {
 }
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
+# --- Cleanup: remove Step 1 temporaries before fitting ---
+rm(out, test_dir, test_file)
+if (exists("test_write"))  rm(test_write)
+if (exists("test_create")) rm(test_create)
+if (exists("gender_vals"))  rm(gender_vals)
+if (exists("gender_counts")) rm(gender_counts)
+gc()
+
 # =============================================================================
 # 2. Inhomogeneous (KDE) + CS fits: structural -> nodeMatch
 # =============================================================================
@@ -352,11 +360,22 @@ if (!is.null(inhom_bg)) {
       saveRDS(fit_to_cache, structural_fit_cache),
       error = function(e) cat("  Warning: could not cache structural fit:", conditionMessage(e), "\n")
     )
+    rm(fit_to_cache)
     fit_inhom_structural <- NULL
-    gc()  # Force garbage collection before second fit (frees closure data, reduces fork overhead)
-    cat("  Structural fit cached to disk and removed from memory\n")
   }
+  # --- Cleanup: remove structural-fit temporaries before nodeMatch fit ---
+  rm(exp_cs_structural, t_step_structural, t_fit_structural, elapsed_fit_structural)
+  gc()
+  cat("  Structural fit cached to disk; environment cleaned before nodeMatch fit\n")
   
+  # --- Cleanup: remove nodeMatch initialization temporaries ---
+  if (exists("skel_structural", inherits = FALSE)) rm(skel_structural)
+  if (exists("pfit_structural", inherits = FALSE)) rm(pfit_structural)
+  if (exists("cs_structural", inherits = FALSE))   rm(cs_structural)
+  if (exists("cs_padding", inherits = FALSE))       rm(cs_padding)
+  if (exists("cs_init_nodematch", inherits = FALSE)) rm(cs_init_nodematch)
+  if (exists("beta_overall_valid", inherits = FALSE)) rm(beta_overall_valid, beta_edges_valid, node_lambda_valid, cs_valid)
+
   cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_nodematch <- proc.time()
   
@@ -406,6 +425,12 @@ if (!is.null(inhom_bg)) {
 
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
+# --- Cleanup: remove Step 2 temporaries ---
+rm(t_step, t_kde, t_step_nodematch, t_fit_nodematch)
+if (exists("elapsed_fit_nodematch", inherits = FALSE)) rm(elapsed_fit_nodematch)
+if (exists("exp_cs_nodematch", inherits = FALSE)) rm(exp_cs_nodematch)
+gc()
+
 # =============================================================================
 # 3. Temporal Hawkes fit and KS test
 # =============================================================================
@@ -453,6 +478,11 @@ if (!is.null(fit_temporal) && exists("ks_test_pval_temporal")) {
   cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
 }
 cat("  Step 3 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
+
+# --- Cleanup: remove Step 3 temporaries before GOF ---
+rm(t_step, t_fit, init_gamma, params_init_exp)
+if (exists("t_events", inherits = FALSE)) rm(t_events)
+gc()
 
 # =============================================================================
 # 4. Goodness-of-fit: simulate from fitted model, compare degree/ESP/geodesic/waiting times
