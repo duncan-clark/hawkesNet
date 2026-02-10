@@ -587,8 +587,8 @@ fit_hawkesNet <- function(params_init,
                                 method = "Nelder-Mead",
                                 verbose = TRUE,
                                 ...){
-  # Helper: print to stdout and flush immediately
-  vcat <- function(...) if (verbose) { cat(...); flush.console() }
+  # Helper: write to stderr (unbuffered even inside optim's C code) and flush
+  vcat <- function(...) if (verbose) { cat(..., file = stderr()); flush(stderr()) }
 
   params_init_old <- params_init
   # Shallow copy so stripping levels does not modify params_init_old (needed for loglik and relist restore)
@@ -646,7 +646,7 @@ fit_hawkesNet <- function(params_init,
   eval_env$t_total_total    <- 0
   eval_env$t_last_report    <- proc.time()[3]
   eval_env$best_ll          <- -Inf
-  DIAG_INTERVAL <- 50L  # report every N evaluations
+  DIAG_INTERVAL <- 10L  # report every N evaluations
 
   dot_args <- list(...)
   # Fast optim_func: calls cached closure directly when available, computes integral inline.
@@ -720,17 +720,23 @@ fit_hawkesNet <- function(params_init,
       eval_env$t_total_total    <- eval_env$t_total_total    + t_total
       if (ll > eval_env$best_ll) eval_env$best_ll <- ll
 
-      # --- Periodic report ---
+      # --- Periodic report (first eval + every DIAG_INTERVAL) ---
       n <- eval_env$n_eval
-      if (n %% DIAG_INTERVAL == 0L) {
+      if (n == 1L || n %% DIAG_INTERVAL == 0L) {
         elapsed <- proc.time()[3] - eval_env$t_last_report
-        ms <- function(x) round(x / n * 1000, 2)
-        vcat(sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f\n",
-                  n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll))
-        vcat(sprintf("    avg (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f\n",
-                  ms(eval_env$t_relist_total), ms(eval_env$t_validate_total),
-                  ms(eval_env$t_closure_total), ms(eval_env$t_cleanup_total),
-                  ms(eval_env$t_integral_total), ms(eval_env$t_total_total)))
+        ms_fn <- function(x) round(x / n * 1000, 2)
+        if (n == 1L) {
+          vcat(sprintf("  [eval 1] first eval: %.0f ms | ll=%.2f | closure=%.0f ms\n",
+                    t_total * 1000, ll, t_closure * 1000))
+        } else {
+          batch <- min(n, DIAG_INTERVAL)
+          vcat(sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f\n",
+                    n, elapsed, batch, elapsed / batch * 1000, eval_env$best_ll))
+          vcat(sprintf("    avg (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f\n",
+                    ms_fn(eval_env$t_relist_total), ms_fn(eval_env$t_validate_total),
+                    ms_fn(eval_env$t_closure_total), ms_fn(eval_env$t_cleanup_total),
+                    ms_fn(eval_env$t_integral_total), ms_fn(eval_env$t_total_total)))
+        }
         eval_env$t_last_report <- proc.time()[3]
       }
 
