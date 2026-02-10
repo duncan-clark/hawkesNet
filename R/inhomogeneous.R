@@ -97,78 +97,172 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     }
   }
   if (!is.finite(n_cs) || n_cs < 1L) return(NULL)
+
+  # --- Pre-stack everything for fully vectorized evaluation ---
   nrows <- vapply(combined_inputs_list, function(x) {
     if (is.null(x) || isTRUE(x$degenerate_edges)) 0L else nrow(x$change_stats)
   }, 0L)
-  row_start <- c(0L, cumsum(nrows))
+  row_bounds <- c(0L, cumsum(nrows))    # length N+1; segment i = (row_bounds[i]+1):row_bounds[i+1]
+  total_rows <- row_bounds[N + 1L]
+  if (total_rows == 0L) return(NULL)
+
+  # Stacked change_stats matrix (already existed)
   change_stats_stacked <- do.call(rbind, lapply(seq_len(N), function(i) {
     inp <- combined_inputs_list[[i]]
     if (nrows[i] == 0L) matrix(0, 0, n_cs) else inp$change_stats
   }))
-  total_rows <- row_start[N + 1L]
-  if (total_rows == 0L) return(NULL)
-  # Free duplicate change_stats from per-event lists (stacked copy is used instead)
-  for (i in seq_len(N)) combined_inputs_list[[i]]$change_stats <- NULL
-  eps <- 1e-10
-  expand_probs <- tryCatch(
-    getFromNamespace("expand_vertex_categorical_probs", "hawkesNet"),
-    error = function(e) NULL
-  )
-  if (is.null(expand_probs)) return(NULL)
-  combined_closure <- function(params) {
-    eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
-    out <- numeric(N)
+
+  # Stacked edge-decay diffs and in_mark logical
+  diffs_stacked <- unlist(lapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    if (nrows[i] == 0L) numeric(0) else inp$diffs
+  }), use.names = FALSE)
+
+  in_mark_stacked <- unlist(lapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    if (nrows[i] == 0L) logical(0) else inp$in_mark
+  }), use.names = FALSE)
+
+  # Per-event constant vectors
+  degenerate <- nrows == 0L
+  new_minus_old <- vapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    if (is.null(inp) || degenerate[i]) 0L else as.integer(inp$new_nodes - inp$old_nodes)
+  }, 0L)
+  past_max_node_time <- vapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    if (is.null(inp) || is.null(inp$max_node_time)) FALSE
+    else !is.null(inp$time) && inp$time > inp$max_node_time
+  }, FALSE)
+
+  # Event times for kernel recurrence
+  event_times <- times
+
+  # Segment boundary indices for cumsum segment-sum trick
+  seg_end   <- row_bounds[-1]        # row_bounds[2:(N+1)]
+  seg_start <- row_bounds[-(N + 1L)] # row_bounds[1:N]
+
+  # --- Vertex categorical: pre-stack observed level indices ---
+  obs_cat_attr_name  <- NULL
+  obs_cat_stacked    <- NULL
+  obs_cat_seg_bounds <- NULL   # length N+1
+
+  # Find first event with observed_categorical to get attribute name and level names
+  for (i in seq_len(N)) {
+    inp <- combined_inputs_list[[i]]
+    if (!is.null(inp) && length(inp$observed_categorical) > 0L) {
+      obs_cat_attr_name <- names(inp$observed_categorical)[1L]
+      break
+    }
+  }
+  if (!is.null(obs_cat_attr_name)) {
+    # Find level names
+    level_names_cat <- NULL
     for (i in seq_len(N)) {
-      inp <- combined_inputs_list[[i]]
-      if (is.null(inp) || isTRUE(inp$degenerate_edges) || nrows[i] == 0L) {
-        # Degenerate: mark density = 1, so intensity = mu + K * sum(decays)
-        diffs_k <- diffs_kernel_list[[i]]
-        decays <- if (length(diffs_k) > 0L) exp(-params$beta_overall * diffs_k) else numeric(0)
-        out[i] <- max(mu_vec[i] + params$K * sum(decays), 1e-10)
-        next
-      }
-      idx_i <- (row_start[i] + 1L):row_start[i + 1L]
-      eta_i <- eta_all[idx_i]
-      p_base <- stats::plogis(eta_i)
-      p <- p_base * exp(-params$beta_edges * inp$diffs)
-      p[p > (1 - eps)] <- 1 - eps
-      p[p < eps] <- eps
-      if (anyNA(p)) { out[i] <- 1e-10; next }
-      log_edge_part <- sum(log(p[inp$in_mark])) + sum(log1p(-p[!inp$in_mark]))
-      node_dens <- if (!is.null(inp$max_node_time) && inp$time > inp$max_node_time) {
-        0
-      } else {
-        dval <- stats::dpois(inp$new_nodes - inp$old_nodes, params$node_lambda)
-        if (!is.finite(dval) || dval <= 0) -1e10 else log(dval)
-      }
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat) && length(inp$observed_categorical) > 0) {
-        for (attr_name in names(inp$observed_categorical)) {
-          if (attr_name %in% names(vcat)) {
-            levs_attr <- inp$level_names_by_attr[[attr_name]]
-            if (is.null(levs_attr) && !is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels))
-              levs_attr <- params$vertex_categorical_levels[[attr_name]]
-            if (!is.null(levs_attr)) {
-              p_attr <- expand_probs(vcat[[attr_name]], levs_attr, eps = eps)
-              if (!is.null(p_attr)) {
-                obs <- inp$observed_categorical[[attr_name]]
-                idx <- match(obs, names(p_attr))
-                idx[is.na(idx)] <- match("unknown", names(p_attr))
-                idx[is.na(idx)] <- 1L
-                node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps)))
-              }
-            }
-          }
+      ln <- combined_inputs_list[[i]]$level_names_by_attr[[obs_cat_attr_name]]
+      if (!is.null(ln)) { level_names_cat <- ln; break }
+    }
+    if (!is.null(level_names_cat)) {
+      unknown_idx <- match("unknown", level_names_cat)
+      if (is.na(unknown_idx)) unknown_idx <- 1L
+      # Pre-compute level indices per event
+      idx_list <- vector("list", N)
+      obs_lengths <- integer(N)
+      for (i in seq_len(N)) {
+        inp <- combined_inputs_list[[i]]
+        if (!is.null(inp) && !is.null(inp$observed_categorical) &&
+            obs_cat_attr_name %in% names(inp$observed_categorical)) {
+          obs_vals <- inp$observed_categorical[[obs_cat_attr_name]]
+          idx <- match(obs_vals, level_names_cat)
+          idx[is.na(idx)] <- unknown_idx
+          idx_list[[i]] <- idx
+          obs_lengths[i] <- length(idx)
+        } else {
+          idx_list[[i]] <- integer(0)
+          obs_lengths[i] <- 0L
         }
       }
-      log_dens <- log_edge_part + node_dens
-      diffs_k <- diffs_kernel_list[[i]]
-      decays <- if (length(diffs_k) > 0L) exp(-params$beta_overall * diffs_k) else numeric(0)
-      intensity <- exp(log_dens) * (mu_vec[i] + params$K * sum(decays))
-      out[i] <- max(intensity, 1e-10)
+      obs_cat_stacked <- unlist(idx_list, use.names = FALSE)
+      obs_cat_seg_bounds <- c(0L, cumsum(obs_lengths))
     }
-    out
   }
+
+  # --- Free per-event data that is now stacked ---
+  for (i in seq_len(N)) {
+    combined_inputs_list[[i]]$change_stats <- NULL
+    combined_inputs_list[[i]]$diffs <- NULL
+    combined_inputs_list[[i]]$in_mark <- NULL
+    combined_inputs_list[[i]]$observed_categorical <- NULL
+    combined_inputs_list[[i]]$level_names_by_attr <- NULL
+  }
+  rm(combined_inputs_list, diffs_kernel_list)
+
+  eps <- 1e-10
+
+  # ====================================================================
+  # Fully vectorized closure: O(N) kernel + O(total_rows) mark density
+  # ====================================================================
+  combined_closure <- function(params) {
+    # 1. Kernel sums via O(N) recurrence (Hawkes trick):
+    #    R[i] = sum_{j<i} exp(-beta * (t_i - t_j))
+    #         = (R[i-1] + 1) * exp(-beta * dt[i])
+    beta <- params$beta_overall
+    K_par <- params$K
+    R <- numeric(N)
+    if (N > 1L) {
+      for (i in 2L:N) {
+        R[i] <- (R[i - 1L] + 1) * exp(-beta * (event_times[i] - event_times[i - 1L]))
+      }
+    }
+    kernel_sums <- K_par * R
+
+    # 2. Vectorized edge probabilities: one matmul + one plogis + one exp
+    eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
+    p_all   <- stats::plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
+    p_all   <- pmin(pmax(p_all, eps), 1 - eps)
+
+    # 3. Segment log-sums via cumsum (replaces per-event loop)
+    log_contrib <- ifelse(in_mark_stacked, log(p_all), log1p(-p_all))
+    # Guard: a single NaN would poison cumsum for all subsequent events.
+    # Replace non-finite entries with 0 (neutral for sum) so only that event's
+    # segment is affected, matching the old per-event anyNA guard.
+    bad_lc <- !is.finite(log_contrib)
+    if (any(bad_lc)) log_contrib[bad_lc] <- 0
+    cs_log <- c(0, cumsum(log_contrib))
+    log_edge_sums <- cs_log[seg_end + 1L] - cs_log[seg_start + 1L]  # length N
+
+    # 4. Node density: vectorized dpois (log = TRUE for stability)
+    node_dens <- rep(0, N)
+    needs_node <- !past_max_node_time & !degenerate
+    if (any(needs_node)) {
+      node_dens[needs_node] <- stats::dpois(new_minus_old[needs_node],
+                                            params$node_lambda, log = TRUE)
+      bad <- !is.finite(node_dens)
+      if (any(bad)) node_dens[bad] <- -1e10
+    }
+
+    # 5. Vertex categorical: vectorized via pre-stacked level indices
+    if (!is.null(obs_cat_stacked) && length(obs_cat_stacked) > 0L) {
+      vcat <- params$vertex_categorical
+      if (!is.null(vcat) && is.list(vcat) && obs_cat_attr_name %in% names(vcat)) {
+        p_n1   <- as.numeric(vcat[[obs_cat_attr_name]])
+        p_full <- pmax(c(p_n1, 1 - sum(p_n1)), eps)
+        log_p  <- log(p_full)
+        log_p_obs <- log_p[obs_cat_stacked]
+        cs_cat <- c(0, cumsum(log_p_obs))
+        cat_sums <- cs_cat[obs_cat_seg_bounds[-1] + 1L] -
+                    cs_cat[obs_cat_seg_bounds[-(N + 1L)] + 1L]
+        node_dens <- node_dens + cat_sums
+      }
+    }
+
+    # 6. Combine: intensity[i] = exp(log_mark_density[i]) * (mu[i] + kernel[i])
+    log_dens <- log_edge_sums + node_dens
+    out <- exp(log_dens) * (mu_vec + kernel_sums)
+    out[degenerate] <- mu_vec[degenerate] + kernel_sums[degenerate]
+    pmax(out, eps)
+  }
+
   list(combined_closure)
 }
 
@@ -400,39 +494,51 @@ fit_hawkesNet_inhom <- function(params_init,
     message("Intensity cache: ", round(proc.time()[3] - t_cache_start, 1), " s")
   }
 
-  dot_args <- list(...)
+  # --- Precompute values used every iteration (avoid recomputing inside optim_func) ---
+  times_cached <- get_times(mark_filtration)$times
+  tval_cached  <- time_window[2] - time_window[1]
+  is_combined  <- length(cached_funcs) == 1L
+
+  # Fast optim_func: calls cached closure directly, computes integral inline.
+  # Eliminates per-iteration overhead of loglik_hawkesNet_inhom (get_times, do.call, tryCatch, etc.)
   optim_func <- function(params) {
     params_curr <- relist(params, skeleton = params_init)
-    # Restore vertex_categorical_levels from the original params (not optimized)
     params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
     if (!is.null(fixed_params)) {
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
     if (!point_process_params_valid(params_curr)) return(-1e10)
-    result <- tryCatch({
-      do.call(loglik_hawkesNet_inhom, c(
-        list(params = params_curr,
-             time_window = time_window,
-             mark_filtration = mark_filtration,
-             PMF_mark = PMF_mark,
-             mu_vec = mu_vec,
-             integral_bg = integral_bg,
-             intens_funcs = cached_funcs),
-        dot_args
-      ))
-    }, error = function(e) {
-      return(list(loglik = -1e10, intens_funcs = cached_funcs))
-    })
-    ll <- result$loglik
-    # Final guard: ensure return value is finite for L-BFGS-B
+
+    # Evaluate intensities directly (no loglik_hawkesNet_inhom call)
+    intens_vec <- tryCatch({
+      if (is_combined) cached_funcs[[1L]](params_curr)
+      else {
+        v <- numeric(length(cached_funcs))
+        for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
+        v
+      }
+    }, error = function(e) NULL)
+    if (is.null(intens_vec)) return(-1e10)
+
+    # Clean non-finite / non-positive values
+    bad <- !is.finite(intens_vec) | intens_vec <= 0
+    if (any(bad)) intens_vec[bad] <- 1e-10
+    intens_sum <- sum(log(intens_vec))
+
+    # Compensator (integral): uses precomputed times_cached and tval_cached
+    b <- params_curr$beta_overall
+    if (!is.finite(b) || b < 1e-10) return(-1e10)
+    pieces <- 1 - exp(-b * (tval_cached - times_cached))
+    integral <- integral_bg + (1 / b) * params_curr$K * sum(pieces)
+
+    ll <- intens_sum - integral
     if (!is.finite(ll)) return(-1e10)
     ll
   }
 
   flat_par <- unlist(params_init)
   n_par <- length(flat_par)
-  times_for_diag <- get_times(mark_filtration)$times
-  n_events_actual <- length(times_for_diag)
+  n_events_actual <- length(times_cached)
   if (length(cached_funcs) == 1L) {
     message("Optimizing ", n_par, " parameters, 1 combined closure (", n_events_actual, " events, vectorized eval)")
   } else {

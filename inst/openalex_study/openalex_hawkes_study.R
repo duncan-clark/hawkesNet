@@ -353,6 +353,7 @@ if (!is.null(inhom_bg)) {
       error = function(e) cat("  Warning: could not cache structural fit:", conditionMessage(e), "\n")
     )
     fit_inhom_structural <- NULL
+    gc()  # Force garbage collection before second fit (frees closure data, reduces fork overhead)
     cat("  Structural fit cached to disk and removed from memory\n")
   }
   

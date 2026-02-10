@@ -625,37 +625,64 @@ fit_hawkesNet <- function(params_init,
     cached_funcs <- NULL
     init_lik <- NULL
   }
+  # --- Precompute values used every iteration ---
+  times_cached <- get_times(mark_filtration)$times
+  tval_cached  <- time_window[2] - time_window[1]
+  is_combined  <- !is.null(cached_funcs) && length(cached_funcs) == 1L
+
   dot_args <- list(...)
+  # Fast optim_func: calls cached closure directly when available, computes integral inline.
+  # Eliminates per-iteration overhead of loglik_hawkesNet (get_times, do.call, tryCatch, etc.)
   optim_func <- function(params){
     params_curr <- relist(params, skeleton = params_init)
-    # Restore vertex_categorical_levels from the original params (not optimized)
     params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
-    # Re-inject the fixed parameters from the backup (params_init_old)
     if (!is.null(fixed_params)) {
-      for (k in fixed_params) {
-        params_curr[[k]] <- params_init_old[[k]]
-      }
+      for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
     if (!point_process_params_valid(params_curr)) return(-1e10)
-    
-    # 2. Pass NULL to intens_funcs if caching is disabled
-    # This forces loglik_hawkesNet to rebuild the density from scratch
-    result <- tryCatch({
-      do.call(loglik_hawkesNet, c(
-        list(params = params_curr,
-             time_window = time_window,
-             mark_filtration = mark_filtration,
-             PMF_mark = PMF_mark,
-             intens_funcs = cached_funcs),
-        dot_args
-      ))
-    }, error = function(e) {
-      return(list(loglik = -1e10, intens_funcs = cached_funcs))
-    })
-    ll <- result$loglik
-    # Final guard: ensure return value is finite for L-BFGS-B
-    if (!is.finite(ll)) return(-1e10)
-    return(ll)
+
+    if (!is.null(cached_funcs)) {
+      # Fast path: evaluate cached closures directly
+      intens_vec <- tryCatch({
+        if (is_combined) cached_funcs[[1L]](params_curr)
+        else {
+          v <- numeric(length(cached_funcs))
+          for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
+          v
+        }
+      }, error = function(e) NULL)
+      if (is.null(intens_vec)) return(-1e10)
+
+      bad <- !is.finite(intens_vec) | intens_vec <= 0
+      if (any(bad)) intens_vec[bad] <- 1e-10
+      intens_sum <- sum(log(intens_vec))
+
+      b <- params_curr$beta_overall
+      if (!is.finite(b) || b < 1e-10) return(-1e10)
+      pieces <- 1 - exp(-b * (tval_cached - times_cached))
+      integral <- params_curr$mu * tval_cached + (1 / b) * params_curr$K * sum(pieces)
+
+      ll <- intens_sum - integral
+      if (!is.finite(ll)) return(-1e10)
+      return(ll)
+    } else {
+      # Slow path: full loglik_hawkesNet (cache disabled)
+      result <- tryCatch({
+        do.call(loglik_hawkesNet, c(
+          list(params = params_curr,
+               time_window = time_window,
+               mark_filtration = mark_filtration,
+               PMF_mark = PMF_mark,
+               intens_funcs = NULL),
+          dot_args
+        ))
+      }, error = function(e) {
+        return(list(loglik = -1e10, intens_funcs = NULL))
+      })
+      ll <- result$loglik
+      if (!is.finite(ll)) return(-1e10)
+      return(ll)
+    }
   }
   flat_par <- unlist(params_init)
   optim_args <- list(
