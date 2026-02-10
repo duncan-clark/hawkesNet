@@ -456,7 +456,11 @@ fit_hawkesNet_inhom <- function(params_init,
                                       fixed_params = NULL,
                                       cache_intensity = TRUE,
                                       method = "Nelder-Mead",
+                                      verbose = TRUE,
                                       ...) {
+  # Helper: print to stdout and flush immediately
+  vcat <- function(...) if (verbose) { cat(...); flush.console() }
+
   params_init_old <- params_init
   # Shallow copy so stripping levels does not modify params_init_old (needed for loglik and relist restore)
   params_init <- as.list(params_init_old)
@@ -479,7 +483,7 @@ fit_hawkesNet_inhom <- function(params_init,
   cached_funcs <- NULL
   t_fit_start <- proc.time()[3]
   if (cache_intensity) {
-    message("Pre-calculating intensity closures (inhomogeneous background)...")
+    vcat("[fit_inhom] Pre-calculating intensity closures (inhomogeneous background)...\n")
     t_cache_start <- proc.time()[3]
     init_lik <- loglik_hawkesNet_inhom(
       params = params_init_old,
@@ -491,7 +495,7 @@ fit_hawkesNet_inhom <- function(params_init,
       ...
     )
     cached_funcs <- init_lik$intens_funcs
-    message("Intensity cache: ", round(proc.time()[3] - t_cache_start, 1), " s")
+    vcat("[fit_inhom] Intensity cache built: ", round(proc.time()[3] - t_cache_start, 1), " s\n")
   }
 
   # --- Precompute values used every iteration (avoid recomputing inside optim_func) ---
@@ -589,14 +593,12 @@ fit_hawkesNet_inhom <- function(params_init,
     if (n %% DIAG_INTERVAL == 0L) {
       elapsed <- proc.time()[3] - eval_env$t_last_report
       ms <- function(x) round(x / n * 1000, 2)
-      message(
-        sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f",
-                n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll),
-        sprintf("\n    avg breakdown (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f",
+      vcat(sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f\n",
+                n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll))
+      vcat(sprintf("    avg (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f\n",
                 ms(eval_env$t_relist_total), ms(eval_env$t_validate_total),
                 ms(eval_env$t_closure_total), ms(eval_env$t_cleanup_total),
-                ms(eval_env$t_integral_total), ms(eval_env$t_total_total))
-      )
+                ms(eval_env$t_integral_total), ms(eval_env$t_total_total)))
       eval_env$t_last_report <- proc.time()[3]
     }
 
@@ -607,9 +609,9 @@ fit_hawkesNet_inhom <- function(params_init,
   n_par <- length(flat_par)
   n_events_actual <- length(times_cached)
   if (length(cached_funcs) == 1L) {
-    message("Optimizing ", n_par, " parameters, 1 combined closure (", n_events_actual, " events, vectorized eval)")
+    vcat("[fit_inhom] Optimizing ", n_par, " params | 1 combined closure (", n_events_actual, " events, vectorized) | method=", method, " maxit=", maxit, "\n")
   } else {
-    message("Optimizing ", n_par, " parameters, ", length(cached_funcs), " cached intensity closures (", n_events_actual, " events, sequential eval)")
+    vcat("[fit_inhom] Optimizing ", n_par, " params | ", length(cached_funcs), " closures (", n_events_actual, " events, sequential) | method=", method, " maxit=", maxit, "\n")
   }
   optim_args <- list(
     par = flat_par,
@@ -628,21 +630,23 @@ fit_hawkesNet_inhom <- function(params_init,
   t_optim_elapsed <- round(proc.time()[3] - t_optim_start, 1)
   n_iter <- if (!is.null(fit$counts)) fit$counts[1L] else NA_integer_
   n_fneval <- if (!is.null(fit$counts) && length(fit$counts) >= 2L) fit$counts[2L] else NA_integer_
-  message("Optimization: ", t_optim_elapsed, " s | iterations: ", n_iter, if (is.finite(n_fneval)) paste0(" | fn evals: ", n_fneval) else "", " | s/iter: ", if (is.finite(n_iter) && n_iter > 0) round(t_optim_elapsed / n_iter, 2) else "n/a")
+  vcat("[fit_inhom] Optimization done: ", t_optim_elapsed, " s | iterations: ", n_iter,
+       if (is.finite(n_fneval)) paste0(" | fn evals: ", n_fneval) else "",
+       " | s/iter: ", if (is.finite(n_iter) && n_iter > 0) round(t_optim_elapsed / n_iter, 2) else "n/a", "\n")
   # --- Final evaluation timing summary ---
   n_e <- eval_env$n_eval
   if (n_e > 0L) {
     ms <- function(x) round(x / n_e * 1000, 2)
-    pct <- function(x) round(x / eval_env$t_total_total * 100, 1)
-    message(sprintf("Eval timing summary (%d evals, %.1f ms/eval avg):", n_e, eval_env$t_total_total / n_e * 1000))
-    message(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
-    message(sprintf("  validate: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
-    message(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
-    message(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
-    message(sprintf("  integral: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
-    message(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)", ms(eval_env$t_total_total), eval_env$t_total_total))
+    pct <- function(x) if (eval_env$t_total_total > 0) round(x / eval_env$t_total_total * 100, 1) else 0
+    vcat(sprintf("[fit_inhom] Eval timing summary (%d evals, %.1f ms/eval avg):\n", n_e, eval_env$t_total_total / n_e * 1000))
+    vcat(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
+    vcat(sprintf("  validate: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
+    vcat(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
+    vcat(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
+    vcat(sprintf("  integral: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
+    vcat(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)\n", ms(eval_env$t_total_total), eval_env$t_total_total))
   }
-  message("Fitting (inhomogeneous) total: ", round(proc.time()[3] - t_fit_start, 1), " s")
+  vcat("[fit_inhom] Fitting total: ", round(proc.time()[3] - t_fit_start, 1), " s\n")
 
   # Results table: estimate and standard error (from numerical Hessian)
   par_names <- names(fit$par)
@@ -665,10 +669,10 @@ fit_hawkesNet_inhom <- function(params_init,
   }
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
-  cat("Inhomogeneous fit results:\n")
-  print(fit_table, max = NULL, row.names = TRUE)
+  vcat("[fit_inhom] Results:\n")
+  if (verbose) print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
-    message("(Standard errors not available; Hessian inversion failed.)")
+    vcat("(Standard errors not available; Hessian inversion failed.)\n")
   }
 
   list(

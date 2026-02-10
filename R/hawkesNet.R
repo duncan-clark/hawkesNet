@@ -585,7 +585,11 @@ fit_hawkesNet <- function(params_init,
                                 fixed_params = NULL,
                                 cache_intensity = TRUE,
                                 method = "Nelder-Mead",
+                                verbose = TRUE,
                                 ...){
+  # Helper: print to stdout and flush immediately
+  vcat <- function(...) if (verbose) { cat(...); flush.console() }
+
   params_init_old <- params_init
   # Shallow copy so stripping levels does not modify params_init_old (needed for loglik and relist restore)
   params_init <- as.list(params_init_old)
@@ -613,15 +617,16 @@ fit_hawkesNet <- function(params_init,
   # then param -> likelihood should be very fast
   # 1. Pre-calculate ONLY if cache_intensity is TRUE
   if(cache_intensity){
-    print("Pre-calculating intensity closures (Fast Mode)...")
+    vcat("[fit] Pre-calculating intensity closures...\n")
     init_lik <- loglik_hawkesNet(params = params_init_old,
                                      time_window = time_window,
                                      mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
                                      ...)
     cached_funcs <- init_lik$intens_funcs
+    vcat("[fit] Intensity cache built.\n")
   } else {
-    print("Caching disabled (Safe Mode) ...")
+    vcat("[fit] Caching disabled (Safe Mode).\n")
     cached_funcs <- NULL
     init_lik <- NULL
   }
@@ -720,14 +725,12 @@ fit_hawkesNet <- function(params_init,
       if (n %% DIAG_INTERVAL == 0L) {
         elapsed <- proc.time()[3] - eval_env$t_last_report
         ms <- function(x) round(x / n * 1000, 2)
-        message(
-          sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f",
-                  n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll),
-          sprintf("\n    avg breakdown (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f",
+        vcat(sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f\n",
+                  n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll))
+        vcat(sprintf("    avg (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f\n",
                   ms(eval_env$t_relist_total), ms(eval_env$t_validate_total),
                   ms(eval_env$t_closure_total), ms(eval_env$t_cleanup_total),
-                  ms(eval_env$t_integral_total), ms(eval_env$t_total_total))
-        )
+                  ms(eval_env$t_integral_total), ms(eval_env$t_total_total)))
         eval_env$t_last_report <- proc.time()[3]
       }
 
@@ -771,19 +774,19 @@ fit_hawkesNet <- function(params_init,
     optim_args$control$REPORT <- REPORT
   }
   fit <- do.call(optim, optim_args)
-  print(paste0("fitting took ",round((proc.time()-t)[3],2)," seconds"))
+  vcat("[fit] Fitting took ", round((proc.time()-t)[3],2), " seconds\n")
   # --- Final evaluation timing summary ---
   n_e <- eval_env$n_eval
   if (n_e > 0L && eval_env$t_total_total > 0) {
     ms <- function(x) round(x / n_e * 1000, 2)
-    pct <- function(x) round(x / eval_env$t_total_total * 100, 1)
-    message(sprintf("Eval timing summary (%d evals, %.1f ms/eval avg):", n_e, eval_env$t_total_total / n_e * 1000))
-    message(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
-    message(sprintf("  validate: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
-    message(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
-    message(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
-    message(sprintf("  integral: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
-    message(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)", ms(eval_env$t_total_total), eval_env$t_total_total))
+    pct <- function(x) if (eval_env$t_total_total > 0) round(x / eval_env$t_total_total * 100, 1) else 0
+    vcat(sprintf("[fit] Eval timing summary (%d evals, %.1f ms/eval avg):\n", n_e, eval_env$t_total_total / n_e * 1000))
+    vcat(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
+    vcat(sprintf("  validate: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
+    vcat(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
+    vcat(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
+    vcat(sprintf("  integral: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
+    vcat(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)\n", ms(eval_env$t_total_total), eval_env$t_total_total))
   }
 
   # Results table: estimate and standard error (from numerical Hessian)
@@ -805,12 +808,10 @@ fit_hawkesNet <- function(params_init,
   }
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
-  message("Hawkes growth fit results:")
-  message("Total parameters in fit table: ", nrow(fit_table))
-  # Print all rows explicitly (max = NULL means print all rows)
-  print(fit_table, max = NULL, row.names = TRUE)
+  vcat("[fit] Results (", nrow(fit_table), " parameters):\n")
+  if (verbose) print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
-    message("(Standard errors not available; install numDeriv for SEs.)")
+    vcat("(Standard errors not available; install numDeriv for SEs.)\n")
   }
   
   return(list(fit = fit,
