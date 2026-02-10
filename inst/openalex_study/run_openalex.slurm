@@ -5,6 +5,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=100
+# If you request 128 and squeue shows 256, the R script auto-uses 256. Override: CORES_OVERRIDE=128 or 256.
 #SBATCH --mem=128G
 
 # OpenAlex Hawkes study: inhomogeneous fit, temporal fit, KS tests, GOF.

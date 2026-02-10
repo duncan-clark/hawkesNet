@@ -51,6 +51,13 @@ PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
+# If request is 128 but squeue shows 256 (one node), use 256. Override: CORES_OVERRIDE=128 or 256.
+if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
+  N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
+} else if (N_CORES == 128L) {
+  N_CORES <- 256L
+  cat("Request was 128; using 256 (typical when squeue shows 256)\n")
+}
 MAX_ITER <- 5000
 TRUNCATION <- 200L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
