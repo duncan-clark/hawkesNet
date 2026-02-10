@@ -49,17 +49,14 @@ MAX_ITER = 2000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
-# Core allocation: split roughly evenly between inner and outer
-# N_CORES_INNER = cores per fit (for intensity cache parallelism via mclapply/fork).
-# N_CORES_OUTER = parallel sim+fit workers (PSOCK cluster).
-# Total cores used = N_CORES_OUTER * N_CORES_INNER.
-# CS model benefits from inner parallelism (ERNM change stats are expensive).
-# For 128 cores: split as 3 inner x 42 outer = 126 cores (efficient use)
-N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 3))
+# Core allocation: split between inner (per-fit intensity cache) and outer (sim/fit workers).
+# N_CORES_INNER = cores per fit (mclapply in intensity cache + objective eval).
+# N_CORES_OUTER = PSOCK workers; each runs one sim or one fit at a time.
+# Total used ≈ N_CORES_OUTER * N_CORES_INNER (leaves a few for main process).
+# 128 physical: 5 inner x 25 outer = 125. 256 logical: 5 inner x 51 outer = 255.
+N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 5))
 N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
-# Ensure we don't exceed available cores
 if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
-  # Rebalance: prefer more outer workers for better parallelization
   N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
 }
@@ -172,7 +169,13 @@ if(SIMULATE){
       message("Error in fit_hawkesNet: ", e$message)
       return(e$message)
     })
+    if (is.list(fit) && !is.null(fit$intens_funcs)) fit$intens_funcs <- NULL
     return(fit)
+  })
+  # Strip intensity caches from fits to free memory (each fit has n_events closures)
+  fits <- lapply(fits, function(f) {
+    if (is.list(f) && !is.null(f$intens_funcs)) f$intens_funcs <- NULL
+    f
   })
   print("Fitting took:")
   print(proc.time()-t1)

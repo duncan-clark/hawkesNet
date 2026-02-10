@@ -153,8 +153,16 @@ loglik_hawkesNet_inhom <- function(params,
     intens_vec <- sapply(intens_list, function(x) x$result)
     intens_funcs <- lapply(intens_list, function(x) x$func)
   } else {
-    intens_vec <- numeric(length(intens_funcs))
-    for (i in seq_along(intens_funcs)) intens_vec[i] <- intens_funcs[[i]](params)
+    # Use cached closures: evaluate in parallel if cores passed to speed Nelder-Mead iterations
+    dot_args <- list(...)
+    cores_eval <- dot_args$cores
+    if (!is.null(cores_eval) && is.numeric(cores_eval) && cores_eval > 1L &&
+        requireNamespace("parallel", quietly = TRUE)) {
+      intens_vec <- unlist(parallel::mclapply(intens_funcs, function(f) f(params), mc.cores = cores_eval))
+    } else {
+      intens_vec <- numeric(length(intens_funcs))
+      for (i in seq_along(intens_funcs)) intens_vec[i] <- intens_funcs[[i]](params)
+    }
   }
 
   tmp <- intens_vec

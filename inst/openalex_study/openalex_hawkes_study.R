@@ -62,6 +62,10 @@ TOPIC <- "Point processes and geometric inequalities"
 # Reproducibility
 set.seed(42L)
 
+# Speed tips for Nelder-Mead: pass cores = N_CORES to fit_hawkesNet_inhom so each
+# loglik evaluation parallelizes over cached intensity closures; lower TRUNCATION
+# or fewer formula terms reduce work per evaluation; good parscale reduces iterations.
+
 # =============================================================================
 # GOF functions are now in R/gof.R (exported from package)
 # =============================================================================
@@ -341,6 +345,20 @@ if (!is.null(inhom_bg)) {
     vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
   )
   
+  # Save structural fit to disk and drop from memory (rehydrate for GOF and save_list)
+  structural_fit_cache <- file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")
+  if (!is.null(fit_inhom_structural)) {
+    dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
+    fit_to_cache <- fit_inhom_structural
+    fit_to_cache$intens_funcs <- NULL
+    tryCatch(
+      saveRDS(fit_to_cache, structural_fit_cache),
+      error = function(e) cat("  Warning: could not cache structural fit:", conditionMessage(e), "\n")
+    )
+    fit_inhom_structural <- NULL
+    cat("  Structural fit cached to disk and removed from memory\n")
+  }
+  
   cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_nodematch <- proc.time()
   
@@ -452,6 +470,13 @@ GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_si
                     geodist_obs = NULL, geodist_sim = NULL,
                     wait_obs = NULL, wait_sim = NULL)
 
+# Rehydrate structural fit from cache if it was dropped for memory
+structural_fit_cache <- file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")
+if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
+  fit_inhom_structural <- tryCatch(readRDS(structural_fit_cache), error = function(e) NULL)
+  if (!is.null(fit_inhom_structural)) cat("  Rehydrated structural fit from cache for GOF/save\n")
+}
+
 # GOF for structural-only model (first)
 if (RUN_GOF && !is.null(fit_inhom_structural)) {
   cat("  GOF for structural-only model...\n")
@@ -545,12 +570,21 @@ cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 # 5. Save full state for rehydration
 # =============================================================================
 cat("--- Step 5: Save full state ---\n")
+# Rehydrate structural fit from cache if needed (e.g. still null after Step 4)
+if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
+  fit_inhom_structural <- tryCatch(readRDS(structural_fit_cache), error = function(e) NULL)
+}
+# Strip intensity caches from fits so RDS stays small (low cost to re-run intensity if needed)
+fit_structural_for_save <- fit_inhom_structural
+if (!is.null(fit_structural_for_save)) fit_structural_for_save$intens_funcs <- NULL
+fit_nodematch_for_save <- fit_inhom_nodematch
+if (!is.null(fit_nodematch_for_save)) fit_nodematch_for_save$intens_funcs <- NULL
 save_list <- list(
   net_raw = net_raw,
   edges = edges,
   inhom_bg = inhom_bg,
-  fit_inhom_nodematch = fit_inhom_nodematch,
-  fit_inhom_structural = fit_inhom_structural,
+  fit_inhom_nodematch = fit_nodematch_for_save,
+  fit_inhom_structural = fit_structural_for_save,
   params_init_nodematch = params_init_nodematch,
   params_init_structural = params_init_structural,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
