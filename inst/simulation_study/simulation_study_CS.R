@@ -49,11 +49,16 @@ MAX_ITER = 2000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
+# Many clusters show 256 in squeue when you request 128 (one node = 128 physical + 256 logical).
+# Use actual allocation so we don't underuse: if you requested 128, assume 256 are available.
+if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
+  N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
+} else if (N_CORES == 128L) {
+  N_CORES <- 256L
+  cat("Request was 128; using 256 (typical when squeue shows 256)\n")
+}
 # Core allocation: split between inner (per-fit intensity cache) and outer (sim/fit workers).
-# N_CORES_INNER = cores per fit (mclapply in intensity cache + objective eval).
-# N_CORES_OUTER = PSOCK workers; each runs one sim or one fit at a time.
-# Total used ≈ N_CORES_OUTER * N_CORES_INNER (leaves a few for main process).
-# 128 physical: 5 inner x 25 outer = 125. 256 logical: 5 inner x 51 outer = 255.
+# 5 inner x 51 outer = 255 when N_CORES=256.
 N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 5))
 N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
 if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
