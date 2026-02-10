@@ -455,6 +455,7 @@ fit_hawkesNet_inhom <- function(params_init,
                                       parscale = NULL,
                                       fixed_params = NULL,
                                       cache_intensity = TRUE,
+                                      combine_intensity = TRUE,
                                       method = "Nelder-Mead",
                                       verbose = TRUE,
                                       ...) {
@@ -493,6 +494,7 @@ fit_hawkesNet_inhom <- function(params_init,
       PMF_mark = PMF_mark,
       mu_vec = mu_vec,
       integral_bg = integral_bg,
+      combine_intensity = combine_intensity,
       ...
     )
     cached_funcs <- init_lik$intens_funcs
@@ -615,10 +617,14 @@ fit_hawkesNet_inhom <- function(params_init,
   flat_par <- unlist(params_init)
   n_par <- length(flat_par)
   n_events_actual <- length(times_cached)
-  if (length(cached_funcs) == 1L) {
+  if (is_combined) {
     vcat("[fit_inhom] Optimizing ", n_par, " params | 1 combined closure (", n_events_actual, " events, vectorized) | method=", method, " maxit=", maxit, "\n")
   } else {
     vcat("[fit_inhom] Optimizing ", n_par, " params | ", length(cached_funcs), " closures (", n_events_actual, " events, sequential) | method=", method, " maxit=", maxit, "\n")
+    if (length(cached_funcs) > 20L) {
+      vcat("[fit_inhom] *** WARNING: sequential eval with ", length(cached_funcs), " closures will be VERY slow! ***\n")
+      vcat("[fit_inhom] *** Add combine_intensity = TRUE for ~1000x speedup. ***\n")
+    }
   }
   optim_args <- list(
     par = flat_par,

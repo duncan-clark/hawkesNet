@@ -223,6 +223,16 @@ sim_hawkesNet <- function(params,
   list_index <- 1
   current_net <- network::network(matrix(1),directed = FALSE)
   delete.vertices(current_net,1)
+
+  # --- O(1) kernel recurrence state ---
+  # Instead of recomputing sum(exp(-beta*(t - t_i))) = O(N) each event,
+
+  # maintain: kernel_R such that kernel_sum = K * kernel_R.
+  # Update: kernel_R = (kernel_R + 1) * exp(-beta * dt) when event accepted.
+  kernel_R <- 0       # running sum of exp(-beta * (t_last - t_i)) for accepted events
+  t_last_accepted <- time_window[1]  # time of last accepted event (or start)
+  beta_overall <- params$beta_overall
+
   while (nrow(event_queue) > 0) {
     t <- proc.time()
     current_event <- event_queue[1, ,drop = FALSE]
@@ -242,7 +252,6 @@ sim_hawkesNet <- function(params,
     }
     else{
       # get the mark samples
-      # debug(PMF_mark)
       mark_sample <- PMF_mark(time = current_event$time,
                               params = params,
                               mark_filtration = current_net,
@@ -261,15 +270,13 @@ sim_hawkesNet <- function(params,
       }else{
         edge_hash <- NULL
       }
-      # Get mu_at_t for inhomogeneous case
-      mu_at_t <- if (use_inhom) {
-        mu_val <- mu_fun(current_event$time)
-        pmax(mu_val, 1e-12)  # Ensure positive
-      } else {
-        NULL
-      }
       
       if(joint_accept){
+        # Joint acceptance: need full conditional intensity (mark density * ground intensity)
+        # Get mu_at_t for inhomogeneous case
+        mu_at_t <- if (use_inhom) {
+          pmax(mu_fun(current_event$time), 1e-12)
+        } else { NULL }
         if (use_inhom) {
           intensity <- cond_intensity_inhom(new_net = net,
                                            t = current_event$time,
@@ -292,6 +299,10 @@ sim_hawkesNet <- function(params,
         }
       }else{
         if(!is.null(n_mark_sample)){
+          # Importance sampling path: need full cond_intensity
+          mu_at_t <- if (use_inhom) {
+            pmax(mu_fun(current_event$time), 1e-12)
+          } else { NULL }
           imp_sample <- sapply(1:n_mark_sample,function(i){
             mark_sample <- PMF_mark(time = current_event$time,
                                     params = params,
@@ -304,7 +315,6 @@ sim_hawkesNet <- function(params,
             )
             net <- mark_sample$mark_sample
             if(hashed_edges){
-              # hash the network edge list for fast lookup:
               edges <- network::as.edgelist(net)
               keys_vec <- paste(edges[,1], edges[,2], sep = "-")
               edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
@@ -335,28 +345,15 @@ sim_hawkesNet <- function(params,
           })
           intensity <- mean(imp_sample)
         }else{
-          if (use_inhom) {
-            tmp <- cond_intensity_inhom(new_net = net,
-                                       t = current_event$time,
-                                       mark_filtration = current_net,
-                                       PMF_mark = PMF_mark,
-                                       params = params,
-                                       mu_at_t = mu_at_t,
-                                       new_edge_hash = edge_hash,
-                                       ...
-            )
-            intensity <- tmp$lambda + tmp$kernel_sum
-          } else {
-            tmp <- cond_intensity(new_net = net,
-                                 t = current_event$time,
-                                 mark_filtration = current_net,
-                                 PMF_mark = PMF_mark,
-                                 params = params,
-                                 new_edge_hash = edge_hash,
-                                 ...
-            )
-            intensity <- tmp$lambda + tmp$kernel_sum
-          }
+          # === FAST PATH: ground intensity only (no PMF_mark_CS recomputation) ===
+          # For non-joint thinning, acceptance uses ground intensity = mu + K * kernel_sum.
+          # The mark is already sampled above; no need to call cond_intensity (which would
+          # redundantly call PMF_mark again just to compute mark density we don't use).
+          # Use O(1) kernel recurrence instead of O(N) sum.
+          dt <- current_event$time - t_last_accepted
+          kernel_sum_at_t <- kernel_R * exp(-beta_overall * dt)
+          mu_ground <- if (use_inhom) pmax(mu_fun(current_event$time), 1e-12) else params$mu
+          intensity <- mu_ground + params$K * kernel_sum_at_t
         }
         # Use the same proposed mark for acceptance and for updating (do not resample)
       }
@@ -380,6 +377,10 @@ sim_hawkesNet <- function(params,
       current_net <- net
       n_accepted <- n_accepted + 1L
       event_times_buf[n_accepted] <- current_event$time
+      # --- Update O(1) kernel recurrence ---
+      dt_acc <- current_event$time - t_last_accepted
+      kernel_R <- (kernel_R + 1) * exp(-beta_overall * dt_acc)
+      t_last_accepted <- current_event$time
       if(n_accepted > 2L){
         n_mark_dens <- n_mark_dens + 1L
         mark_density_buf[n_mark_dens] <- mark_sample$mark_density
@@ -584,6 +585,7 @@ fit_hawkesNet <- function(params_init,
                                 parscale = NULL,
                                 fixed_params = NULL,
                                 cache_intensity = TRUE,
+                                combine_intensity = TRUE,
                                 method = "Nelder-Mead",
                                 verbose = TRUE,
                                 ...){
@@ -622,6 +624,7 @@ fit_hawkesNet <- function(params_init,
                                      time_window = time_window,
                                      mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
+                                     combine_intensity = combine_intensity,
                                      ...)
     cached_funcs <- init_lik$intens_funcs
     vcat("[fit] Intensity cache built.\n")
