@@ -52,7 +52,7 @@ MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 MAX_ITER <- 5000
-TRUNCATION <- 150L
+TRUNCATION <- 200L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
@@ -148,6 +148,15 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 fit_inhom_structural <- NULL
 # degree(0) captures isolate distribution so GOF is not overly connected
 FORMULA_RHS_STRUCTURAL <- "edges + degree(0) + triangles + star(c(2,3))"
+#
+# ERNM formula alternatives (if GOF shows poor degree/ESP fit):
+#   Degree: model often underestimates degree-1 and higher degrees. Consider:
+#     - degree(1), degree(2) in addition to degree(0); or gwdegree (if available)
+#     - star(c(4,5)) to capture more local structure
+#   ESP: if observed ESP counts are far above simulated, add shared-partner terms:
+#     - gwesp(decay, fixed = FALSE) or esp(0:k) style terms (if in ERNM)
+#     - twopath (2-paths relate to shared partners)
+#   Structural: triangles has small effect in current fit; gwesp/twopath may help more.
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
@@ -229,9 +238,13 @@ if (!is.null(inhom_bg)) {
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
   t_step_nodematch <- proc.time()
   
-  # Get expected parameters for nodeMatch formula
+  # Get expected parameters for nodeMatch formula (ensure length >= structural + 1 for nodeMatch term when NA)
   exp_cs_nodematch <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH)
-  n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) exp_cs_nodematch$CS_params_length else 5L
+  n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) {
+    exp_cs_nodematch$CS_params_length
+  } else {
+    max(5L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 5L) + 1L)
+  }
   
   # Initialize nodeMatch fit from structural fit results
   if (!is.null(fit_inhom_structural) && fit_inhom_structural$fit$convergence == 0) {
@@ -547,6 +560,7 @@ save_list <- list(
   realiz = realiz,
   windowT = windowT,
   GOF_results = GOF_results,
+  GOF = GOF_results,  # alias so dat$GOF$plots works
   GOF_results_nodematch = GOF_results_nodematch,
   GOF_results_structural = GOF_results_structural,
   N_GOF = N_GOF,
@@ -601,6 +615,10 @@ if (PAPER_OUTPUT) {
   rds_file <- if (!is.null(OPENALEX_RDS_PATH)) OPENALEX_RDS_PATH else file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
   if (!file.exists(rds_file)) rds_file <- "results_openalex_full.RDS"
   dat <- readRDS(rds_file)
+  # Ensure GOF alias exists for older RDS that may not have it, and plots is never NULL
+  if (is.null(dat$GOF) && !is.null(dat$GOF_results)) dat$GOF <- dat$GOF_results
+  if (!is.null(dat$GOF_results) && is.null(dat$GOF_results$plots)) dat$GOF_results$plots <- list()
+  if (!is.null(dat$GOF) && is.null(dat$GOF$plots)) dat$GOF$plots <- list()
   list2env(dat, envir = .GlobalEnv)
   cat("  Rehydrated; producing figures and tables.\n")
 

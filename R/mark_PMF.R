@@ -373,6 +373,19 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   if ("na" %in% network::list.vertex.attributes(net)) {
     delete.vertex.attribute(net, "na")
   }
+  # If formula uses nodeMatch('gender'), ensure network has 'gender' so createCppModel/setNetwork succeed
+  if (grepl("nodeMatch\\s*\\(\\s*['\"]gender['\"]", formula_RHS) && nv > 0L) {
+    if (!"gender" %in% network::list.vertex.attributes(net)) {
+      network::set.vertex.attribute(net, "gender", rep("unknown", nv))
+    } else {
+      attr_vals <- network::get.vertex.attribute(net, "gender")
+      if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
+        attr_vals <- if (length(attr_vals) < nv) c(attr_vals, rep("unknown", nv - length(attr_vals))) else attr_vals
+        attr_vals[is.na(attr_vals) | attr_vals == ""] <- "unknown"
+        network::set.vertex.attribute(net, "gender", attr_vals)
+      }
+    }
+  }
   CS_params_names <- NULL
   tryCatch({
     model <- createCppModel(as.formula(paste("net ~ ", formula_RHS)))

@@ -640,6 +640,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     }
   } else {
     if (verbose) cat("  No successful simulations; returning empty GOF results\n")
+    GOF_results$plots <- list()  # ensure plots is always set (never NULL)
   }
   
   # Always return results, even if some computations failed
@@ -656,35 +657,34 @@ create_gof_plots <- function(GOF_results) {
   plots <- list()
   
   # Helper function to create boxplot for distributional statistics
-  # Observed values shown as dots, simulated as boxplots
-  create_dist_plot <- function(obs, sim, stat_name, x_label = NULL) {
+  # Observed values shown as dots, simulated as boxplots.
+  # x_values: optional (e.g. 0:(n-1)) so x-axis starts at 0 for degree/ESP.
+  create_dist_plot <- function(obs, sim, stat_name, x_label = NULL, x_values = NULL) {
     if (is.null(obs) || is.null(sim) || nrow(sim) == 0) return(NULL)
     
-    # Prepare data
     n_obs <- length(obs)
     n_sim <- nrow(sim)
+    x_vals <- if (!is.null(x_values) && length(x_values) == n_obs) x_values else seq_len(n_obs)
     
     # Create data frame for simulated (boxplot)
     df_sim <- data.frame(
       value = as.vector(sim),
-      x = rep(seq_len(ncol(sim)), each = nrow(sim)),
+      x = rep(x_vals, each = nrow(sim)),
       type = "Simulated"
     )
     
     # Create data frame for observed (dots)
     df_obs <- data.frame(
       value = obs,
-      x = seq_along(obs),
+      x = x_vals,
       type = "Observed"
     )
     
-    # Use x_label if provided, otherwise "Index"
     x_lab <- if (is.null(x_label)) "Index" else x_label
-    
-    # Create plot: boxplot for simulated, dots for observed
-    p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x), y = value)) +
+    x_levels <- sort(unique(x_vals))
+    p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x, levels = x_levels), y = value)) +
       ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
-      ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x), y = value), 
+      ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x, levels = x_levels), y = value),
                           color = "#E69F00", size = 2, shape = 19) +
       ggplot2::labs(
         title = paste(stat_name, "Distribution"),
@@ -701,23 +701,27 @@ create_gof_plots <- function(GOF_results) {
     p
   }
   
-  # Degree distribution plot
+  # Degree distribution plot (x-axis starts at 0)
   if (!is.null(GOF_results$degree_obs) && !is.null(GOF_results$degree_sim)) {
+    n_deg <- length(GOF_results$degree_obs)
     plots$degree_plot <- create_dist_plot(
       GOF_results$degree_obs,
       GOF_results$degree_sim,
       "Degree",
-      "Degree"
+      "Degree",
+      x_values = seq(0L, length.out = n_deg)
     )
   }
   
-  # ESP distribution plot
+  # ESP distribution plot (x-axis starts at 0)
   if (!is.null(GOF_results$esp_obs) && !is.null(GOF_results$esp_sim)) {
+    n_esp <- length(GOF_results$esp_obs)
     plots$esp_plot <- create_dist_plot(
       GOF_results$esp_obs,
       GOF_results$esp_sim,
       "ESP (Edge-wise Shared Partners)",
-      "ESP Count"
+      "ESP Count",
+      x_values = seq(0L, length.out = n_esp)
     )
   }
   
@@ -837,15 +841,17 @@ create_gof_plots <- function(GOF_results) {
       # Create combined data frame with type and statistic
       df_wait <- rbind(df_obs_all, df_sim_all)
       
-      # Use facet_grid with 2 columns (Observed, Simulated) and rows by statistic.
-      # Fill by type to match boxplots: Observed = orange, Simulated = blue.
-      # Density (relative scale) so shapes are comparable across panels.
+      # Common x-axis range so all panels use the same waiting-time scale
+      x_range <- range(df_wait$waiting_time, na.rm = TRUE, finite = TRUE)
+      if (diff(x_range) < .Machine$double.eps) x_range <- x_range + c(-0.5, 0.5)
+      # facet_wrap so each panel (statistic x type) has its own y-scale; otherwise Observed
+      # density spike compresses Simulated in the same row when using facet_grid.
       plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
         ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density)),
                                 alpha = 0.7, bins = 30, position = "identity") +
         ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
-        ggplot2::facet_grid(statistic ~ type, scales = "free", 
-                            labeller = ggplot2::labeller(statistic = ggplot2::label_value)) +
+        ggplot2::facet_wrap(ggplot2::vars(statistic, type), scales = "free_y", ncol = 2L) +
+        ggplot2::coord_cartesian(xlim = x_range) +
         ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
           x = "Waiting Time",

@@ -601,6 +601,8 @@ fit_hawkesNet <- function(params_init,
                                 method = "Nelder-Mead",
                                 ...){
   params_init_old <- params_init
+  # Shallow copy so stripping levels does not modify params_init_old (needed for loglik and relist restore)
+  params_init <- as.list(params_init_old)
   if(!is.null(fixed_params)){
     for(k in fixed_params){
       params_init[[k]] <- NULL
