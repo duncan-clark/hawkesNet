@@ -49,21 +49,33 @@ MAX_ITER = 2000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
-# Many clusters show 256 in squeue when you request 128 (one node = 128 physical + 256 logical).
-# Use actual allocation so we don't underuse: if you requested 128, assume 256 are available.
 if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
-} else if (N_CORES == 128L) {
+} else if (N_CORES == 128L && nzchar(Sys.getenv("USE_256_WHEN_128"))) {
+  # Cluster gave 256 when you requested 128 (squeue shows 256); use them.
   N_CORES <- 256L
-  cat("Request was 128; using 256 (typical when squeue shows 256)\n")
+  cat("Request was 128; using 256 (USE_256_WHEN_128 set; typical when squeue shows 256)\n")
 }
-# Core allocation: split between inner (per-fit intensity cache) and outer (sim/fit workers).
-# 5 inner x 51 outer = 255 when N_CORES=256.
-N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 5))
-N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
-if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
-  N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
+# Core allocation: 128 -> 26 outer x 4 inner (104, no oversubscribe); 256 -> 51 outer x 5 inner. Override: CORES_OUTER or CORES_INNER.
+CORES_OUTER_ENV <- Sys.getenv("CORES_OUTER", "")
+if (nzchar(CORES_OUTER_ENV)) {
+  N_CORES_OUTER <- as.numeric(CORES_OUTER_ENV)
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+} else if (N_CORES == 128L) {
+  N_CORES_OUTER <- 26L
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))  # 4 -> 26*4=104, no oversubscription
+  cat("Using 128 physical cores, 26 outer workers,", N_CORES_INNER, "inner each (", N_CORES_OUTER * N_CORES_INNER, " total)\n", sep = "")
+} else if (N_CORES == 256L) {
+  N_CORES_OUTER <- 51L
+  N_CORES_INNER <- max(1L, ceiling(N_CORES / N_CORES_OUTER))  # 5 -> 51*5=255
+  cat("Using 256 cores, 51 outer workers,", N_CORES_INNER, "inner each (", N_CORES_OUTER * N_CORES_INNER, " total)\n", sep = "")
+} else {
+  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 5))
+  N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+  if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
+    N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
+    N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+  }
 }
 cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
     N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")

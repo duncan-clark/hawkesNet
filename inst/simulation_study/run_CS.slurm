@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=128
 #SBATCH --mem=128G
 
-# Request 128; if squeue shows 256 (one node), script uses 256 -> 51 outer x 5 inner = 255.
-# To force a different total: export CORES_OVERRIDE=128 (or 256) before Rscript.
+# 128 cpus: script uses 26 outer x 4 inner = 104 (no oversubscription). If squeue shows 256, set USE_256_WHEN_128=1 to use 51x5=255.
+# Override: CORES_OVERRIDE=128|256, USE_256_WHEN_128=1 (128 request, 256 allocated), CORES_OUTER, CORES_INNER.
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/simulation_study/run_CS.slurm
