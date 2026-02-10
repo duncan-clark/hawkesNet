@@ -190,17 +190,9 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 # 2a. Structural-only fit (first, independent)
 # =============================================================================
 fit_inhom_structural <- NULL
-# degree(0) captures isolate distribution so GOF is not overly connected
-FORMULA_RHS_STRUCTURAL <- "edges  + triangles + star(c(2,3,4,5))"
-#
-# ERNM formula alternatives (if GOF shows poor degree/ESP fit):
-#   Degree: model often underestimates degree-1 and higher degrees. Consider:
-#     - degree(1), degree(2) in addition to degree(0); or gwdegree (if available)
-#     - star(c(4,5)) to capture more local structure
-#   ESP: if observed ESP counts are far above simulated, add shared-partner terms:
-#     - gwesp(decay, fixed = FALSE) or esp(0:k) style terms (if in ERNM)
-#     - twopath (2-paths relate to shared partners)
-#   Structural: triangles has small effect in current fit; gwesp/twopath may help more.
+# gwdegree(0.5) captures the full degree distribution with one parameter
+# (geometrically weighted), replacing star(c(2,3,4,5)) which needed 4 params.
+FORMULA_RHS_STRUCTURAL <- "edges + triangles + gwdegree(0.5)"
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
@@ -208,7 +200,7 @@ if (!is.null(inhom_bg)) {
   
   # Get expected parameters for structural formula
   exp_cs_structural <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL)
-  n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 4L
+  n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 3L
   
   # Initialize parameters for structural-only model (no vertex_categorical)
   mu_init <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
@@ -271,7 +263,7 @@ if (!is.null(inhom_bg)) {
 # 2b. nodeMatch fit (initialized from structural fit)
 # =============================================================================
 fit_inhom_nodematch <- NULL
-FORMULA_RHS_NODEMATCH <- "edges + triangles + star(c(2,3,4,5)) + nodeMatch('gender')"
+FORMULA_RHS_NODEMATCH <- "edges + triangles + gwdegree(0.5) + nodeMatch('gender')"
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
@@ -282,7 +274,7 @@ if (!is.null(inhom_bg)) {
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) {
     exp_cs_nodematch$CS_params_length
   } else {
-    max(5L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 5L) + 1L)
+    max(4L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 1L)
   }
   
   # Initialize nodeMatch fit from structural fit results
@@ -425,8 +417,14 @@ if (!is.null(inhom_bg)) {
 
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
-# --- Cleanup: remove Step 2 temporaries ---
-rm(t_step, t_kde, t_step_nodematch, t_fit_nodematch)
+# --- Cleanup: remove Step 2 temporaries and strip heavy closures ---
+# Strip intens_funcs from nodeMatch fit (not needed for GOF — only fit$par is used)
+if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$intens_funcs)) {
+  fit_inhom_nodematch$intens_funcs <- NULL
+}
+rm(t_step, t_kde)
+if (exists("t_step_nodematch", inherits = FALSE)) rm(t_step_nodematch)
+if (exists("t_fit_nodematch", inherits = FALSE)) rm(t_fit_nodematch)
 if (exists("elapsed_fit_nodematch", inherits = FALSE)) rm(elapsed_fit_nodematch)
 if (exists("exp_cs_nodematch", inherits = FALSE)) rm(exp_cs_nodematch)
 gc()

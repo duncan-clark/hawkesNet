@@ -82,6 +82,11 @@ cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
 
 SEED <- 1267
 
+# parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
+# Defined here (not inside SIMULATE block) so consistency study can also use it.
+p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+             CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+
 make_cluster <- function(n_workers) {
   # PSOCK cluster: n_workers = N_CORES_OUTER. Each worker runs one sim or one fit at a time;
   # fit_hawkesNet(..., cores = N_CORES_INNER) uses that many cores for the intensity cache (pbmclapply).
@@ -163,9 +168,6 @@ if(SIMULATE){
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
-  # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
-  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-               CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
   clusterExport(cl, c("params_init", "N_CORES_INNER", "p_scale"))
   cat("Commencing Fitting\n")
   cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
@@ -185,7 +187,9 @@ if(SIMULATE){
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
-        cache_intensity = TRUE
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        verbose = FALSE
       )
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
@@ -318,6 +322,7 @@ if(RUN_CONSISTENCY){
                             maxit = MAX_ITER,
                             truncation = TRUNCATION,
                             cache_intensity = TRUE,
+                            combine_intensity = TRUE,
                             verbose = FALSE,
                             fixed_params = c("K"),
                             parscale = p_scale,
