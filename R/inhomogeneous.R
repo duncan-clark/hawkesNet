@@ -110,13 +110,26 @@ loglik_hawkesNet_inhom <- function(params,
 
   if (is.null(intens_funcs)) {
     times_precalc <- get_times(mark_filtration)
+    dot_args <- list(...)
+    formula_rhs <- dot_args$formula_RHS
+    cores <- dot_args$cores
+    use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1 && requireNamespace("pbmcapply", quietly = TRUE)
+    # Reuse one ERNM model when running sequentially (avoids createCppModel per event; big speedup for nodeMatch)
+    shared_model <- NULL
+    if (!use_parallel && !is.null(formula_rhs)) {
+      g0 <- network::network.initialize(0L, directed = FALSE)
+      if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
+      shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
+      shared_model$setNetwork(ernm::as.BinaryNet(g0))
+    }
+    # So user can confirm whether parallel is used (pbmclapply progress bar may not show in batch/SLURM)
+    if (use_parallel) message("Intensity cache: using ", cores, " cores (pbmclapply)")
+    else message("Intensity cache: using 1 core (parallel disabled: need cores > 1 and pbmcapply)")
     intens_func <- function(i) {
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
-      if ("formula_RHS" %in% names(list(...))) {
-        model <- createCppModel(as.formula(paste("current_net ~ ", list(...)$formula_RHS)))
-      } else {
-        model <- NULL
-      }
+      model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
+        createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
+      } else NULL
       intensity <- cond_intensity_inhom(
         new_net = current_net,
         t = times[i],
@@ -131,13 +144,13 @@ loglik_hawkesNet_inhom <- function(params,
       list(result = intensity$result, func = intensity$func)
     }
 
-    cores <- list(...)$cores
-    if (!is.null(cores) && is.numeric(cores) && cores > 1 && requireNamespace("pbmcapply", quietly = TRUE)) {
-      if (verbose) message("Using ", cores, " cores for intensity list")
+    if (use_parallel) {
+      # Process last events first (biggest networks) so slow jobs start first and parallel load is balanced
       intens_list <- pbmcapply::pbmclapply(
-        seq_along(times), intens_func,
+        rev(seq_along(times)), intens_func,
         mc.cores = cores, mc.preschedule = FALSE
       )
+      intens_list <- rev(intens_list)  # restore order so intens_list[[i]] corresponds to event i
     } else {
       intens_list <- lapply(seq_along(times), intens_func)
     }

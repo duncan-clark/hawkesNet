@@ -463,16 +463,23 @@ loglik_hawkesNet = function(params,
     # do the sum of the intensities:
     intens_sum <- 0
     times_precalc <- get_times(mark_filtration)
-    
-    # if parallelize do that here with PSOCK for simplicity:
+    dot_args <- list(...)
+    formula_rhs <- dot_args$formula_RHS
+    cores <- dot_args$cores
+    use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1
+    # Reuse one ERNM model when running sequentially (avoids createCppModel per event; big speedup for nodeMatch)
+    shared_model <- NULL
+    if (!use_parallel && !is.null(formula_rhs)) {
+      g0 <- network::network.initialize(0L, directed = FALSE)
+      if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
+      shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
+      shared_model$setNetwork(ernm::as.BinaryNet(g0))
+    }
     intens_func <- function(i){
-      # need to do this on the fly otherwise too storage intensive
       current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
-      if("formula_RHS" %in% names(list(...))){
-        model = createCppModel(as.formula(paste("current_net ~ ",list(...)$formula_RHS)))
-      }else{
-        model <- NULL
-      }
+      model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
+        createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
+      } else NULL
       intensity <- cond_intensity(new_net = current_net,
                                   t = times[i],
                                   mark_filtration = current_net,
@@ -485,17 +492,18 @@ loglik_hawkesNet = function(params,
                   func = intensity$func
                   ))
     }
-    cores <- list(...)$cores
-    if(!is.null(cores) && is.numeric(cores) && cores > 1){
+    if(use_parallel){
       if(verbose){
         print(paste0("using ",cores," cores on ",length(times), " objects for cond intensity list first calculation"))
       }
       print("starting intens list calculation")
       t <- proc.time()
+      # Process last events first (biggest networks) so slow jobs start first and parallel load is balanced
       intens_list <- pbmcapply::pbmclapply(rev(seq_along(times)),
                                 intens_func,
                                 mc.cores = cores,
                                 mc.preschedule=FALSE)
+      intens_list <- rev(intens_list)  # restore order so intens_list[[i]] corresponds to event i
       print(paste0("intens list ", round((proc.time()-t)[3],2)," seconds"))
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
