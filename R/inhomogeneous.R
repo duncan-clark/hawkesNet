@@ -59,7 +59,7 @@ cond_intensity_inhom <- function(new_net,
   func <- func_template
   environment(func) <- e_tiny
 
-  list(
+  out <- list(
     result = result0,
     func   = func,
     lambda = mu_at_t,
@@ -67,6 +67,84 @@ cond_intensity_inhom <- function(new_net,
     decays = decays0,
     diffs  = diffs
   )
+  if (!is.null(tmp$combined_inputs)) out$combined_inputs <- tmp$combined_inputs
+  out
+}
+
+
+#' Build one combined intensity closure from per-event CS ingredients
+#'
+#' Used when \code{combine_intensity = TRUE}: stacks change_stats etc. into lists
+#' and returns a single function that, given params, returns the vector of intensities
+#' (one per event). Memory: same total data as N closures, but one env (no duplication
+#' of closure machinery). Does not blow up memory.
+#' @param combined_inputs_list List of length N of combined_inputs from PMF_mark_CS (each has change_stats, in_mark, diffs, ...).
+#' @param diffs_kernel_list List of length N of kernel diffs (t_i - times[times < t_i]).
+#' @param mu_vec Length-N background rate at each event time.
+#' @param times Length-N event times (used only for length check).
+#' @return List of one function \code{f(params)} returning numeric vector of length N, or NULL on error.
+#' @noRd
+build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_list, mu_vec, times) {
+  N <- length(times)
+  if (N == 0L || length(combined_inputs_list) != N || length(diffs_kernel_list) != N || length(mu_vec) != N) {
+    return(NULL)
+  }
+  eps <- 1e-10
+  expand_probs <- tryCatch(
+    getFromNamespace("expand_vertex_categorical_probs", "hawkesNet"),
+    error = function(e) NULL
+  )
+  if (is.null(expand_probs)) return(NULL)
+  combined_closure <- function(params) {
+    out <- numeric(N)
+    for (i in seq_len(N)) {
+      inp <- combined_inputs_list[[i]]
+      if (is.null(inp) || isTRUE(inp$degenerate_edges)) {
+        out[i] <- 1e-10
+        next
+      }
+      eta <- as.vector(inp$change_stats %*% params$CS_params)
+      p_base <- stats::plogis(eta)
+      p <- p_base * exp(-params$beta_edges * inp$diffs)
+      p[p > (1 - eps)] <- 1 - eps
+      p[p < eps] <- eps
+      if (anyNA(p)) { out[i] <- 1e-10; next }
+      log_edge_part <- sum(log(p[inp$in_mark])) + sum(log1p(-p[!inp$in_mark]))
+      node_dens <- if (!is.null(inp$max_node_time) && inp$time > inp$max_node_time) {
+        0
+      } else {
+        dval <- stats::dpois(inp$new_nodes - inp$old_nodes, params$node_lambda)
+        if (!is.finite(dval) || dval <= 0) -1e10 else log(dval)
+      }
+      vcat <- params$vertex_categorical
+      if (!is.null(vcat) && is.list(vcat) && length(inp$observed_categorical) > 0) {
+        for (attr_name in names(inp$observed_categorical)) {
+          if (attr_name %in% names(vcat)) {
+            levs_attr <- inp$level_names_by_attr[[attr_name]]
+            if (is.null(levs_attr) && !is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels))
+              levs_attr <- params$vertex_categorical_levels[[attr_name]]
+            if (!is.null(levs_attr)) {
+              p_attr <- expand_probs(vcat[[attr_name]], levs_attr, eps = eps)
+              if (!is.null(p_attr)) {
+                obs <- inp$observed_categorical[[attr_name]]
+                idx <- match(obs, names(p_attr))
+                idx[is.na(idx)] <- match("unknown", names(p_attr))
+                idx[is.na(idx)] <- 1L
+                node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps)))
+              }
+            }
+          }
+        }
+      }
+      log_dens <- log_edge_part + node_dens
+      diffs_k <- diffs_kernel_list[[i]]
+      decays <- if (length(diffs_k) > 0L) exp(-params$beta_overall * diffs_k) else numeric(0)
+      intensity <- exp(log_dens) * (mu_vec[i] + params$K * sum(decays))
+      out[i] <- max(intensity, 1e-10)
+    }
+    out
+  }
+  list(combined_closure)
 }
 
 
@@ -121,8 +199,10 @@ loglik_hawkesNet_inhom <- function(params,
       shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
       shared_model$setNetwork(ernm::as.BinaryNet(g0))
     }
+    combine_intensity <- isTRUE(dot_args$combine_intensity)
     if (use_parallel) message("Intensity cache: using ", cores, " cores (pbmclapply)")
     else message("Intensity cache: using 1 core")
+    if (combine_intensity) message("Intensity cache: will combine CS closures into one (saves closure envs)")
     intens_func <- function(i) {
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
       model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
@@ -137,9 +217,15 @@ loglik_hawkesNet_inhom <- function(params,
         mu_at_t = mu_vec[i],
         model = model,
         times = times_precalc,
-        ...
+        ...,
+        return_combined_inputs = combine_intensity
       )
-      list(result = intensity$result, func = intensity$func)
+      out <- list(result = intensity$result, func = intensity$func)
+      if (combine_intensity) {
+        out$combined_inputs <- intensity$combined_inputs
+        out$diffs_kernel <- intensity$diffs
+      }
+      out
     }
     if (use_parallel) {
       intens_list <- pbmcapply::pbmclapply(
@@ -152,13 +238,31 @@ loglik_hawkesNet_inhom <- function(params,
     }
     intens_vec <- sapply(intens_list, function(x) x$result)
     intens_funcs <- lapply(intens_list, function(x) x$func)
+    # If combine_intensity and all events returned combined_inputs, build one closure (same data, one env).
+    if (combine_intensity) {
+      ci <- lapply(intens_list, function(x) x$combined_inputs)
+      dk <- lapply(intens_list, function(x) x$diffs_kernel)
+      if (all(vapply(ci, function(x) !is.null(x), NA))) {
+        combined <- build_combined_intensity_funcs(
+          combined_inputs_list = ci,
+          diffs_kernel_list = dk,
+          mu_vec = mu_vec,
+          times = times
+        )
+        if (!is.null(combined)) {
+          intens_funcs <- combined
+          message("Intensity cache: combined ", length(times), " closures into 1 (memory: one list of change_stats, no per-event envs)")
+        }
+      }
+    }
   } else {
-    # Use cached closures: evaluate in parallel if cores passed to speed Nelder-Mead iterations
-    dot_args <- list(...)
-    cores_eval <- dot_args$cores
-    if (!is.null(cores_eval) && is.numeric(cores_eval) && cores_eval > 1L &&
-        requireNamespace("parallel", quietly = TRUE)) {
-      intens_vec <- unlist(parallel::mclapply(intens_funcs, function(f) f(params), mc.cores = cores_eval))
+    # Use cached closures. Do NOT parallelize here: each optim iteration would fork (e.g. 100)
+    # processes; with many closures and large envs, fork overhead dominates and optimization
+    # can be 10–50x slower than sequential (especially for nodeMatch with many events).
+    # Parallelism is used only for the one-off intensity cache build above.
+    if (length(intens_funcs) == 1L) {
+      v <- intens_funcs[[1]](params)
+      if (length(v) > 1L) intens_vec <- v else { intens_vec <- numeric(1); intens_vec[1] <- v }
     } else {
       intens_vec <- numeric(length(intens_funcs))
       for (i in seq_along(intens_funcs)) intens_vec[i] <- intens_funcs[[i]](params)
@@ -215,7 +319,9 @@ loglik_hawkesNet_inhom <- function(params,
 #' @param method Optimization method: \code{"Nelder-Mead"} (default) or \code{"L-BFGS-B"}
 #'   (gradient-based with box constraints; constrains mu, beta_overall, beta_edges,
 #'   K, node_lambda > 0 automatically).
-#' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.)
+#' @param ... Passed to PMF_mark (formula_RHS, truncation, cores, etc.) and to the loglik.
+#'   \code{combine_intensity}: if \code{TRUE}, combine per-event CS intensity closures into one
+#'   (saves closure envs; same total change_stats data in one list, so memory does not blow up).
 #' @return List with fit (optim result), intens_funcs, params_init_old, fit_table (parameter estimates and standard errors), and hessian (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
 #' @export
 fit_hawkesNet_inhom <- function(params_init,
@@ -299,6 +405,9 @@ fit_hawkesNet_inhom <- function(params_init,
   }
 
   flat_par <- unlist(params_init)
+  n_par <- length(flat_par)
+  n_events <- length(cached_funcs)
+  message("Optimizing ", n_par, " parameters, ", n_events, " cached intensity closures (sequential eval)")
   optim_args <- list(
     par = flat_par,
     fn = optim_func,
@@ -313,7 +422,10 @@ fit_hawkesNet_inhom <- function(params_init,
   }
   t_optim_start <- proc.time()[3]
   fit <- do.call(optim, optim_args)
-  message("Optimization: ", round(proc.time()[3] - t_optim_start, 1), " s")
+  t_optim_elapsed <- round(proc.time()[3] - t_optim_start, 1)
+  n_iter <- if (!is.null(fit$counts)) fit$counts[1L] else NA_integer_
+  n_fneval <- if (!is.null(fit$counts) && length(fit$counts) >= 2L) fit$counts[2L] else NA_integer_
+  message("Optimization: ", t_optim_elapsed, " s | iterations: ", n_iter, if (is.finite(n_fneval)) paste0(" | fn evals: ", n_fneval) else "", " | s/iter: ", if (is.finite(n_iter) && n_iter > 0) round(t_optim_elapsed / n_iter, 2) else "n/a")
   message("Fitting (inhomogeneous) total: ", round(proc.time()[3] - t_fit_start, 1), " s")
 
   # Results table: estimate and standard error (from numerical Hessian)

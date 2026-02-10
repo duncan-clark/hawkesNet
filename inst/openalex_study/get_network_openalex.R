@@ -206,15 +206,18 @@ get_network <- function(email = "",
   }
   min_d <- min(nodes$date, na.rm = TRUE)
   max_d <- max(nodes$date, na.rm = TRUE)
+  # One row per work (same id can appear in multiple API pages). Required so the edge join
+  # is many-to-one and the network has no multiedges; otherwise structural fit, nodeMatch, GOF and saved edges are wrong.
   nodes <- nodes %>%
-    dplyr::mutate(time_scaled = as.numeric(date - min_d) / as.numeric(max_d - min_d))
+    dplyr::mutate(time_scaled = as.numeric(date - min_d) / as.numeric(max_d - min_d)) %>%
+    dplyr::distinct(id, .keep_all = TRUE)
   message("Building edge list with temporal attributes...")
   edges <- map_df(all_results, function(x) {
     if (is.null(x$referenced_works) || length(x$referenced_works) == 0) return(NULL)
     tibble(citing_id = x$id, cited_id = unlist(x$referenced_works))
   }) %>%
     dplyr::filter(citing_id %in% nodes$id & cited_id %in% nodes$id) %>%
-    dplyr::left_join(nodes %>% dplyr::select(id, date_str, time_scaled), by = c("citing_id" = "id")) %>%
+    dplyr::left_join(nodes %>% dplyr::select(id, date_str, time_scaled), by = c("citing_id" = "id"), relationship = "many-to-one") %>%
     dplyr::rename(edge_time = date_str, edge_time_scaled = time_scaled)
   nodes$index <- 1:nrow(nodes)
   id_map <- nodes$index

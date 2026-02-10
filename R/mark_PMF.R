@@ -517,6 +517,10 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 
 #' Mark probability mass function using Change Statistics (CS/ERNM)
 #'
+#' \code{...} can include \code{return_combined_inputs = TRUE}: then the return list
+#' gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
+#' caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
+#'
 #' @rdname PMF_mark_CS
 #' @export
 PMF_mark_CS <- function(time,
@@ -856,6 +860,24 @@ PMF_mark_CS <- function(time,
     parent = baseenv()
   )
 
+  # Optional: return ingredients for combined intensity (one closure over all events).
+  # Caller collects these from each event and builds a single closure; saves N-1 closure envs.
+  return_combined_inputs <- list(...)$return_combined_inputs
+  combined_inputs <- if (isTRUE(return_combined_inputs)) {
+    list(
+      change_stats = change_stats,
+      in_mark = in_mark,
+      diffs = diffs_for_closure,
+      new_nodes = new_nodes,
+      old_nodes = old_nodes,
+      time = time,
+      max_node_time = max_node_time,
+      degenerate_edges = degenerate_edges,
+      observed_categorical = obs_cat,
+      level_names_by_attr = level_names_by_attr
+    )
+  } else NULL
+
   # =============
   # generate mark
   # =============
@@ -1128,7 +1150,7 @@ PMF_mark_CS <- function(time,
       log_mark_sample_density <- 0
     }
 
-  return(list(
+  out <- list(
     # density of provided marks
     mark_density = mark_density,
     log_mark_density = log_mark_density,
@@ -1139,5 +1161,7 @@ PMF_mark_CS <- function(time,
     mark_sample = mark_sample,
     mark_sample_density = mark_sample_density,
     log_mark_sample_density = log_mark_sample_density
-  ))
+  )
+  if (!is.null(combined_inputs)) out$combined_inputs <- combined_inputs
+  return(out)
 }
