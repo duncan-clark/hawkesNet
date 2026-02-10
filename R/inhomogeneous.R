@@ -700,7 +700,7 @@ fit_hawkesNet_inhom <- function(params_init,
 
   # NOTE: intens_funcs can be very large (closure environments with stacked matrices
   # for all events). If running multiple fits sequentially, NULL out intens_funcs and
-  # call gc() before the next fit to prevent fork() memory bloat in pbmclapply.
+  # call gc() before the next fit to prevent fork()/PSOCK memory bloat.
   list(
     fit = fit,
     intens_funcs = cached_funcs,

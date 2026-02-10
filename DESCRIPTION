@@ -18,8 +18,7 @@ Depends:
     network,
     sna
 Imports:
-    Rcpp,
-    pbmcapply
+    Rcpp
 Suggests:
     testthat (>= 3.0.0),
     networkDynamic,

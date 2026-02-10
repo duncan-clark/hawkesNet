@@ -89,7 +89,7 @@ p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: n_workers = N_CORES_OUTER. Each worker runs one sim or one fit at a time;
-  # fit_hawkesNet(..., cores = N_CORES_INNER) uses that many cores for the intensity cache (pbmclapply).
+  # fit_hawkesNet(..., cores = N_CORES_INNER) uses that many cores for the intensity cache.
   cl <- makeCluster(n_workers)
   registerDoParallel(cl)
   # export libraries to cluster:
