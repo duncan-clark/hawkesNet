@@ -84,7 +84,7 @@ has_edge <- function(i, j, edge_hash) {
 #' @export
 events_to_net <- function(events_list,
                           net = NULL,
-                          directed = F){
+                          directed = FALSE){
 
   for(k in seq_along(events_list$i)){
     if(k==1 & is.null(net)){

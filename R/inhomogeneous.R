@@ -107,6 +107,8 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
   }))
   total_rows <- row_start[N + 1L]
   if (total_rows == 0L) return(NULL)
+  # Free duplicate change_stats from per-event lists (stacked copy is used instead)
+  for (i in seq_len(N)) combined_inputs_list[[i]]$change_stats <- NULL
   eps <- 1e-10
   expand_probs <- tryCatch(
     getFromNamespace("expand_vertex_categorical_probs", "hawkesNet"),
@@ -118,8 +120,11 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     out <- numeric(N)
     for (i in seq_len(N)) {
       inp <- combined_inputs_list[[i]]
-      if (is.null(inp) || isTRUE(inp$degenerate_edges)) {
-        out[i] <- 1e-10
+      if (is.null(inp) || isTRUE(inp$degenerate_edges) || nrows[i] == 0L) {
+        # Degenerate: mark density = 1, so intensity = mu + K * sum(decays)
+        diffs_k <- diffs_kernel_list[[i]]
+        decays <- if (length(diffs_k) > 0L) exp(-params$beta_overall * diffs_k) else numeric(0)
+        out[i] <- max(mu_vec[i] + params$K * sum(decays), 1e-10)
         next
       }
       idx_i <- (row_start[i] + 1L):row_start[i + 1L]
@@ -207,7 +212,7 @@ loglik_hawkesNet_inhom <- function(params,
   }
 
   if (is.null(intens_funcs)) {
-    times_precalc <- get_times(mark_filtration)
+    times_precalc <- list(times = times)
     dot_args <- list(...)
     formula_rhs <- dot_args$formula_RHS
     cores <- dot_args$cores
@@ -426,8 +431,13 @@ fit_hawkesNet_inhom <- function(params_init,
 
   flat_par <- unlist(params_init)
   n_par <- length(flat_par)
-  n_events <- length(cached_funcs)
-  message("Optimizing ", n_par, " parameters, ", n_events, " cached intensity closures (sequential eval)")
+  times_for_diag <- get_times(mark_filtration)$times
+  n_events_actual <- length(times_for_diag)
+  if (length(cached_funcs) == 1L) {
+    message("Optimizing ", n_par, " parameters, 1 combined closure (", n_events_actual, " events, vectorized eval)")
+  } else {
+    message("Optimizing ", n_par, " parameters, ", length(cached_funcs), " cached intensity closures (", n_events_actual, " events, sequential eval)")
+  }
   optim_args <- list(
     par = flat_par,
     fn = optim_func,
@@ -450,10 +460,6 @@ fit_hawkesNet_inhom <- function(params_init,
 
   # Results table: estimate and standard error (from numerical Hessian)
   par_names <- names(fit$par)
-  # Debug: check parameter count
-  if (length(par_names) != length(fit$par)) {
-    warning("fit$par has ", length(fit$par), " elements but ", length(par_names), " names")
-  }
   fit_table <- data.frame(
     parameter = par_names,
     estimate  = fit$par,
@@ -476,7 +482,7 @@ fit_hawkesNet_inhom <- function(params_init,
   cat("Inhomogeneous fit results:\n")
   print(fit_table, max = NULL, row.names = TRUE)
   if (all(is.na(fit_table$std.error))) {
-    message("(Standard errors not available; install numDeriv for SEs.)")
+    message("(Standard errors not available; Hessian inversion failed.)")
   }
 
   list(

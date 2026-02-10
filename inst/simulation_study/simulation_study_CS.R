@@ -40,12 +40,12 @@ params <- list(mu = 10,
                node_lambda = 1,
                CS_params = c(-6.7,2,0.1,-0.1)
                )
-TRUNCATION  = 100
-SIMULATE = TRUE
-PAPER_OUTPUT = TRUE
+TRUNCATION  <- 100
+SIMULATE <- TRUE
+PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- TRUE
 RUN_CONSISTENCY <- FALSE
-MAX_ITER = 2000
+MAX_ITER <- 2000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
@@ -80,7 +80,7 @@ if (nzchar(CORES_OUTER_ENV)) {
 cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
     N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
 
-SEED <- 01267
+SEED <- 1267
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: n_workers = N_CORES_OUTER. Each worker runs one sim or one fit at a time;
@@ -126,8 +126,8 @@ if(SIMULATE){
     }
   }, add = TRUE)
 
-  print("Commencing simulation:")
-  print(paste("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each"))
+  cat("Commencing simulation:\n")
+  cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
   sims <- parLapply(cl=cl,1:N_SIMS,function(x){
     results <- tryCatch({
       sim_hawkesNet(params =  params,
@@ -147,8 +147,7 @@ if(SIMULATE){
     })
     return(results)
   })
-  print("Simulation took:")
-  print(proc.time()-t)
+  cat("Simulation took:", round((proc.time() - t)[3], 1), "s\n")
   
   # only keep non null sims:
   sims <- sims[sapply(sims,length)!=0]
@@ -161,9 +160,12 @@ if(SIMULATE){
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
-  clusterExport(cl, c("params_init", "N_CORES_INNER"))
-  print("Commencing Fitting")
-  print(paste("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each"))
+  # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
+  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+               CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+  clusterExport(cl, c("params_init", "N_CORES_INNER", "p_scale"))
+  cat("Commencing Fitting\n")
+  cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
   t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
     fit <- tryCatch({
@@ -178,6 +180,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         fixed_params = c("K"),
         method = "Nelder-Mead",
+        parscale = p_scale,
         cores = N_CORES_INNER,
         cache_intensity = TRUE
       )
@@ -194,8 +197,7 @@ if(SIMULATE){
     if (is.list(f) && !is.null(f$intens_funcs)) f$intens_funcs <- NULL
     f
   })
-  print("Fitting took:")
-  print(proc.time()-t1)
+  cat("Fitting took:", round((proc.time() - t1)[3], 1), "s\n")
   # Save the fits and final network for analysis:
   temp_hawkes_fits <- lapply(sims,function(x){
     fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
@@ -217,8 +219,7 @@ if(SIMULATE){
                params = params,
                params_init = params_init),
           file = file.path(CLUSTER_OUTPUT_DIR, "results_CS.RDS"))
-  print("Simulating and fitting took:")
-  print((proc.time()-t)[3])
+  cat("Simulating and fitting took:", round((proc.time() - t)[3], 1), "s\n")
 }
 
 # ==============================================================================
@@ -252,7 +253,7 @@ if(RUN_CONSISTENCY){
   cat("Setting up cluster...\n")
   t_cluster <- proc.time()
   cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER"))
+  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER", "p_scale"))
   cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
 
   # Storage for results
@@ -312,6 +313,7 @@ if(RUN_CONSISTENCY){
                             cache_intensity = TRUE,
                             verbose = FALSE,
                             fixed_params = c("K"),
+                            parscale = p_scale,
                             cores = N_CORES_INNER,
                             method = "Nelder-Mead")
       }, error = function(e) return(NULL))
@@ -443,7 +445,7 @@ if(RUN_EXPLOSIVE){
     CS_params = c(-6.7, 2, 0.1, -0.1)
   )
 
-  print("Simulating Explosive Regime (CS model)...")
+  cat("Simulating Explosive Regime (CS model)...\n")
 
   T_explode <- 5
 
@@ -458,7 +460,7 @@ if(RUN_EXPLOSIVE){
                                  formula_RHS = "edges + triangles() + star(c(2,3))",
                                  mu_multiplier = 50)
 
-  print("Simulating Stable Regime (CS model)...")
+  cat("Simulating Stable Regime (CS model)...\n")
   sim_stable <- sim_hawkesNet(params = params_stable,
                                     time_window = c(0, T_explode),
                                     PMF_mark = PMF_mark_CS,
@@ -527,8 +529,8 @@ if(RUN_EXPLOSIVE){
   max_deg_stable <- max(degree(sim_stable$net))
   max_deg_exp <- max(degree(sim_exp$net))
 
-  print(paste("Max Degree Stable:", max_deg_stable))
-  print(paste("Max Degree Explosive:", max_deg_exp))
+  cat("Max Degree Stable:", max_deg_stable, "\n")
+  cat("Max Degree Explosive:", max_deg_exp, "\n")
 }
 
 # ==============================================================================

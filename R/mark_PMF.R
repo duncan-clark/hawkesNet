@@ -277,6 +277,114 @@ PMF_mark_BA <- function(time,
 #'   Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).
 #'   Values are normalized to sum to 1 per attribute; any positive values are valid.
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
+#' Sanitize edge probabilities: replace non-finite, clamp to [eps, 1-eps], fallback to uniform
+#' @param probs Numeric vector of probabilities.
+#' @param eps Small positive floor/ceiling value (default 1e-10).
+#' @param context String appended to warning messages for debugging context.
+#' @return Sanitized probability vector.
+#' @noRd
+sanitize_probs <- function(probs, eps = 1e-10, context = "") {
+  if (any(!is.finite(probs))) {
+    warning("PMF_mark_CS", context, ": non-finite edge probs; replacing with 0 before clamp.")
+    probs[!is.finite(probs)] <- 0
+  }
+  probs <- pmin(pmax(probs, eps), 1 - eps)
+  if (length(probs) > 0L && all(probs <= eps)) {
+    warning("PMF_mark_CS", context, ": all edge probs effectively zero; using uniform.")
+    probs[] <- 1 / length(probs)
+  }
+  probs
+}
+
+#' Compute log multinomial density for observed discrete vertex attributes on new nodes
+#' @param params Parameter list (must contain vertex_categorical and vertex_categorical_levels).
+#' @param mark Network at current time (to read observed attributes).
+#' @param old_nodes Number of nodes before this event.
+#' @param new_nodes Total number of nodes including new arrivals.
+#' @param eps Small positive value for log floor (default 1e-10).
+#' @return Scalar log-density contribution.
+#' @noRd
+log_categorical_density <- function(params, mark, old_nodes, new_nodes, eps = 1e-10) {
+  ld <- 0
+  observed <- list()
+  vcat <- params$vertex_categorical
+  if (is.null(vcat) || !is.list(vcat) || (new_nodes - old_nodes) <= 0) {
+    return(list(log_dens = ld, observed = observed))
+  }
+  for (attr_name in names(vcat)) {
+    if (attr_name %in% network::list.vertex.attributes(mark)) {
+      obs_vals <- (mark %v% attr_name)[(old_nodes + 1):new_nodes]
+      observed[[attr_name]] <- obs_vals
+      level_names <- vertex_categorical_level_names(params, attr_name, mark)
+      p <- expand_vertex_categorical_probs(vcat[[attr_name]], level_names, eps = eps)
+      if (!is.null(p)) {
+        idx <- match(obs_vals, names(p))
+        idx[is.na(idx)] <- match("unknown", names(p))
+        idx[is.na(idx)] <- 1L
+        ld <- ld + sum(log(pmax(p[idx], eps)))
+      }
+    }
+  }
+  list(log_dens = ld, observed = observed)
+}
+
+#' Sample discrete vertex attributes for new nodes and set them on the network
+#' @param params Parameter list (must contain vertex_categorical and vertex_categorical_levels).
+#' @param last_net Network before this event (to get existing attribute values).
+#' @param mark_sample Network to set attributes on.
+#' @param old_nodes Number of nodes before this event.
+#' @param new_nodes Number of new nodes added.
+#' @param eps Small positive value (default 1e-10).
+#' @return The updated mark_sample network (invisible).
+#' @noRd
+sample_vertex_attrs <- function(params, last_net, mark_sample, old_nodes, new_nodes, eps = 1e-10) {
+  vcat <- params$vertex_categorical
+  if (is.null(vcat) || !is.list(vcat)) return(mark_sample)
+  for (attr_name in names(vcat)) {
+    levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
+    p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
+    if (is.null(p)) next
+    levs <- names(p)
+    if (any(!is.finite(p)) || sum(p) <= 0) { p <- rep(1 / length(levs), length(levs)); names(p) <- levs }
+    existing <- if (attr_name %in% network::list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
+    if (new_nodes > 0) {
+      sampled <- sample(levs, size = new_nodes, replace = TRUE, prob = p)
+      network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled))
+    } else {
+      network::set.vertex.attribute(mark_sample, attr_name, existing)
+    }
+  }
+  mark_sample
+}
+
+#' Ensure all required vertex attributes are present on a network (fill missing with defaults)
+#' @param params Parameter list (must contain vertex_categorical).
+#' @param net Network to check/fix.
+#' @return The updated network (invisible).
+#' @noRd
+ensure_vertex_attrs <- function(params, net) {
+  vcat <- params$vertex_categorical
+  if (is.null(vcat) || !is.list(vcat)) return(net)
+  nv <- network::network.size(net)
+  for (attr_name in names(vcat)) {
+    levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
+      params$vertex_categorical_levels[[attr_name]]
+    } else { c("unknown") }
+    if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
+    if (!attr_name %in% network::list.vertex.attributes(net)) {
+      network::set.vertex.attribute(net, attr_name, rep(levs[1L], nv))
+    } else {
+      attr_vals <- net %v% attr_name
+      if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
+        if (length(attr_vals) < nv) attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
+        attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
+        network::set.vertex.attribute(net, attr_name, attr_vals)
+      }
+    }
+  }
+  net
+}
+
 #' @rdname PMF_mark_CS
 #' @export
 normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
@@ -554,7 +662,7 @@ PMF_mark_CS <- function(time,
     set.vertex.attribute(new_net,"time",c(last_net %v% 'time',rep(time,new_nodes)))
   }else{
     last_net <- NULL
-    new_net <- network::network(matrix(1),directed = F)
+    new_net <- network::network(matrix(1),directed = FALSE)
     delete.vertex.attribute(new_net,'na')
     set.vertex.attribute(new_net,"time",time)
     old_nodes <- 0
@@ -589,10 +697,9 @@ PMF_mark_CS <- function(time,
       }
       
       # Copy discrete vertex attributes from mark so change stats (e.g. nodeMix) are correct
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat)) {
+      if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
         nv <- network::network.size(new_net)
-        for (attr_name in names(vcat)) {
+        for (attr_name in names(params$vertex_categorical)) {
           if (attr_name %in% network::list.vertex.attributes(mark)) {
             g <- mark %v% attr_name
             nm <- length(g)
@@ -624,17 +731,7 @@ PMF_mark_CS <- function(time,
       }
       
       eta <- as.vector(change_stats %*% params$CS_params)
-      probs <- plogis(eta)
-      # --- Safety: sanitize probs after logistic (suggestions 1 & 9) ---
-      if (any(!is.finite(probs))) {
-        warning("PMF_mark_CS: NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")
-        probs[!is.finite(probs)] <- 0
-      }
-      probs <- pmin(pmax(probs, eps), 1 - eps)
-      if (length(probs) > 0L && all(probs <= eps)) {
-        warning("PMF_mark_CS: all edge probs effectively zero after logistic; using uniform probs.")
-        probs[] <- 1 / length(probs)
-      }
+      probs <- sanitize_probs(plogis(eta), eps, " (density, post-logistic)")
       # use either node times or last node activity:
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
@@ -653,17 +750,7 @@ PMF_mark_CS <- function(time,
         warning("PMF_mark_CS: non-finite decay factor in density path; replacing with 1.")
         factor[!is.finite(factor)] <- 1
       }
-      probs <- probs * factor
-      # --- Safety: sanitize probs after factor (suggestion 3 & 9) ---
-      if (any(!is.finite(probs))) {
-        warning("PMF_mark_CS: NA/NaN/Inf in edge probs after decay factor; replacing with 0 before clamp.")
-        probs[!is.finite(probs)] <- 0
-      }
-      probs <- pmin(pmax(probs, eps), 1 - eps)
-      if (length(probs) > 0L && all(probs <= eps)) {
-        warning("PMF_mark_CS: all edge probs effectively zero after decay; using uniform probs.")
-        probs[] <- 1 / length(probs)
-      }
+      probs <- sanitize_probs(probs * factor, eps, " (density, post-decay)")
 
       if(length(probs)==0){
         in_mark <- logical(0)
@@ -707,23 +794,9 @@ PMF_mark_CS <- function(time,
         }
       }
       # Log multinomial contribution for discrete vertex attributes on new nodes
-      observed_categorical <- list()
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat) && (new_nodes - old_nodes) > 0) {
-        for (attr_name in names(vcat)) {
-          if (attr_name %in% network::list.vertex.attributes(mark)) {
-            observed_categorical[[attr_name]] <- (mark %v% attr_name)[(old_nodes + 1):new_nodes]
-            level_names <- vertex_categorical_level_names(params, attr_name, mark)
-            p <- expand_vertex_categorical_probs(vcat[[attr_name]], level_names, eps = eps)
-            if (!is.null(p)) {
-              idx <- match(observed_categorical[[attr_name]], names(p))
-              idx[is.na(idx)] <- match("unknown", names(p))
-              idx[is.na(idx)] <- 1L
-              node_dens <- node_dens + sum(log(pmax(p[idx], eps)))
-            }
-          }
-        }
-      }
+      cat_result <- log_categorical_density(params, mark, old_nodes, new_nodes, eps)
+      node_dens <- node_dens + cat_result$log_dens
+      observed_categorical <- cat_result$observed
       # --- Safety: safe log with clamped probs (suggestion 4) ---
       p_in <- pmax(probs[in_mark], eps, na.rm = TRUE)
       p_out <- pmax(1 - probs[!in_mark], eps, na.rm = TRUE)
@@ -735,34 +808,14 @@ PMF_mark_CS <- function(time,
     }
   }else{
     mark_density <- 1
-    mark_density_normalized <- NULL
     log_mark_density <- 0
   }
   
-  # if node_dens doesn't exist set it to 0
-  if(!exists("node_dens")){
-    node_dens <- 0
-  }
+  # Ensure node_dens is initialized (may not be set in degenerate/no-mark paths)
+  if (!exists("node_dens", inherits = FALSE)) node_dens <- 0
   
-  log_density_func_light <- function(params) {
-    eta <- change_stats %*% params$CS_params
-    p   <- stats::plogis(eta)
-    log_edge_part <- sum(log(p[in_mark])) + sum(log1p(-p[!in_mark]))
-    log_edge_part + node_dens
-  }
-
-  
-  environment(log_density_func_light) <- list2env(
-    list(
-      change_stats = change_stats,
-      in_mark      = in_mark,
-      node_dens    = node_dens,
-      plogis = stats::plogis
-    ),
-    parent = baseenv()
-  )
-  
-  # define the function (will be rebound to a minimal env right after)
+  # log_density_func_light: full version with decay, vertex_categorical, safety clamping.
+  # (Environment is rebound to a minimal env after definition.)
   log_density_func_light <- function(params) {
     # Everything it needs will come from its environment:
     # change_stats, in_mark, diffs, new_nodes, old_nodes, time, max_node_time, degenerate_edges
@@ -820,18 +873,17 @@ PMF_mark_CS <- function(time,
   # Decide if you're in the same degenerate branch as the direct computation
   degenerate_edges <- is.null(probs) || length(probs) == 1L
   
-  # --- Safety: sanitize diffs for closure (suggestion 10) ---
-  diffs_for_closure <- if (exists("diffs", inherits = FALSE)) {
-    d <- diffs
-    if (any(!is.finite(d))) {
-      warning("PMF_mark_CS: non-finite diffs passed to log_density_func closure; replacing with 0.")
-      d[!is.finite(d)] <- 0
-    }
-    d
-  } else numeric(0)
+  # Sanitize diffs for closure (may not exist in degenerate paths)
+  if (!exists("diffs", inherits = FALSE)) diffs <- numeric(0)
+  diffs_for_closure <- diffs
+  if (length(diffs_for_closure) > 0L && any(!is.finite(diffs_for_closure))) {
+    warning("PMF_mark_CS: non-finite diffs passed to log_density_func closure; replacing with 0.")
+    diffs_for_closure[!is.finite(diffs_for_closure)] <- 0
+  }
   
   # Pre-compute level names per attribute for the closure
-  obs_cat <- if (exists("observed_categorical", inherits = FALSE)) observed_categorical else list()
+  if (!exists("observed_categorical", inherits = FALSE)) observed_categorical <- list()
+  obs_cat <- observed_categorical
   level_names_by_attr <- list()
   for (an in names(obs_cat)) level_names_by_attr[[an]] <- vertex_categorical_level_names(params, an, mark)
   
@@ -910,23 +962,7 @@ PMF_mark_CS <- function(time,
       # }
       set.vertex.attribute(mark_sample,"time",c((last_net %v% 'time'),rep(time,new_nodes)))
       # Set discrete vertex attributes for new nodes (sample from vertex_categorical; n-1 params)
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat)) {
-        for (attr_name in names(vcat)) {
-          levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
-          p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
-          if (is.null(p)) next
-          levs <- names(p)
-          if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs
-          existing <- if (attr_name %in% network::list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
-          if (new_nodes > 0) {
-            sampled <- sample(levs, size = new_nodes, replace = TRUE, prob = p)
-            network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled))
-          } else {
-            network::set.vertex.attribute(mark_sample, attr_name, existing)
-          }
-        }
-      }
+      mark_sample <- sample_vertex_attrs(params, last_net, mark_sample, old_nodes, new_nodes, eps)
       new_size <- mark_sample %n% 'n'
       
       # get new poss edges (truncation based on mark_decay)
@@ -945,38 +981,8 @@ PMF_mark_CS <- function(time,
 
       delete.vertex.attribute(mark_sample,'na')
       
-      # CRITICAL: Ensure ALL nodes have required vertex attributes before createCppModel
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat)) {
-        nv <- network::network.size(mark_sample)
-        for (attr_name in names(vcat)) {
-          if (!attr_name %in% network::list.vertex.attributes(mark_sample)) {
-            levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
-              params$vertex_categorical_levels[[attr_name]]
-            } else {
-              c("unknown")
-            }
-            if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
-            network::set.vertex.attribute(mark_sample, attr_name, rep(levs[1L], nv))
-          } else {
-            attr_vals <- mark_sample %v% attr_name
-            if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
-              levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
-                params$vertex_categorical_levels[[attr_name]]
-              } else {
-                unique_vals <- unique(attr_vals[!is.na(attr_vals) & attr_vals != ""])
-                if (length(unique_vals) > 0) sort(unique_vals) else c("unknown")
-              }
-              if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
-              if (length(attr_vals) < nv) {
-                attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
-              }
-              attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
-              network::set.vertex.attribute(mark_sample, attr_name, attr_vals)
-            }
-          }
-        }
-      }
+      # Ensure ALL nodes have required vertex attributes before createCppModel
+      mark_sample <- ensure_vertex_attrs(params, mark_sample)
       if ("na" %in% network::list.vertex.attributes(mark_sample)) {
         delete.vertex.attribute(mark_sample, "na")
       }
@@ -998,17 +1004,7 @@ PMF_mark_CS <- function(time,
       model$calculate()
       change_stats <- model$computeChangeStats(tails, heads)
       eta <- as.vector(change_stats %*% params$CS_params)
-      probs <- plogis(eta)
-      # --- Safety: sanitize probs after logistic in generate_mark (suggestions 1 & 9) ---
-      if (any(!is.finite(probs))) {
-        warning("PMF_mark_CS (generate_mark): NA/NaN/Inf in edge probs after logistic; replacing with 0 before clamp.")
-        probs[!is.finite(probs)] <- 0
-      }
-      probs <- pmin(pmax(probs, eps), 1 - eps)
-      if (length(probs) > 0L && all(probs <= eps)) {
-        warning("PMF_mark_CS (generate_mark): all edge probs effectively zero after logistic; using uniform probs.")
-        probs[] <- 1 / length(probs)
-      }
+      probs <- sanitize_probs(plogis(eta), eps, " (generate_mark, post-logistic)")
 
       # reset to when we did not add more edges
       # logistic regression on change stats:
@@ -1020,23 +1016,10 @@ PMF_mark_CS <- function(time,
         }
         warning("PMF_mark_CS (generate_mark): no candidate edges (full network); returning mark with no new edges (stop_on_full_network = FALSE).")
         if (new_nodes == 0) {
+          nv_before <- network::network.size(mark_sample)
           mark_sample <- network::add.vertices(mark_sample, 1)
           network::set.vertex.attribute(mark_sample, "time", c(mark_sample %v% "time", time))
-          vcat <- params$vertex_categorical
-          if (!is.null(vcat) && is.list(vcat)) {
-            for (attr_name in names(vcat)) {
-              levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
-              p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
-              if (is.null(p)) next
-              levs <- names(p)
-              if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs))
-              names(p) <- levs
-              nv <- network::network.size(mark_sample)
-              existing <- if (attr_name %in% network::list.vertex.attributes(mark_sample)) (mark_sample %v% attr_name)[seq_len(nv - 1)] else rep(levs[1L], nv - 1)
-              sampled_one <- sample(levs, size = 1L, replace = TRUE, prob = p)
-              network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled_one))
-            }
-          }
+          mark_sample <- sample_vertex_attrs(params, mark_sample, mark_sample, nv_before, 1L, eps)
         }
         mark_sample_density <- 1
         log_mark_sample_density <- 0
@@ -1060,17 +1043,7 @@ PMF_mark_CS <- function(time,
         warning("PMF_mark_CS (generate_mark): non-finite decay factor; replacing with 1.")
         factor[!is.finite(factor)] <- 1
       }
-      probs <- factor * probs
-      # --- Safety: sanitize probs after decay in generate_mark (suggestion 3 & 9) ---
-      if (any(!is.finite(probs))) {
-        warning("PMF_mark_CS (generate_mark): NA/NaN/Inf in edge probs after decay; replacing with 0 before clamp.")
-        probs[!is.finite(probs)] <- 0
-      }
-      probs <- pmin(pmax(probs, eps), 1 - eps)
-      if (length(probs) > 0L && all(probs <= eps)) {
-        warning("PMF_mark_CS (generate_mark): all edge probs effectively zero after decay; using uniform probs.")
-        probs[] <- 1 / length(probs)
-      }
+      probs <- sanitize_probs(factor * probs, eps, " (generate_mark, post-decay)")
 
       add <- runif(length(probs)) < probs
       # --- Safety: no NA in add before add.edges (suggestion 5 & 9) ---
@@ -1094,23 +1067,7 @@ PMF_mark_CS <- function(time,
       if (any(!is.finite(p_add)) || any(!is.finite(p_not))) {
         warning("PMF_mark_CS (generate_mark): non-finite probs in log_mark_sample_density; using epsilon for log.")
       }
-      log_multinomial_sample <- 0
-      vcat <- params$vertex_categorical
-      if (!is.null(vcat) && is.list(vcat) && (new_size - old_nodes) > 0) {
-        for (attr_name in names(vcat)) {
-          if (attr_name %in% network::list.vertex.attributes(mark_sample)) {
-            levs <- vertex_categorical_level_names(params, attr_name, mark_sample)
-            p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
-            if (!is.null(p)) {
-              obs <- (mark_sample %v% attr_name)[(old_nodes + 1):new_size]
-              idx <- match(obs, names(p))
-              idx[is.na(idx)] <- match("unknown", names(p))
-              idx[is.na(idx)] <- 1L
-              log_multinomial_sample <- log_multinomial_sample + sum(log(pmax(p[idx], eps)))
-            }
-          }
-        }
-      }
+      log_multinomial_sample <- log_categorical_density(params, mark_sample, old_nodes, new_size, eps)$log_dens
       mark_sample_density <- prod(p_add) * prod(p_not) * dpois_val * exp(log_multinomial_sample)
       log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) +
                                  sum(log(p_not), na.rm = TRUE) +
@@ -1118,7 +1075,7 @@ PMF_mark_CS <- function(time,
       }
       }else{
         if(is.null(last_net)){
-          mark_sample <- network::network(matrix(1),directed = F)
+          mark_sample <- network::network(matrix(1),directed = FALSE)
           set.vertex.attribute(mark_sample,"time",time)
         }else{
           mark_sample <- last_net
@@ -1128,19 +1085,7 @@ PMF_mark_CS <- function(time,
         set.vertex.attribute(mark_sample,
                              "time",
                              c(times,time))
-        vcat <- params$vertex_categorical
-        if (!is.null(vcat) && is.list(vcat)) {
-          for (attr_name in names(vcat)) {
-            levs <- vertex_categorical_level_names(params, attr_name, mark)
-            p <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = eps)
-            if (is.null(p)) next
-            levs <- names(p)
-            if (any(!is.finite(p)) || sum(p) <= 0) p <- rep(1 / length(levs), length(levs)); names(p) <- levs
-            existing <- if (attr_name %in% network::list.vertex.attributes(mark_sample)) (mark_sample %v% attr_name)[seq_len(length(times))] else rep(levs[1L], length(times))
-            sampled_one <- sample(levs, size = 1L, replace = TRUE, prob = p)
-            network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled_one))
-          }
-        }
+        mark_sample <- sample_vertex_attrs(params, if (!is.null(last_net)) last_net else mark_sample, mark_sample, length(times), 1L, eps)
         mark_sample_density <- 1
         log_mark_sample_density <- 0
       }

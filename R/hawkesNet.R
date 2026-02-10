@@ -40,12 +40,7 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
     warning("rename_CS_params_in_table: Found ", length(cs_indices), 
             " CS_params in fit table but expected ", n_cs, 
             " statistics from formula. Some parameters may not be renamed.")
-    # Debug: print what we found
-    if (length(cs_indices) > 0) {
-      message("DEBUG: Found CS_params indices: ", paste(cs_indices, collapse=", "))
-      message("DEBUG: Found CS_params names: ", paste(fit_table$parameter[cs_indices], collapse=", "))
-    }
-    message("DEBUG: Expected ", n_cs, " statistics: ", paste(stat_names, collapse=", "))
+    
   }
   # Extract parameter numbers and rename
   for (idx in cs_indices) {
@@ -116,12 +111,6 @@ cond_intensity <- function(new_net,
   # 3. Define the function
   # Note: We define it normally, then swap the environment.
   func_template <- function(params) {
-    # --- START DEBUG ---
-    # 1. Get the environment where variables like 'diffs_local' should live
-    #    (This is the parent of the current execution environment)
-    enclosure <- parent.env(environment())
-    # --- END DEBUG ---
-    # Explicitly using the variables expected in e_tiny
     decays <- exp(-params$beta_overall * diffs_local)
     
     # Note: logic checks out, baseenv contains exp/log/sum
@@ -147,8 +136,6 @@ cond_intensity <- function(new_net,
   )
 }
 
-# According to CONOR we can't have a branching process due to the background rate issues:
-# Now we want the to do a thinning approach, i.e. propose a bunch of points and the accept or reject them
 #' Simulate a Hawkes-driven network growth process
 #'
 #' Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
@@ -177,10 +164,10 @@ sim_hawkesNet <- function(params,
                                 time_window,
                                 PMF_mark, # function that both generates new mark and calculates the density of existing mark
                                 cond_intensity, # function to calcualte condiational_intensity, takes in a kernel_func
-                                hashed_edges = F,
-                                verbose = F,
+                                hashed_edges = FALSE,
+                                verbose = FALSE,
                                 mu_multiplier = 10,
-                                joint_accept = F,
+                                joint_accept = FALSE,
                                 n_mark_sample = NULL,
                                 stop_on_full_network = TRUE, # if TRUE, stop when no candidate edges (full network); if FALSE, warn and continue with no new edges
                                 inhom_bg = NULL, # optional inhomogeneous background object
@@ -218,25 +205,23 @@ sim_hawkesNet <- function(params,
   beta <- params$beta
   K <- params$K
 
-  # Initialize the output list of events
-  events = list()
-  events$n = 0
-  events$t = c()
-  events$mark_density <- c()
-
-  accept_probs <- c()
-
   # propose points to be thinned:
-  n_bg = rpois(1, lambda * (time_window[2] - time_window[1]))
+  n_bg <- rpois(1, lambda * (time_window[2] - time_window[1]))
+
+  # Pre-allocate buffers to avoid O(n^2) vector append in the while loop
+  event_times_buf <- numeric(n_bg)
+  mark_density_buf <- numeric(n_bg)
+  accept_probs_buf <- numeric(n_bg)
+  n_accepted <- 0L
+  n_proposed <- 0L
+  n_mark_dens <- 0L
   event_queue <- data.table(time = sort(runif(n_bg, min=0, max=time_window[2])))
   # maintain order so no need to sort
   setkey(event_queue, time)
   # Initialize the list to store new events
   new_events_list <- list()
   list_index <- 1
-  tot <- 0
-  tot_attempt <- 0
-  current_net <- network::network(matrix(1),directed = F)
+  current_net <- network::network(matrix(1),directed = FALSE)
   delete.vertices(current_net,1)
   while (nrow(event_queue) > 0) {
     t <- proc.time()
@@ -268,7 +253,6 @@ sim_hawkesNet <- function(params,
                               stop_on_full_network = stop_on_full_network,
                               ...)
       net <- mark_sample$mark_sample
-      new_nodes <- (net %n% 'n') - (current_net %n% 'n')
       if(hashed_edges && length(net$mel)!=0){
         # hash the network edge list for fast lookup:
         edges <- network::as.edgelist(net)
@@ -319,7 +303,6 @@ sim_hawkesNet <- function(params,
                                     ...
             )
             net <- mark_sample$mark_sample
-            new_nodes <- (net %n% 'n') - (current_net %n% 'n')
             if(hashed_edges){
               # hash the network edge list for fast lookup:
               edges <- network::as.edgelist(net)
@@ -380,7 +363,8 @@ sim_hawkesNet <- function(params,
 
       accept <- intensity/lambda
     }
-    accept_probs <- c(accept_probs,accept)
+    n_proposed <- n_proposed + 1L
+    accept_probs_buf[n_proposed] <- accept
 
     # if we accept the point add it in
     if(verbose){
@@ -394,26 +378,31 @@ sim_hawkesNet <- function(params,
         print('accepted!')
       }
       current_net <- net
-      events$t[length(events$t)+1] <- current_event$time
-      if(length(events$t) >2){
-        events$mark_density <- c(events$mark_density,mark_sample$mark_density)
+      n_accepted <- n_accepted + 1L
+      event_times_buf[n_accepted] <- current_event$time
+      if(n_accepted > 2L){
+        n_mark_dens <- n_mark_dens + 1L
+        mark_density_buf[n_mark_dens] <- mark_sample$mark_density
       }
-
-    }else{
-      # do nothing since we rejected the point
     }
     if(verbose){
       print(paste0("time is ",current_event$time, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
       print(paste0("time is ",current_event$time, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
     }
     # Concatenate new events to event_queue only if we have only one event left to go
-    old_n <- dim(event_queue)[1]
     event_queue <- rbindlist(list(event_queue, rbindlist(new_events_list, use.names = TRUE)))
     new_events_list <- vector("list", length(new_events_list))  # Reset the list
     list_index <- 1
   }
   t1 <- proc.time() - t1
   print(paste0("simulation took ",round(t1[3],2)," seconds"))
+  # Trim pre-allocated buffers to actual size
+  events <- list(
+    n = n_accepted,
+    t = event_times_buf[seq_len(n_accepted)],
+    mark_density = mark_density_buf[seq_len(n_mark_dens)]
+  )
+  accept_probs <- accept_probs_buf[seq_len(n_proposed)]
   return(list(events = events,
               net = current_net,
               accept_probs = accept_probs))
@@ -544,7 +533,7 @@ loglik_hawkesNet = function(params,
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
   }
   integral <- params$mu * tval + (1/params$beta_overall)*params$K*sum(pieces)
-  loglik <- intens_sum - integral  # If you hit Browse[] here, clear RStudio breakpoints (Debug -> Clear All) or run undebug(loglik_hawkesNet)
+  loglik <- intens_sum - integral
   
   # Guard: ensure loglik is finite for L-BFGS-B
   if (!is.finite(loglik) || !is.finite(intens_sum) || !is.finite(integral)) {
@@ -555,9 +544,6 @@ loglik_hawkesNet = function(params,
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
   }
   
-  # print(paste0("integral is ",integral))
-  # print(paste0("intens_sum is ",intens_sum))
-  # print(paste0("trigger part of integral is  ",(1/params$beta_overall)*params$K*sum(pieces)))
   t<-proc.time() - t
   if(verbose){
     print(paste0("this iteration of loglik took ", round(t[3],2)," seconds"))
@@ -746,9 +732,7 @@ compensators_hawkesNet <- function(params,
   }
   pieces <- 1 - exp(-params$beta_overall * (tval - times))
   incremental <- sapply(seq_along(times), function(i) {
-    integral <- params$mu * times[i] + (1/params$beta_overall)*params$K*sum(pieces[1:i])
-    integral <- params$mu * times[i] + params$K*sum(pieces[1:i])
-    return(integral)
+    params$mu * times[i] + (1/params$beta_overall)*params$K*sum(pieces[1:i])
   })
   return(incremental)
 }

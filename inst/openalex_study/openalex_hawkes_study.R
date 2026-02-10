@@ -69,6 +69,31 @@ TOPIC <- "Point processes and geometric inequalities"
 # Reproducibility
 set.seed(42L)
 
+# Helper: run expression and return on_error (default NULL) if it fails
+safe_run <- function(expr, label = "", on_error = NULL) {
+  tryCatch(expr, error = function(e) {
+    if (nzchar(label)) cat("  ERROR:", label, ":", e$message, "\n")
+    on_error
+  })
+}
+
+# Helper: default parameter initialization (structural or nodeMatch)
+make_default_params <- function(n_cs, mu_init, include_gender = FALSE) {
+  p <- list(
+    mu = mu_init,
+    beta_overall = 1,
+    K = 0.5,
+    beta_edges = 1,
+    node_lambda = 1,
+    CS_params = c(-10, rep(0, n_cs - 1))
+  )
+  if (include_gender) {
+    p$vertex_categorical <- list(gender = c(female = 0.1, male = 0.5))
+    p$vertex_categorical_levels <- list(gender = c("female", "male", "unknown"))
+  }
+  p
+}
+
 # Speed tips for Nelder-Mead: pass cores = N_CORES to fit_hawkesNet_inhom so each
 # loglik evaluation parallelizes over cached intensity closures; lower TRUNCATION
 # or fewer formula terms reduce work per evaluation; good parscale reduces iterations.
@@ -147,9 +172,9 @@ t_step <- proc.time()
 time_window_01 <- c(0, 1)
 cat("  Preparing inhomogeneous background (KDE)...\n")
 t_kde <- proc.time()
-inhom_bg <- tryCatch(
+inhom_bg <- safe_run(
   prepare_inhomogeneous_background(net_raw, time_attr = "time", bw = NULL, grid_n = 2048),
-  error = function(e) { cat("  ERROR: prepare_inhomogeneous_background failed:", e$message, "\n"); NULL }
+  "prepare_inhomogeneous_background"
 )
 cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 
@@ -178,14 +203,8 @@ if (!is.null(inhom_bg)) {
   n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 4L
   
   # Initialize parameters for structural-only model (no vertex_categorical)
-  params_init_structural <- list(
-    mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-    beta_overall = 1,
-    K = 0.5,
-    beta_edges = 1,
-    node_lambda = 1,
-    CS_params = c(-10, rep(0, n_cs_structural - 1))
-  )
+  mu_init <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
+  params_init_structural <- make_default_params(n_cs_structural, mu_init)
   
   # Create parscale for structural model
   p_scale_structural <- c(
@@ -196,7 +215,7 @@ if (!is.null(inhom_bg)) {
   cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_structural <- proc.time()
   
-  fit_inhom_structural <- tryCatch(
+  fit_inhom_structural <- safe_run(
     fit_hawkesNet_inhom(
       params_init = params_init_structural,
       time_window = time_window_01,
@@ -216,9 +235,10 @@ if (!is.null(inhom_bg)) {
       fixed_params = c("K", "mu"),
       parscale = p_scale_structural,
       cache_intensity = TRUE,
+      combine_intensity = TRUE,
       cores = N_CORES
     ),
-    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
+    "Structural fit"
   )
   
   elapsed_fit_structural <- (proc.time() - t_fit_structural)[3]
@@ -259,12 +279,10 @@ if (!is.null(inhom_bg)) {
   
   # Initialize nodeMatch fit from structural fit results
   if (!is.null(fit_inhom_structural) && fit_inhom_structural$fit$convergence == 0) {
-    # Extract structural parameters from structural fit
-    # CRITICAL: Create skeleton that matches EXACTLY what was used during optimization
+    # CRITICAL: skeleton must exclude fixed_params (mu, K) — fit_hawkesNet_inhom strips them
+    # before optim, so fit$par only has the non-fixed parameters.
     skel_structural <- list(
-      mu = params_init_structural$mu,
       beta_overall = params_init_structural$beta_overall,
-      K = params_init_structural$K,
       beta_edges = params_init_structural$beta_edges,
       node_lambda = params_init_structural$node_lambda,
       CS_params = params_init_structural$CS_params
@@ -278,70 +296,42 @@ if (!is.null(inhom_bg)) {
     })
     
     if (!is.null(pfit_structural)) {
-      # Validate extracted parameters - check each field individually
-      mu_valid <- is.finite(pfit_structural$mu) && pfit_structural$mu > 0
+      # Validate extracted parameters
       beta_overall_valid <- is.finite(pfit_structural$beta_overall)
-      K_valid <- is.finite(pfit_structural$K)
       beta_edges_valid <- is.finite(pfit_structural$beta_edges)
       node_lambda_valid <- is.finite(pfit_structural$node_lambda) && pfit_structural$node_lambda > 0
       cs_valid <- all(is.finite(pfit_structural$CS_params)) && length(pfit_structural$CS_params) >= n_cs_structural
       
-      if (mu_valid && beta_overall_valid && K_valid && beta_edges_valid && 
-          node_lambda_valid && cs_valid) {
-        # Initialize nodeMatch: use structural CS_params (edges, degree(0), triangles, stars), add nodeMatch term
+      if (beta_overall_valid && beta_edges_valid && node_lambda_valid && cs_valid) {
+        # Initialize nodeMatch: use structural CS_params, add nodeMatch term (0 init)
         cs_structural <- pfit_structural$CS_params[seq_len(min(n_cs_structural, length(pfit_structural$CS_params)))]
         cs_padding <- rep(0, max(0L, n_cs_nodematch - length(cs_structural)))
         cs_init_nodematch <- c(cs_structural, cs_padding)[seq_len(n_cs_nodematch)]
         
-        # Ensure mu is calculated correctly
-        mu_val <- if (is.finite(pfit_structural$mu) && pfit_structural$mu > 0) {
-          pfit_structural$mu
-        } else {
-          inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
-        }
-        
         params_init_nodematch <- list(
-          mu = mu_val,
+          mu = params_init_structural$mu,         # fixed param: use init value
           beta_overall = pfit_structural$beta_overall,
-          K = pfit_structural$K,
+          K = params_init_structural$K,            # fixed param: use init value
           beta_edges = pfit_structural$beta_edges,
           node_lambda = pfit_structural$node_lambda,
           CS_params = cs_init_nodematch,
           vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
           vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
         )
-        cat("  Initialized from structural fit\n")
+        cat("  Initialized from structural fit (beta_overall=", round(pfit_structural$beta_overall, 4),
+            ", beta_edges=", round(pfit_structural$beta_edges, 4),
+            ", node_lambda=", round(pfit_structural$node_lambda, 4), ")\n", sep = "")
       } else {
         pfit_structural <- NULL  # Force fallback
       }
     }
     
     if (is.null(pfit_structural)) {
-      # Fallback: independent initialization
-      params_init_nodematch <- list(
-        mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-        beta_overall = 1,
-        K = 0.5,
-        beta_edges = 1,
-        node_lambda = 1,
-        CS_params = c(-10, rep(0, n_cs_nodematch - 1)),
-        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-      )
+      params_init_nodematch <- make_default_params(n_cs_nodematch, mu_init, include_gender = TRUE)
       cat("  Structural fit parameters invalid; using independent initialization\n")
     }
   } else {
-    # Fallback: independent initialization if structural fit failed
-    params_init_nodematch <- list(
-      mu = inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1]),
-      beta_overall = 1,
-      K = 0.5,
-      beta_edges = 1,
-      node_lambda = 1,
-      CS_params = c(-10, rep(0, n_cs_nodematch - 1)),
-      vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-      vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-    )
+    params_init_nodematch <- make_default_params(n_cs_nodematch, mu_init, include_gender = TRUE)
     cat("  Structural fit not available; using independent initialization\n")
   }
   
@@ -369,7 +359,7 @@ if (!is.null(inhom_bg)) {
   cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_nodematch <- proc.time()
   
-  fit_inhom_nodematch <- tryCatch(
+  fit_inhom_nodematch <- safe_run(
     fit_hawkesNet_inhom(
       params_init = params_init_nodematch,
       time_window = time_window_01,
@@ -389,9 +379,10 @@ if (!is.null(inhom_bg)) {
       fixed_params = c("K", "mu"),
       parscale = p_scale_nodematch,
       cache_intensity = TRUE,
+      combine_intensity = TRUE,
       cores = N_CORES
     ),
-    error = function(e) { cat("  ERROR: Fit failed:", e$message, "\n"); NULL }
+    "nodeMatch fit"
   )
   
   elapsed_fit_nodematch <- (proc.time() - t_fit_nodematch)[3]
@@ -429,7 +420,7 @@ init_gamma <- max(length(t_events) * 0.5, 10)
 params_init_exp <- list(gamma = init_gamma, beta = 10, K = 0.2)
 cat("  Fitting temporal Hawkes (exp kernel)...\n")
 t_fit <- proc.time()
-fit_temporal <- tryCatch(
+fit_temporal <- safe_run(
   hawkesNet::fit_temporal_hawkes(
     params_init = params_init_exp,
     realiz = realiz,
@@ -439,7 +430,7 @@ fit_temporal <- tryCatch(
     kernel = "exp",
     trace = 0
   ),
-  error = function(e) { cat("  ERROR: fit_temporal_hawkes failed:", e$message, "\n"); NULL }
+  "fit_temporal_hawkes"
 )
 cat("  Temporal fit:", round((proc.time() - t_fit)[3], 1), "s\n")
 if (!is.null(fit_temporal)) {
@@ -448,7 +439,7 @@ if (!is.null(fit_temporal)) {
 ks_temporal_pval <- NA_real_
 if (!is.null(fit_temporal) && exists("ks_test_pval_temporal")) {
   cat("  Computing KS test...\n")
-  ks_temporal_pval <- tryCatch(
+  ks_temporal_pval <- safe_run(
     hawkesNet::ks_test_pval_temporal(
       realiz = realiz,
       windowT = windowT,
@@ -456,7 +447,7 @@ if (!is.null(fit_temporal) && exists("ks_test_pval_temporal")) {
       kernel = "exp",
       use_kde = TRUE
     ),
-    error = function(e) NA_real_
+    on_error = NA_real_
   )
   cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
 }
@@ -488,9 +479,14 @@ if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
 if (RUN_GOF && !is.null(fit_inhom_structural)) {
   cat("  GOF for structural-only model...\n")
   
-  # Reconstruct params_init for structural model
+  # Reconstruct params_init for structural model (skeleton must exclude fixed params mu, K)
   skel_structural_gof <- params_init_structural
-  params_init_structural_gof <- relist(fit_inhom_structural$fit$par, skeleton = skel_structural_gof)
+  skel_structural_gof$mu <- NULL
+  skel_structural_gof$K <- NULL
+  params_init_structural_gof <- tryCatch(
+    relist(fit_inhom_structural$fit$par, skeleton = skel_structural_gof),
+    error = function(e) { cat("  Warning: GOF relist failed:", e$message, "\n"); skel_structural_gof }
+  )
   params_init_structural_gof$K <- params_init_structural$K
   params_init_structural_gof$mu <- params_init_structural$mu
   
@@ -526,10 +522,15 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   cat("\n  GOF for nodeMatch model...\n")
   
-  # Reconstruct params_init for nodeMatch
+  # Reconstruct params_init for nodeMatch (skeleton must exclude fixed params mu, K and vertex_categorical_levels)
   skel_nodematch_gof <- params_init_nodematch
   skel_nodematch_gof$vertex_categorical_levels <- NULL
-  params_init_nodematch_gof <- relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch_gof)
+  skel_nodematch_gof$mu <- NULL
+  skel_nodematch_gof$K <- NULL
+  params_init_nodematch_gof <- tryCatch(
+    relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch_gof),
+    error = function(e) { cat("  Warning: GOF nodeMatch relist failed:", e$message, "\n"); skel_nodematch_gof }
+  )
   params_init_nodematch_gof$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
   params_init_nodematch_gof$K <- params_init_nodematch$K
   params_init_nodematch_gof$mu <- params_init_nodematch$mu
