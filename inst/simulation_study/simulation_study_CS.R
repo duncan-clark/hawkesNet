@@ -139,7 +139,7 @@ if(SIMULATE){
                           mu_multiplier = 3,
                           joint_accept = F,
                           truncation = TRUNCATION,
-                          formula_RHS = "edges  + triangles() + star(c(2,3))")
+                          formula_RHS = "edges + triangles + star(c(2,3))")
     }, error = function(e) {
       # Already inside parallel worker; just return NULL or partial data
       message("Error in sim_hawkesNet: ", e$message)
@@ -283,7 +283,7 @@ if(RUN_CONSISTENCY){
                             mu_multiplier = 3,
                             verbose = FALSE,
                             truncation = TRUNCATION,
-                            formula_RHS = "edges + triangles() + star(c(2,3))")
+                            formula_RHS = "edges + triangles + star(c(2,3))")
       }, error = function(e) return(NULL))
 
       if(is.null(sim_res)) return(NULL)
@@ -457,7 +457,7 @@ if(RUN_EXPLOSIVE){
                                  hashed_edges = TRUE,
                                  verbose = FALSE,
                                  truncation = TRUNCATION,
-                                 formula_RHS = "edges + triangles() + star(c(2,3))",
+                                 formula_RHS = "edges + triangles + star(c(2,3))",
                                  mu_multiplier = 50)
 
   cat("Simulating Stable Regime (CS model)...\n")
@@ -468,7 +468,7 @@ if(RUN_EXPLOSIVE){
                                     hashed_edges = TRUE,
                                     verbose = FALSE,
                                     truncation = TRUNCATION,
-                                    formula_RHS = "edges + triangles() + star(c(2,3))",
+                                    formula_RHS = "edges + triangles + star(c(2,3))",
                                     mu_multiplier = 5)
 
   # ==========================

@@ -499,17 +499,42 @@ fit_hawkesNet_inhom <- function(params_init,
   tval_cached  <- time_window[2] - time_window[1]
   is_combined  <- length(cached_funcs) == 1L
 
+  # --- Evaluation diagnostics (accumulate timing, report periodically) ---
+  eval_env <- new.env(parent = emptyenv())
+  eval_env$n_eval <- 0L
+  eval_env$t_relist_total   <- 0
+  eval_env$t_validate_total <- 0
+  eval_env$t_closure_total  <- 0
+  eval_env$t_cleanup_total  <- 0
+  eval_env$t_integral_total <- 0
+  eval_env$t_total_total    <- 0
+  eval_env$t_last_report    <- proc.time()[3]
+  eval_env$best_ll          <- -Inf
+  DIAG_INTERVAL <- 50L  # report every N evaluations
+
   # Fast optim_func: calls cached closure directly, computes integral inline.
-  # Eliminates per-iteration overhead of loglik_hawkesNet_inhom (get_times, do.call, tryCatch, etc.)
   optim_func <- function(params) {
+    t0 <- proc.time()[3]
+
+    # 1. relist + restore fixed params
+    t1 <- proc.time()[3]
     params_curr <- relist(params, skeleton = params_init)
     params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
     if (!is.null(fixed_params)) {
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
-    if (!point_process_params_valid(params_curr)) return(-1e10)
+    t_relist <- proc.time()[3] - t1
 
-    # Evaluate intensities directly (no loglik_hawkesNet_inhom call)
+    # 2. validate
+    t1 <- proc.time()[3]
+    if (!point_process_params_valid(params_curr)) {
+      eval_env$n_eval <- eval_env$n_eval + 1L
+      return(-1e10)
+    }
+    t_validate <- proc.time()[3] - t1
+
+    # 3. Evaluate cached closures
+    t1 <- proc.time()[3]
     intens_vec <- tryCatch({
       if (is_combined) cached_funcs[[1L]](params_curr)
       else {
@@ -518,21 +543,63 @@ fit_hawkesNet_inhom <- function(params_init,
         v
       }
     }, error = function(e) NULL)
-    if (is.null(intens_vec)) return(-1e10)
+    t_closure <- proc.time()[3] - t1
+    if (is.null(intens_vec)) {
+      eval_env$n_eval <- eval_env$n_eval + 1L
+      return(-1e10)
+    }
 
-    # Clean non-finite / non-positive values
+    # 4. Clean + log-sum
+    t1 <- proc.time()[3]
     bad <- !is.finite(intens_vec) | intens_vec <= 0
     if (any(bad)) intens_vec[bad] <- 1e-10
     intens_sum <- sum(log(intens_vec))
+    t_cleanup <- proc.time()[3] - t1
 
-    # Compensator (integral): uses precomputed times_cached and tval_cached
+    # 5. Compensator (integral)
+    t1 <- proc.time()[3]
     b <- params_curr$beta_overall
-    if (!is.finite(b) || b < 1e-10) return(-1e10)
+    if (!is.finite(b) || b < 1e-10) {
+      eval_env$n_eval <- eval_env$n_eval + 1L
+      return(-1e10)
+    }
     pieces <- 1 - exp(-b * (tval_cached - times_cached))
     integral <- integral_bg + (1 / b) * params_curr$K * sum(pieces)
+    t_integral <- proc.time()[3] - t1
 
     ll <- intens_sum - integral
-    if (!is.finite(ll)) return(-1e10)
+    if (!is.finite(ll)) {
+      eval_env$n_eval <- eval_env$n_eval + 1L
+      return(-1e10)
+    }
+
+    # --- Accumulate timing ---
+    t_total <- proc.time()[3] - t0
+    eval_env$n_eval <- eval_env$n_eval + 1L
+    eval_env$t_relist_total   <- eval_env$t_relist_total   + t_relist
+    eval_env$t_validate_total <- eval_env$t_validate_total + t_validate
+    eval_env$t_closure_total  <- eval_env$t_closure_total  + t_closure
+    eval_env$t_cleanup_total  <- eval_env$t_cleanup_total  + t_cleanup
+    eval_env$t_integral_total <- eval_env$t_integral_total + t_integral
+    eval_env$t_total_total    <- eval_env$t_total_total    + t_total
+    if (ll > eval_env$best_ll) eval_env$best_ll <- ll
+
+    # --- Periodic report ---
+    n <- eval_env$n_eval
+    if (n %% DIAG_INTERVAL == 0L) {
+      elapsed <- proc.time()[3] - eval_env$t_last_report
+      ms <- function(x) round(x / n * 1000, 2)
+      message(
+        sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f",
+                n, elapsed, DIAG_INTERVAL, elapsed / DIAG_INTERVAL * 1000, eval_env$best_ll),
+        sprintf("\n    avg breakdown (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f",
+                ms(eval_env$t_relist_total), ms(eval_env$t_validate_total),
+                ms(eval_env$t_closure_total), ms(eval_env$t_cleanup_total),
+                ms(eval_env$t_integral_total), ms(eval_env$t_total_total))
+      )
+      eval_env$t_last_report <- proc.time()[3]
+    }
+
     ll
   }
 
@@ -562,6 +629,19 @@ fit_hawkesNet_inhom <- function(params_init,
   n_iter <- if (!is.null(fit$counts)) fit$counts[1L] else NA_integer_
   n_fneval <- if (!is.null(fit$counts) && length(fit$counts) >= 2L) fit$counts[2L] else NA_integer_
   message("Optimization: ", t_optim_elapsed, " s | iterations: ", n_iter, if (is.finite(n_fneval)) paste0(" | fn evals: ", n_fneval) else "", " | s/iter: ", if (is.finite(n_iter) && n_iter > 0) round(t_optim_elapsed / n_iter, 2) else "n/a")
+  # --- Final evaluation timing summary ---
+  n_e <- eval_env$n_eval
+  if (n_e > 0L) {
+    ms <- function(x) round(x / n_e * 1000, 2)
+    pct <- function(x) round(x / eval_env$t_total_total * 100, 1)
+    message(sprintf("Eval timing summary (%d evals, %.1f ms/eval avg):", n_e, eval_env$t_total_total / n_e * 1000))
+    message(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
+    message(sprintf("  validate: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
+    message(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
+    message(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
+    message(sprintf("  integral: %6.2f ms/eval (%4.1f%%)", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
+    message(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)", ms(eval_env$t_total_total), eval_env$t_total_total))
+  }
   message("Fitting (inhomogeneous) total: ", round(proc.time()[3] - t_fit_start, 1), " s")
 
   # Results table: estimate and standard error (from numerical Hessian)
