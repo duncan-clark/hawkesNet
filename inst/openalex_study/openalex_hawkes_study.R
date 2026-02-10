@@ -21,8 +21,8 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
 }
 
 # Paths: run from package root (directory containing inst/)
-# Try to find package root: check current directory and parent directories
-PKG_ROOT <- getwd()
+# Under SLURM, use submit dir so path stays valid if getwd() breaks later.
+PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) Sys.getenv("SLURM_SUBMIT_DIR") else getwd()
 if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) {
   # Try parent directory
   parent_dir <- dirname(PKG_ROOT)
@@ -553,45 +553,42 @@ save_list <- list(
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
 )
-rds_path <- file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
+# Ensure output dir exists (getwd() can become invalid on some clusters)
 cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
-cat("  Saving to:", rds_path, "\n")
+rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
+OPENALEX_RDS_PATH <- NULL  # set after save so Step 6 can find file
+
+cat("  Saving to:", rds_path_primary, "\n")
 cat("  Package root:", PKG_ROOT, "\n")
 cat("  Cluster output dir:", cluster_output_dir, "\n")
 
-# Create directory with error checking
-dir_result <- tryCatch({
-  dir.create(cluster_output_dir, showWarnings = TRUE, recursive = TRUE)
-}, error = function(e) {
-  cat("  ERROR creating directory:", e$message, "\n")
-  FALSE
-})
-
-if (!dir_result && !dir.exists(cluster_output_dir)) {
-  cat("  ERROR: Failed to create cluster_output directory\n")
-  cat("  Attempting to save to current directory instead...\n")
-  rds_path <- "results_openalex_full.RDS"
-}
-
-# Save with error checking
-save_result <- tryCatch({
-  saveRDS(save_list, rds_path)
-  cat("  Successfully saved to:", rds_path, "\n")
-  cat("  File exists:", file.exists(rds_path), "\n")
-  if (file.exists(rds_path)) {
-    file_info <- file.info(rds_path)
-    cat("  File size:", round(file_info$size / 1024^2, 2), "MB\n")
-  }
+save_ok <- tryCatch({
+  dir.create(cluster_output_dir, showWarnings = FALSE, recursive = TRUE)
+  saveRDS(save_list, rds_path_primary)
   TRUE
 }, error = function(e) {
-  cat("  ERROR saving file:", e$message, "\n")
-  cat("  Attempted path:", rds_path, "\n")
+  cat("  Save to ", rds_path_primary, " failed: ", conditionMessage(e), "\n")
   FALSE
 })
 
-if (!save_result) {
-  cat("  WARNING: Failed to save results file!\n")
+if (save_ok) {
+  OPENALEX_RDS_PATH <- rds_path_primary
+  cat("  Successfully saved to:", rds_path_primary, "\n")
+  if (file.exists(rds_path_primary)) {
+    file_info <- file.info(rds_path_primary)
+    cat("  File size:", round(file_info$size / 1024^2, 2), "MB\n")
+  }
+} else {
+  fallback <- "results_openalex_full.RDS"
+  tryCatch({
+    saveRDS(save_list, fallback)
+    OPENALEX_RDS_PATH <- fallback
+    cat("  Saved to fallback:", normalizePath(fallback, mustWork = FALSE), "\n")
+  }, error = function(e) {
+    cat("  Fallback save also failed:", conditionMessage(e), "\n")
+  })
 }
+if (is.null(OPENALEX_RDS_PATH)) cat("  WARNING: Failed to save results file!\n")
 
 cat("\n")
 
@@ -601,7 +598,9 @@ cat("\n")
 if (PAPER_OUTPUT) {
   cat("--- Step 6: Paper output (figures & tables) ---\n")
   t_step <- proc.time()
-  dat <- readRDS(file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS"))
+  rds_file <- if (!is.null(OPENALEX_RDS_PATH)) OPENALEX_RDS_PATH else file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
+  if (!file.exists(rds_file)) rds_file <- "results_openalex_full.RDS"
+  dat <- readRDS(rds_file)
   list2env(dat, envir = .GlobalEnv)
   cat("  Rehydrated; producing figures and tables.\n")
 
