@@ -4,8 +4,8 @@
 #SBATCH --error=cluster_output/openalex_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=50
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=100
+#SBATCH --mem=128G
 
 # OpenAlex Hawkes study: inhomogeneous fit, temporal fit, KS tests, GOF.
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
