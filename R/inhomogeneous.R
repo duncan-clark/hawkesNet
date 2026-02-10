@@ -74,10 +74,9 @@ cond_intensity_inhom <- function(new_net,
 
 #' Build one combined intensity closure from per-event CS ingredients
 #'
-#' Used when \code{combine_intensity = TRUE}: stacks change_stats etc. into lists
-#' and returns a single function that, given params, returns the vector of intensities
-#' (one per event). Memory: same total data as N closures, but one env (no duplication
-#' of closure machinery). Does not blow up memory.
+#' Used when \code{combine_intensity = TRUE}: stacks change_stats into one matrix,
+#' one matrix multiply per evaluation (vectorized); per-event steps (plogis, decay,
+#' in_mark, node_dens, kernel) stay in a loop. Faster than N separate multiplies.
 #' @param combined_inputs_list List of length N of combined_inputs from PMF_mark_CS (each has change_stats, in_mark, diffs, ...).
 #' @param diffs_kernel_list List of length N of kernel diffs (t_i - times[times < t_i]).
 #' @param mu_vec Length-N background rate at each event time.
@@ -89,6 +88,25 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
   if (N == 0L || length(combined_inputs_list) != N || length(diffs_kernel_list) != N || length(mu_vec) != N) {
     return(NULL)
   }
+  n_cs <- NA_integer_
+  for (i in seq_len(N)) {
+    inp <- combined_inputs_list[[i]]
+    if (!is.null(inp) && !isTRUE(inp$degenerate_edges) && nrow(inp$change_stats) > 0L) {
+      n_cs <- ncol(inp$change_stats)
+      break
+    }
+  }
+  if (!is.finite(n_cs) || n_cs < 1L) return(NULL)
+  nrows <- vapply(combined_inputs_list, function(x) {
+    if (is.null(x) || isTRUE(x$degenerate_edges)) 0L else nrow(x$change_stats)
+  }, 0L)
+  row_start <- c(0L, cumsum(nrows))
+  change_stats_stacked <- do.call(rbind, lapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    if (nrows[i] == 0L) matrix(0, 0, n_cs) else inp$change_stats
+  }))
+  total_rows <- row_start[N + 1L]
+  if (total_rows == 0L) return(NULL)
   eps <- 1e-10
   expand_probs <- tryCatch(
     getFromNamespace("expand_vertex_categorical_probs", "hawkesNet"),
@@ -96,6 +114,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
   )
   if (is.null(expand_probs)) return(NULL)
   combined_closure <- function(params) {
+    eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
     out <- numeric(N)
     for (i in seq_len(N)) {
       inp <- combined_inputs_list[[i]]
@@ -103,8 +122,9 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
         out[i] <- 1e-10
         next
       }
-      eta <- as.vector(inp$change_stats %*% params$CS_params)
-      p_base <- stats::plogis(eta)
+      idx_i <- (row_start[i] + 1L):row_start[i + 1L]
+      eta_i <- eta_all[idx_i]
+      p_base <- stats::plogis(eta_i)
       p <- p_base * exp(-params$beta_edges * inp$diffs)
       p[p > (1 - eps)] <- 1 - eps
       p[p < eps] <- eps
