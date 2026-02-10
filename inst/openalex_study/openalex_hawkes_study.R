@@ -51,12 +51,12 @@ PER_PAGE <- 100L
 MIN_DATE <- "1971-04-01"
 MAX_DATE <- "2020-01-01"
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
-# If request is 128 but squeue shows 256 (one node), use 256. Override: CORES_OVERRIDE=128 or 256.
+# Override: CORES_OVERRIDE=128|256. USE_256_WHEN_128=1 if squeue shows 256 for a 128 request.
 if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
-} else if (N_CORES == 128L) {
+} else if (N_CORES == 128L && nzchar(Sys.getenv("USE_256_WHEN_128"))) {
   N_CORES <- 256L
-  cat("Request was 128; using 256 (typical when squeue shows 256)\n")
+  cat("Request was 128; using 256 (USE_256_WHEN_128 set)\n")
 }
 MAX_ITER <- 5000
 TRUNCATION <- 200L

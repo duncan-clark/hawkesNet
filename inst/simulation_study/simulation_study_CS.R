@@ -56,21 +56,21 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- 256L
   cat("Request was 128; using 256 (USE_256_WHEN_128 set; typical when squeue shows 256)\n")
 }
-# Core allocation: 128 -> 26 outer x 4 inner (104, no oversubscribe); 256 -> 51 outer x 5 inner. Override: CORES_OUTER or CORES_INNER.
+# Core allocation: 128 -> 32 outer x 4 inner (128, full use); 256 -> 51 outer x 5 inner. Override: CORES_OUTER or CORES_INNER.
 CORES_OUTER_ENV <- Sys.getenv("CORES_OUTER", "")
 if (nzchar(CORES_OUTER_ENV)) {
   N_CORES_OUTER <- as.numeric(CORES_OUTER_ENV)
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
 } else if (N_CORES == 128L) {
-  N_CORES_OUTER <- 26L
-  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))  # 4 -> 26*4=104, no oversubscription
-  cat("Using 128 physical cores, 26 outer workers,", N_CORES_INNER, "inner each (", N_CORES_OUTER * N_CORES_INNER, " total)\n", sep = "")
+  N_CORES_OUTER <- 32L
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))  # 4 -> 32*4=128, full utilization
+  cat("Using 128 cores:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
 } else if (N_CORES == 256L) {
   N_CORES_OUTER <- 51L
   N_CORES_INNER <- max(1L, ceiling(N_CORES / N_CORES_OUTER))  # 5 -> 51*5=255
-  cat("Using 256 cores, 51 outer workers,", N_CORES_INNER, "inner each (", N_CORES_OUTER * N_CORES_INNER, " total)\n", sep = "")
+  cat("Using 256 cores:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
 } else {
-  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 5))
+  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
   N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
   if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
     N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
@@ -205,8 +205,8 @@ if(SIMULATE){
     f
   })
   cat("Fitting took:", round((proc.time() - t1)[3], 1), "s\n")
-  # Save the fits and final network for analysis:
-  temp_hawkes_fits <- lapply(sims,function(x){
+  # Save the fits and final network for analysis (temporal Hawkes is fast; parallelise on existing cluster):
+  temp_hawkes_fits <- parLapply(cl, sims, function(x){
     fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
                                                   beta = 1,
                                                   K = 0.1),
