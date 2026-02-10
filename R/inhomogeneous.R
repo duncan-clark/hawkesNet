@@ -244,8 +244,10 @@ fit_hawkesNet_inhom <- function(params_init,
   }
 
   cached_funcs <- NULL
+  t_fit_start <- proc.time()[3]
   if (cache_intensity) {
     message("Pre-calculating intensity closures (inhomogeneous background)...")
+    t_cache_start <- proc.time()[3]
     init_lik <- loglik_hawkesNet_inhom(
       params = params_init_old,
       time_window = time_window,
@@ -256,6 +258,7 @@ fit_hawkesNet_inhom <- function(params_init,
       ...
     )
     cached_funcs <- init_lik$intens_funcs
+    message("Intensity cache: ", round(proc.time()[3] - t_cache_start, 1), " s")
   }
 
   dot_args <- list(...)
@@ -300,9 +303,10 @@ fit_hawkesNet_inhom <- function(params_init,
     optim_args$lower <- bounds$lower
     optim_args$upper <- bounds$upper
   }
+  t_optim_start <- proc.time()[3]
   fit <- do.call(optim, optim_args)
-
-  message("Fitting (inhomogeneous) took ", round(proc.time()[3], 2), " seconds")
+  message("Optimization: ", round(proc.time()[3] - t_optim_start, 1), " s")
+  message("Fitting (inhomogeneous) total: ", round(proc.time()[3] - t_fit_start, 1), " s")
 
   # Results table: estimate and standard error (from numerical Hessian)
   par_names <- names(fit$par)
