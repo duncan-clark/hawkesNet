@@ -147,7 +147,7 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 # =============================================================================
 fit_inhom_structural <- NULL
 # degree(0) captures isolate distribution so GOF is not overly connected
-FORMULA_RHS_STRUCTURAL <- "edges + degree(0) + triangles + star(c(2,3))"
+FORMULA_RHS_STRUCTURAL <- "edges  + triangles + star(c(2,3,4,5))"
 #
 # ERNM formula alternatives (if GOF shows poor degree/ESP fit):
 #   Degree: model often underestimates degree-1 and higher degrees. Consider:
@@ -232,7 +232,7 @@ if (!is.null(inhom_bg)) {
 # 2b. nodeMatch fit (initialized from structural fit)
 # =============================================================================
 fit_inhom_nodematch <- NULL
-FORMULA_RHS_NODEMATCH <- "edges + degree(0) + triangles + star(c(2,3)) + nodeMatch('gender')"
+FORMULA_RHS_NODEMATCH <- "edges + triangles + star(c(2,3,4,5)) + nodeMatch('gender')"
 if (!is.null(inhom_bg)) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
