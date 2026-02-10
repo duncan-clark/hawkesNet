@@ -55,6 +55,63 @@ make_network_growth_animation <- function(net_list,
   return(animate)
 }
 
+# =============================================================================
+# Safe parallel lapply — avoids fork deadlocks on macOS interactive sessions
+# =============================================================================
+#
+# On macOS (Darwin), fork() can deadlock when called repeatedly from interactive
+# R sessions (especially RStudio).  Root causes:
+#   1. Apple's Objective-C runtime registers thread-safety checks that abort or
+#      hang in forked children once certain frameworks are initialized.
+#   2. pbmcapply::pbmclapply adds an extra monitor child + pipe for progress
+#      reporting; leftover pipe state between calls can cause the second call
+#      to deadlock at "0%, ETA NA".
+#
+# This helper routes to:
+#   - PSOCK cluster (parallel::parLapply) on macOS-interactive / Windows
+#     → no fork at all; each worker is a fresh R process.
+#   - parallel::mclapply on Linux (fast fork; no pbmcapply pipe overhead).
+#   - Sequential fallback if cores == 1 or parallel fails.
+#
+# Users can override with parallel_type = "fork" / "psock" / "auto".
+# @noRd
+safe_parallel_lapply <- function(X, FUN, mc.cores,
+                                 mc.preschedule = FALSE,
+                                 parallel_type = "auto") {
+
+  os <- Sys.info()[["sysname"]]
+
+  if (parallel_type == "auto") {
+    # macOS interactive: fork deadlocks on repeated calls (ObjC runtime + pbmcapply pipes)
+    # Windows: fork() not available at all
+    use_psock <- (os == "Darwin" && interactive()) || os == "Windows"
+  } else {
+    use_psock <- (parallel_type == "psock")
+  }
+
+  if (use_psock) {
+    message("  [parallel] PSOCK cluster (", mc.cores, " workers)")
+    cl <- parallel::makeCluster(mc.cores)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    # Load packages that intens_func's captured closures depend on
+    parallel::clusterEvalQ(cl, {
+      suppressPackageStartupMessages({
+        library(hawkesNet)
+        library(ernm)
+        library(network)
+        library(sna)
+      })
+    })
+    result <- parallel::parLapply(cl, X, FUN)
+    return(result)
+  }
+
+  # Fork-based: plain mclapply (no pbmcapply progress pipe)
+  message("  [parallel] mclapply (", mc.cores, " cores, fork)")
+  parallel::mclapply(X, FUN, mc.cores = mc.cores,
+                     mc.preschedule = mc.preschedule)
+}
+
 # Helper function for edge hash maps
 #' Check whether an edge exists in a hash-backed edge set
 #'

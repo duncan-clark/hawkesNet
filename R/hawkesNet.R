@@ -456,6 +456,7 @@ loglik_hawkesNet = function(params,
     dot_args <- list(...)
     formula_rhs <- dot_args$formula_RHS
     cores <- dot_args$cores
+    parallel_type <- if (!is.null(dot_args$parallel_type)) dot_args$parallel_type else "auto"
     use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1
     # Reuse one ERNM model when running sequentially (avoids createCppModel per event; big speedup for nodeMatch)
     shared_model <- NULL
@@ -465,36 +466,45 @@ loglik_hawkesNet = function(params,
       shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
       shared_model$setNetwork(ernm::as.BinaryNet(g0))
     }
+    # Materialise ... into a concrete list so the closure serialises cleanly
+    # for PSOCK workers (promises from ... cannot survive serialisation).
+    extra_args <- dot_args
+    extra_args[c("cores", "formula_RHS", "combine_intensity",
+                 "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i){
-      current_net <- filtration_to_net(mark_filtration,times[i],equal = TRUE)
+      current_net <- filtration_to_net(mark_filtration, times[i], equal = TRUE)
       model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
         createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
       } else NULL
-      intensity <- cond_intensity(new_net = current_net,
-                                  t = times[i],
-                                  mark_filtration = current_net,
-                                  PMF_mark = PMF_mark,
-                                  params = params,
-                                  model = model,
-                                  times = times_precalc,
-                                  ...)
+      call_args <- c(
+        list(new_net = current_net,
+             t = times[i],
+             mark_filtration = current_net,
+             PMF_mark = PMF_mark,
+             params = params,
+             model = model,
+             times = times_precalc),
+        extra_args
+      )
+      intensity <- do.call(cond_intensity, call_args)
       return(list(result = intensity$result,
                   func = intensity$func
                   ))
     }
     if(use_parallel){
       if(verbose){
-        print(paste0("using ",cores," cores on ",length(times), " objects for cond intensity list first calculation"))
+        message("using ", cores, " cores on ", length(times), " objects for cond intensity list first calculation")
       }
-      print("starting intens list calculation")
+      message("starting intens list calculation")
       t <- proc.time()
       # Process last events first (biggest networks) so slow jobs start first and parallel load is balanced
-      intens_list <- pbmcapply::pbmclapply(rev(seq_along(times)),
-                                intens_func,
-                                mc.cores = cores,
-                                mc.preschedule=FALSE)
+      intens_list <- safe_parallel_lapply(
+        rev(seq_along(times)), intens_func,
+        mc.cores = cores, mc.preschedule = FALSE,
+        parallel_type = parallel_type
+      )
       intens_list <- rev(intens_list)  # restore order so intens_list[[i]] corresponds to event i
-      print(paste0("intens list ", round((proc.time()-t)[3],2)," seconds"))
+      message("intens list ", round((proc.time()-t)[3],2)," seconds")
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
     }else{
@@ -503,7 +513,7 @@ loglik_hawkesNet = function(params,
         intens_func(i)})
       intens_vec <- sapply(intens_list,function(x){x$result})
       intens_funcs <- sapply(intens_list,function(x){x$func})
-      print(paste0("intens list took ", round((proc.time()-t1)[3],2)," seconds"))
+      message("intens list took ", round((proc.time()-t1)[3],2)," seconds")
     }
   }else{
     t1 <- proc.time()
@@ -588,6 +598,7 @@ fit_hawkesNet <- function(params_init,
                                 combine_intensity = TRUE,
                                 method = "Nelder-Mead",
                                 verbose = TRUE,
+                                parallel_type = "auto",
                                 ...){
   # Helper: write to stderr (unbuffered even inside optim's C code) and flush
   vcat <- function(...) if (verbose) { cat(..., file = stderr()); flush(stderr()) }
@@ -625,6 +636,7 @@ fit_hawkesNet <- function(params_init,
                                      mark_filtration = mark_filtration,
                                      PMF_mark = PMF_mark,
                                      combine_intensity = combine_intensity,
+                                     parallel_type = parallel_type,
                                      ...)
     cached_funcs <- init_lik$intens_funcs
     vcat("[fit] Intensity cache built.\n")

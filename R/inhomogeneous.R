@@ -310,7 +310,8 @@ loglik_hawkesNet_inhom <- function(params,
     dot_args <- list(...)
     formula_rhs <- dot_args$formula_RHS
     cores <- dot_args$cores
-    use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1 && requireNamespace("pbmcapply", quietly = TRUE)
+    parallel_type <- if (!is.null(dot_args$parallel_type)) dot_args$parallel_type else "auto"
+    use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1
     shared_model <- NULL
     if (!use_parallel && !is.null(formula_rhs)) {
       g0 <- network::network.initialize(0L, directed = FALSE)
@@ -319,26 +320,32 @@ loglik_hawkesNet_inhom <- function(params,
       shared_model$setNetwork(ernm::as.BinaryNet(g0))
     }
     combine_intensity <- isTRUE(dot_args$combine_intensity)
-    if (use_parallel) message("Intensity cache: using ", cores, " cores (pbmclapply)")
+    if (use_parallel) message("Intensity cache: using ", cores, " cores")
     else message("Intensity cache: using 1 core")
     if (combine_intensity) message("Intensity cache: will combine CS closures into one (saves closure envs)")
+    # Materialise ... into a concrete list so the closure serialises cleanly
+    # for PSOCK workers (promises from ... cannot survive serialisation).
+    extra_args <- dot_args
+    extra_args[c("cores", "formula_RHS", "combine_intensity",
+                 "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i) {
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
       model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
         createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
       } else NULL
-      intensity <- cond_intensity_inhom(
-        new_net = current_net,
-        t = times[i],
-        mark_filtration = current_net,
-        PMF_mark = PMF_mark,
-        params = params,
-        mu_at_t = mu_vec[i],
-        model = model,
-        times = times_precalc,
-        ...,
-        return_combined_inputs = combine_intensity
+      call_args <- c(
+        list(new_net = current_net,
+             t = times[i],
+             mark_filtration = current_net,
+             PMF_mark = PMF_mark,
+             params = params,
+             mu_at_t = mu_vec[i],
+             model = model,
+             times = times_precalc,
+             return_combined_inputs = combine_intensity),
+        extra_args
       )
+      intensity <- do.call(cond_intensity_inhom, call_args)
       out <- list(result = intensity$result, func = intensity$func)
       if (combine_intensity) {
         out$combined_inputs <- intensity$combined_inputs
@@ -347,9 +354,10 @@ loglik_hawkesNet_inhom <- function(params,
       out
     }
     if (use_parallel) {
-      intens_list <- pbmcapply::pbmclapply(
+      intens_list <- safe_parallel_lapply(
         rev(seq_along(times)), intens_func,
-        mc.cores = cores, mc.preschedule = FALSE
+        mc.cores = cores, mc.preschedule = FALSE,
+        parallel_type = parallel_type
       )
       intens_list <- rev(intens_list)
     } else {
@@ -458,6 +466,7 @@ fit_hawkesNet_inhom <- function(params_init,
                                       combine_intensity = TRUE,
                                       method = "Nelder-Mead",
                                       verbose = TRUE,
+                                      parallel_type = "auto",
                                       ...) {
 
   # Helper: write to stderr (unbuffered even inside optim's C code) and flush
@@ -495,6 +504,7 @@ fit_hawkesNet_inhom <- function(params_init,
       mu_vec = mu_vec,
       integral_bg = integral_bg,
       combine_intensity = combine_intensity,
+      parallel_type = parallel_type,
       ...
     )
     cached_funcs <- init_lik$intens_funcs
