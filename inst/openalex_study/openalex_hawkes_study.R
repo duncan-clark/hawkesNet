@@ -872,8 +872,154 @@ if (PAPER_OUTPUT) {
 }
 
 # =============================================================================
-# Total elapsed time
+# Total elapsed time (main study)
 # =============================================================================
-cat("=== OpenAlex study complete ===\n")
+cat("=== OpenAlex main study complete ===\n")
+cat("  Total wall time:", round((proc.time() - t_total)[3], 1), "s (",
+    round((proc.time() - t_total)[3] / 60, 1), "min)\n")
+
+# =============================================================================
+# 7. BONUS: nodeMix('gender') fit
+# =============================================================================
+# nodeMix captures the full gender mixing matrix (female-female, female-male,
+# male-male, etc.) instead of a single homophily indicator like nodeMatch.
+# Placed after everything else so a failure here does not affect main results.
+# =============================================================================
+cat("\n--- Step 7: nodeMix('gender') fit (bonus, after main study) ---\n")
+fit_inhom_nodemix <- NULL
+FORMULA_RHS_NODEMIX <- "edges + triangles + gwdegree(0.5) + nodeMix('gender')"
+
+tryCatch({
+  if (!is.null(inhom_bg)) {
+    t_step_nodemix <- proc.time()
+    cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
+
+    # Determine CS_params length from ERNM model
+    exp_cs_nodemix <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMIX)
+    n_cs_nodemix <- if (!is.na(exp_cs_nodemix$CS_params_length)) {
+      exp_cs_nodemix$CS_params_length
+    } else {
+      # edges + triangles + gwdegree + nodeMix levels: guess conservatively
+      max(6L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 3L)
+    }
+    cat("  CS_params length:", n_cs_nodemix, "\n")
+
+    # Initialize from nodeMatch fit if available, else from structural, else independent
+    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
+        fit_inhom_nodematch$fit$convergence == 0) {
+      # Use nodeMatch fit parameters as starting point
+      skel_nm <- params_init_nodematch
+      skel_nm$mu <- NULL
+      skel_nm$K <- NULL
+      skel_nm$vertex_categorical_levels <- NULL
+      pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
+
+      if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
+        # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
+        cs_from_nm <- pfit_nm$CS_params
+        cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
+        params_init_nodemix <- list(
+          mu = params_init_nodematch$mu,
+          beta_overall = pfit_nm$beta_overall,
+          K = params_init_nodematch$K,
+          beta_edges = pfit_nm$beta_edges,
+          node_lambda = pfit_nm$node_lambda,
+          CS_params = cs_padded,
+          vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+          vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+        )
+        cat("  Initialized from nodeMatch fit\n")
+      } else {
+        params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
+        cat("  nodeMatch params invalid; using independent initialization\n")
+      }
+    } else {
+      params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
+      cat("  No converged nodeMatch fit; using independent initialization\n")
+    }
+
+    # parscale
+    p_scale_nodemix <- c(
+      beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+      setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
+      vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
+    )
+
+    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+    t_fit_nodemix <- proc.time()
+
+    fit_inhom_nodemix <- fit_hawkesNet_inhom(
+      params_init = params_init_nodemix,
+      time_window = time_window_01,
+      mark_filtration = net_raw,
+      PMF_mark = PMF_mark_CS,
+      mu_vec = inhom_bg$mu_vec,
+      integral_bg = inhom_bg$integral_bg,
+      formula_RHS = FORMULA_RHS_NODEMIX,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      method = "Nelder-Mead",
+      maxit = MAX_ITER,
+      trace = 1,
+      reltol = 1e-8,
+      verbose = FALSE,
+      fixed_params = c("K", "mu"),
+      parscale = p_scale_nodemix,
+      cache_intensity = TRUE,
+      combine_intensity = TRUE,
+      cores = N_CORES
+    )
+
+    elapsed_fit_nodemix <- (proc.time() - t_fit_nodemix)[3]
+    if (!is.null(fit_inhom_nodemix)) {
+      cat("  Fit completed:", round(elapsed_fit_nodemix, 1), "s (", round(elapsed_fit_nodemix / 60, 1), "min)\n")
+      cat("  Convergence:", fit_inhom_nodemix$fit$convergence, "\n")
+      cat("  Iterations:", fit_inhom_nodemix$fit$counts[1], "\n")
+      if (!is.null(fit_inhom_nodemix$fit_table)) {
+        cat("\n  nodeMix fit results:\n")
+        print(fit_inhom_nodemix$fit_table, max = NULL)
+      }
+    } else {
+      cat("  nodeMix fit returned NULL after", round(elapsed_fit_nodemix, 1), "s\n")
+    }
+    cat("  Step 7 total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
+
+    # Save nodeMix result to a separate RDS (append to main if possible)
+    if (!is.null(fit_inhom_nodemix)) {
+      nodemix_for_save <- fit_inhom_nodemix
+      nodemix_for_save$intens_funcs <- NULL
+      nodemix_save <- list(
+        fit_inhom_nodemix = nodemix_for_save,
+        params_init_nodemix = params_init_nodemix,
+        FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX
+      )
+      nodemix_rds <- file.path(PKG_ROOT, "cluster_output", "results_openalex_nodemix.RDS")
+      tryCatch({
+        dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
+        saveRDS(nodemix_save, nodemix_rds)
+        cat("  Saved nodeMix results to:", nodemix_rds, "\n")
+      }, error = function(e) {
+        cat("  Warning: could not save nodeMix results:", conditionMessage(e), "\n")
+      })
+    }
+
+    # Cleanup
+    if (!is.null(fit_inhom_nodemix) && !is.null(fit_inhom_nodemix$intens_funcs)) {
+      fit_inhom_nodemix$intens_funcs <- NULL
+    }
+    gc()
+  } else {
+    cat("  No inhomogeneous background; skipping nodeMix fit\n")
+  }
+}, error = function(e) {
+  cat("  nodeMix fit FAILED with error:", e$message, "\n")
+  cat("  (This is a bonus fit; main results are unaffected.)\n")
+})
+
+# =============================================================================
+# Final total elapsed time
+# =============================================================================
+cat("\n=== OpenAlex study (including bonus nodeMix) complete ===\n")
 cat("  Total wall time:", round((proc.time() - t_total)[3], 1), "s (",
     round((proc.time() - t_total)[3] / 60, 1), "min)\n")
