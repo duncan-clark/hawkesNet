@@ -59,19 +59,13 @@ make_network_growth_animation <- function(net_list,
 # Safe parallel lapply — avoids fork deadlocks on macOS interactive sessions
 # =============================================================================
 #
-# On macOS (Darwin), fork() can deadlock when called repeatedly from interactive
-# R sessions (especially RStudio).  Root causes:
-#   1. Apple's Objective-C runtime registers thread-safety checks that abort or
-#      hang in forked children once certain frameworks are initialized.
-#   2. pbmcapply::pbmclapply adds an extra monitor child + pipe for progress
-#      reporting; leftover pipe state between calls can cause the second call
-#      to deadlock at "0%, ETA NA".
+# On macOS (Darwin), fork() can deadlock on the *second* call (not just interactive):
+# after the first fork+join, ObjC runtime state can make the next mclapply() hang.
+# So we avoid fork on Darwin entirely.
 #
 # This helper routes to:
-#   - PSOCK cluster (parallel::parLapply) on macOS-interactive / Windows
-#     → no fork at all; each worker is a fresh R process.
-#   - parallel::mclapply on Linux (fast fork; no pbmcapply pipe overhead).
-#   - Sequential fallback if cores == 1 or parallel fails.
+#   - PSOCK cluster (parallel::parLapply) on macOS and Windows → no fork.
+#   - parallel::mclapply on Linux (fast fork).
 #
 # Users can override with parallel_type = "fork" / "psock" / "auto".
 # @noRd
@@ -82,9 +76,10 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
   os <- Sys.info()[["sysname"]]
 
   if (parallel_type == "auto") {
-    # macOS interactive: fork deadlocks on repeated calls (ObjC runtime + pbmcapply pipes)
-    # Windows: fork() not available at all
-    use_psock <- (os == "Darwin" && interactive()) || os == "Windows"
+    # PSOCK (no fork) when: Windows (no fork), macOS (fork often deadlocks on 2nd call),
+    # or any interactive session (RStudio / GUI are multi-threaded; fork can deadlock).
+    # Fork (mclapply) only for non-interactive Linux (e.g. SLURM Rscript).
+    use_psock <- (os == "Darwin") || (os == "Windows") || interactive()
   } else {
     use_psock <- (parallel_type == "psock")
   }
