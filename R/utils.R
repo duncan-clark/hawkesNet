@@ -85,8 +85,18 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
   }
 
   if (use_psock) {
-    message("  [parallel] PSOCK cluster (", mc.cores, " workers)")
-    cl <- parallel::makeCluster(mc.cores)
+    n_workers <- mc.cores
+    # Cap PSOCK workers by default to avoid OOM on interactive nodes (e.g. RStudio on NeSI).
+    # Each worker loads packages + a copy of the network; 50+ workers can exhaust memory
+    # and cause "error reading from connection" when workers are killed.
+    max_psock <- getOption("hawkesNet.max_psock_workers", 16L)
+    if (n_workers > max_psock) {
+      message("  [parallel] Capping PSOCK workers to ", max_psock, " (avoid OOM; set options(hawkesNet.max_psock_workers = N) to override)")
+      n_workers <- as.integer(max_psock)
+    } else {
+      message("  [parallel] PSOCK cluster (", n_workers, " workers)")
+    }
+    cl <- parallel::makeCluster(n_workers)
     on.exit(parallel::stopCluster(cl), add = TRUE)
     # Load packages that intens_func's captured closures depend on
     parallel::clusterEvalQ(cl, {
