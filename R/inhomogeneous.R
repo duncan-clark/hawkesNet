@@ -113,45 +113,77 @@ loglik_hawkesNet_inhom <- function(params,
     dot_args <- list(...)
     formula_rhs <- dot_args$formula_RHS
     cores <- dot_args$cores
-    use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1 && requireNamespace("pbmcapply", quietly = TRUE)
-    # Reuse one ERNM model when running sequentially (avoids createCppModel per event; big speedup for nodeMatch)
-    shared_model <- NULL
-    if (!use_parallel && !is.null(formula_rhs)) {
-      g0 <- network::network.initialize(0L, directed = FALSE)
-      if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
-      shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
-      shared_model$setNetwork(ernm::as.BinaryNet(g0))
-    }
-    # So user can confirm whether parallel is used (pbmclapply progress bar may not show in batch/SLURM)
-    if (use_parallel) message("Intensity cache: using ", cores, " cores (pbmclapply)")
-    else message("Intensity cache: using 1 core (parallel disabled: need cores > 1 and pbmcapply)")
-    intens_func <- function(i) {
-      current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
-      model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
-        createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
-      } else NULL
-      intensity <- cond_intensity_inhom(
-        new_net = current_net,
-        t = times[i],
-        mark_filtration = current_net,
-        PMF_mark = PMF_mark,
-        params = params,
-        mu_at_t = mu_vec[i],
-        model = model,
-        times = times_precalc,
-        ...
-      )
-      list(result = intensity$result, func = intensity$func)
-    }
-
-    if (use_parallel) {
-      # Process last events first (biggest networks) so slow jobs start first and parallel load is balanced
-      intens_list <- pbmcapply::pbmclapply(
-        rev(seq_along(times)), intens_func,
-        mc.cores = cores, mc.preschedule = FALSE
-      )
-      intens_list <- rev(intens_list)  # restore order so intens_list[[i]] corresponds to event i
+    n_cores <- if (is.null(cores) || !is.numeric(cores) || cores < 1) 1L else min(as.integer(cores), length(times))
+    use_parallel <- n_cores > 1L && requireNamespace("pbmcapply", quietly = TRUE)
+    # nodeMatch: createCppModel is 10–100x slower than structural-only. In parallel we must reuse one model
+    # per worker (chunked) so we don't call createCppModel per event; otherwise nodeMatch is 2 orders slower.
+    if (use_parallel && !is.null(formula_rhs)) {
+      n <- length(times)
+      inds <- seq_len(n)
+      chunk_id <- (inds - 1L) %% n_cores + 1L
+      chunks <- split(inds, chunk_id)
+      worker_chunk <- function(chunk_inds) {
+        g0 <- network::network.initialize(0L, directed = FALSE)
+        if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
+        m <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
+        m$setNetwork(ernm::as.BinaryNet(g0))
+        out <- vector("list", length(chunk_inds))
+        for (k in seq_along(chunk_inds)) {
+          i <- chunk_inds[k]
+          current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
+          m$setNetwork(ernm::as.BinaryNet(current_net))
+          intensity <- cond_intensity_inhom(
+            new_net = current_net,
+            t = times[i],
+            mark_filtration = current_net,
+            PMF_mark = PMF_mark,
+            params = params,
+            mu_at_t = mu_vec[i],
+            model = m,
+            times = times_precalc,
+            ...
+          )
+          out[[k]] <- list(result = intensity$result, func = intensity$func)
+        }
+        out
+      }
+      message("Intensity cache: using ", n_cores, " cores (chunked, one model per worker)")
+      chunk_results <- pbmcapply::pbmclapply(chunks, worker_chunk, mc.cores = n_cores, mc.preschedule = FALSE)
+      intens_list <- vector("list", n)
+      for (c in seq_along(chunks)) {
+        for (k in seq_along(chunks[[c]])) {
+          intens_list[[chunks[[c]][k]]] <- chunk_results[[c]][[k]]
+        }
+      }
+      # Process last events first so big networks start early; chunks already interleave indices 1..n
+      # so no extra rev needed for ordering
     } else {
+      shared_model <- NULL
+      if (!is.null(formula_rhs)) {
+        g0 <- network::network.initialize(0L, directed = FALSE)
+        if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
+        shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
+        shared_model$setNetwork(ernm::as.BinaryNet(g0))
+      }
+      if (n_cores <= 1L) message("Intensity cache: using 1 core")
+      intens_func <- function(i) {
+        current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
+        model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
+          createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
+        } else NULL
+        intensity <- cond_intensity_inhom(
+          new_net = current_net,
+          t = times[i],
+          mark_filtration = current_net,
+          PMF_mark = PMF_mark,
+          params = params,
+          mu_at_t = mu_vec[i],
+          model = model,
+          times = times_precalc,
+          ...
+        )
+        list(result = intensity$result, func = intensity$func)
+      }
       intens_list <- lapply(seq_along(times), intens_func)
     }
     intens_vec <- sapply(intens_list, function(x) x$result)

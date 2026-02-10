@@ -68,9 +68,10 @@ cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
 
 SEED <- 01267
 
-make_cluster <- function(N_CORES){
-  # setup the cluster:
-  cl <- makeCluster(N_CORES)
+make_cluster <- function(n_workers) {
+  # PSOCK cluster: n_workers = N_CORES_OUTER. Each worker runs one sim or one fit at a time;
+  # fit_hawkesNet(..., cores = N_CORES_INNER) uses that many cores for the intensity cache (pbmclapply).
+  cl <- makeCluster(n_workers)
   registerDoParallel(cl)
   # export libraries to cluster:
   clusterEvalQ(cl, {
