@@ -19,8 +19,9 @@ library(sna)
 library(hash)
 library(hawkesNet)
 
-# Paths: run from package root (directory containing inst/)
-PKG_ROOT <- getwd()
+# Paths: run from package root (directory containing inst/).
+# Under SLURM, use submit dir so path stays valid if getwd() breaks later.
+PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) Sys.getenv("SLURM_SUBMIT_DIR") else getwd()
 CLUSTER_OUTPUT_DIR <- file.path(PKG_ROOT, "cluster_output")
 dir.create(CLUSTER_OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
@@ -509,8 +510,27 @@ if(exists("sim_exp")){
   save_list$max_deg_stable <- max_deg_stable
   save_list$max_deg_exp <- max_deg_exp
 }
-saveRDS(save_list, file.path(CLUSTER_OUTPUT_DIR, "results_BA_full.RDS"))
-print(paste("Saved full state to", file.path(CLUSTER_OUTPUT_DIR, "results_BA_full.RDS")))
+# Ensure output dir exists (getwd() can become invalid on some clusters)
+out_dir <- file.path(PKG_ROOT, "cluster_output")
+out_file <- file.path(out_dir, "results_BA_full.RDS")
+ok <- tryCatch({
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+  saveRDS(save_list, out_file)
+  TRUE
+}, error = function(e) {
+  message("Save to ", out_file, " failed: ", conditionMessage(e))
+  FALSE
+})
+if (ok) {
+  print(paste("Saved full state to", out_file))
+} else {
+  fallback <- "results_BA_full.RDS"
+  tryCatch({
+    saveRDS(save_list, fallback)
+    CLUSTER_OUTPUT_DIR <- "."  # so PAPER_OUTPUT can find the file
+    print(paste("Saved full state to fallback:", normalizePath(fallback, mustWork = FALSE)))
+  }, error = function(e) message("Fallback save also failed: ", conditionMessage(e)))
+}
 
 # ==============================================================================
 # PAPER OUTPUT (at end: main study + consistency + explosive)
