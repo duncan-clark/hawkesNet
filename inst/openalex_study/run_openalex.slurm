@@ -4,7 +4,7 @@
 #SBATCH --error=cluster_output/openalex_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=50,
+#SBATCH --cpus-per-task=50
 # Override cores: CORES_OVERRIDE=50 or 100.
 #SBATCH --mem=128G
 
