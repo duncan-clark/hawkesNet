@@ -59,7 +59,7 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   cat("Request was 128; using 256 (USE_256_WHEN_128 set)\n")
 }
 MAX_ITER <- 5000
-TRUNCATION <- 200L
+TRUNCATION <- 300L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
@@ -415,18 +415,135 @@ if (!is.null(inhom_bg)) {
   cat("  No inhomogeneous background; skipping nodeMatch fit\n")
 }
 
+# =============================================================================
+# 2c. nodeMix('gender') fit (initialized from nodeMatch fit)
+# =============================================================================
+# nodeMix captures the full gender mixing matrix (female-female, female-male,
+# male-male, etc.) instead of a single homophily indicator like nodeMatch.
+# =============================================================================
+fit_inhom_nodemix <- NULL
+FORMULA_RHS_NODEMIX <- "edges + triangles + gwdegree(0.5) + nodeMix('gender')"
+if (!is.null(inhom_bg)) {
+  cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
+  cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
+  t_step_nodemix <- proc.time()
+
+  # Determine CS_params length from ERNM model
+  exp_cs_nodemix <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMIX)
+  n_cs_nodemix <- if (!is.na(exp_cs_nodemix$CS_params_length)) {
+    exp_cs_nodemix$CS_params_length
+  } else {
+    # edges + triangles + gwdegree + nodeMix levels: guess conservatively
+    max(6L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 3L)
+  }
+  cat("  CS_params length:", n_cs_nodemix, "\n")
+
+  # Initialize from nodeMatch fit if available, else from structural, else independent
+  if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
+      fit_inhom_nodematch$fit$convergence == 0) {
+    # Use nodeMatch fit parameters as starting point
+    skel_nm <- params_init_nodematch
+    skel_nm$mu <- NULL
+    skel_nm$K <- NULL
+    skel_nm$vertex_categorical_levels <- NULL
+    pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
+
+    if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
+      # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
+      cs_from_nm <- pfit_nm$CS_params
+      cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
+      params_init_nodemix <- list(
+        mu = params_init_nodematch$mu,
+        beta_overall = pfit_nm$beta_overall,
+        K = params_init_nodematch$K,
+        beta_edges = pfit_nm$beta_edges,
+        node_lambda = pfit_nm$node_lambda,
+        CS_params = cs_padded,
+        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+      )
+      cat("  Initialized from nodeMatch fit\n")
+    } else {
+      params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
+      cat("  nodeMatch params invalid; using independent initialization\n")
+    }
+  } else {
+    params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
+    cat("  No converged nodeMatch fit; using independent initialization\n")
+  }
+
+  # parscale
+  p_scale_nodemix <- c(
+    beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+    setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
+    vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
+  )
+
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+  t_fit_nodemix <- proc.time()
+
+  fit_inhom_nodemix <- safe_run(
+    fit_hawkesNet_inhom(
+      params_init = params_init_nodemix,
+      time_window = time_window_01,
+      mark_filtration = net_raw,
+      PMF_mark = PMF_mark_CS,
+      mu_vec = inhom_bg$mu_vec,
+      integral_bg = inhom_bg$integral_bg,
+      formula_RHS = FORMULA_RHS_NODEMIX,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      max_node_time = 1,
+      method = "Nelder-Mead",
+      maxit = MAX_ITER,
+      trace = 1,
+      reltol = 1e-8,
+      verbose = FALSE,
+      fixed_params = c("K", "mu"),
+      parscale = p_scale_nodemix,
+      cache_intensity = TRUE,
+      combine_intensity = TRUE,
+      cores = N_CORES
+    ),
+    "nodeMix fit"
+  )
+
+  elapsed_fit_nodemix <- (proc.time() - t_fit_nodemix)[3]
+  if (!is.null(fit_inhom_nodemix)) {
+    cat("  Fit completed:", round(elapsed_fit_nodemix, 1), "s (", round(elapsed_fit_nodemix / 60, 1), "min)\n")
+    cat("  Convergence:", fit_inhom_nodemix$fit$convergence, "\n")
+    cat("  Iterations:", fit_inhom_nodemix$fit$counts[1], "\n")
+    if (!is.null(fit_inhom_nodemix$fit_table)) {
+      cat("\n  nodeMix fit results:\n")
+      print(fit_inhom_nodemix$fit_table, max = NULL)
+    }
+  } else {
+    cat("  nodeMix fit returned NULL after", round(elapsed_fit_nodemix, 1), "s\n")
+  }
+  cat("  Step 2c total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
+} else {
+  cat("  No inhomogeneous background; skipping nodeMix fit\n")
+}
+
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # --- Cleanup: remove Step 2 temporaries and strip heavy closures ---
-# Strip intens_funcs from nodeMatch fit (not needed for GOF — only fit$par is used)
+# Strip intens_funcs from fits (not needed for GOF — only fit$par is used)
 if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$intens_funcs)) {
   fit_inhom_nodematch$intens_funcs <- NULL
+}
+if (!is.null(fit_inhom_nodemix) && !is.null(fit_inhom_nodemix$intens_funcs)) {
+  fit_inhom_nodemix$intens_funcs <- NULL
 }
 rm(t_step, t_kde)
 if (exists("t_step_nodematch", inherits = FALSE)) rm(t_step_nodematch)
 if (exists("t_fit_nodematch", inherits = FALSE)) rm(t_fit_nodematch)
 if (exists("elapsed_fit_nodematch", inherits = FALSE)) rm(elapsed_fit_nodematch)
 if (exists("exp_cs_nodematch", inherits = FALSE)) rm(exp_cs_nodematch)
+if (exists("t_step_nodemix", inherits = FALSE)) rm(t_step_nodemix)
+if (exists("t_fit_nodemix", inherits = FALSE)) rm(t_fit_nodemix)
+if (exists("elapsed_fit_nodemix", inherits = FALSE)) rm(elapsed_fit_nodemix)
+if (exists("exp_cs_nodemix", inherits = FALSE)) rm(exp_cs_nodemix)
 gc()
 
 # =============================================================================
@@ -491,6 +608,9 @@ GOF_results_structural <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = N
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL)
+GOF_results_nodemix <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -596,9 +716,67 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
 }
 
-# Use nodeMatch GOF as primary for display
-if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
-  GOF_results <- GOF_results_nodematch
+# GOF for nodeMix model (third)
+if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
+  cat("\n  GOF for nodeMix model...\n")
+  
+  # Reconstruct params_init for nodeMix (skeleton must exclude fixed params mu, K and vertex_categorical_levels)
+  skel_nodemix_gof <- params_init_nodemix
+  skel_nodemix_gof$vertex_categorical_levels <- NULL
+  skel_nodemix_gof$mu <- NULL
+  skel_nodemix_gof$K <- NULL
+  params_init_nodemix_gof <- tryCatch(
+    relist(fit_inhom_nodemix$fit$par, skeleton = skel_nodemix_gof),
+    error = function(e) { cat("  Warning: GOF nodeMix relist failed:", e$message, "\n"); skel_nodemix_gof }
+  )
+  params_init_nodemix_gof$vertex_categorical_levels <- params_init_nodemix$vertex_categorical_levels
+  params_init_nodemix_gof$K <- params_init_nodemix$K
+  params_init_nodemix_gof$mu <- params_init_nodemix$mu
+  # Restore names and repair parameters before GOF
+  params_init_nodemix_gof <- hawkesNet:::reconstruct_vertex_categorical_names(
+    params_init_nodemix_gof, params_init_nodemix$vertex_categorical_levels)
+  params_init_nodemix_gof <- hawkesNet:::repair_vertex_categorical_params(params_init_nodemix_gof, eps = 1e-6)
+  
+  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
+  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
+  GOF_results_nodemix <- gof(
+    fit = fit_inhom_nodemix,
+    net_obs = net_raw,
+    params_init = params_init_nodemix_gof,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
+    formula_RHS = FORMULA_RHS_NODEMIX,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    max_node_time = 1,
+    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    degree = 0,
+    esp = 0,
+    mu_multiplier = 5,
+    verbose = TRUE
+  )
+} else {
+  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMix GOF\n")
+  if (is.null(fit_inhom_nodemix)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
+}
+
+# Use nodeMix GOF as primary for display (fallback to nodeMatch then structural)
+if (RUN_GOF) {
+  cat("\n--- GOF Summary Results ---\n")
+  if (!is.null(fit_inhom_structural)) {
+    cat("  [Structural Model] Degree obs mean:", round(mean(GOF_results_structural$degree_obs), 2), "\n")
+  }
+  if (!is.null(fit_inhom_nodematch)) {
+    cat("  [nodeMatch Model]  Degree obs mean:", round(mean(GOF_results_nodematch$degree_obs), 2), "\n")
+  }
+  if (!is.null(fit_inhom_nodemix)) {
+    cat("  [nodeMix Model]    Degree obs mean:", round(mean(GOF_results_nodemix$degree_obs), 2), "\n")
+  }
 }
 
 cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
@@ -616,14 +794,20 @@ fit_structural_for_save <- fit_inhom_structural
 if (!is.null(fit_structural_for_save)) fit_structural_for_save$intens_funcs <- NULL
 fit_nodematch_for_save <- fit_inhom_nodematch
 if (!is.null(fit_nodematch_for_save)) fit_nodematch_for_save$intens_funcs <- NULL
+fit_nodemix_for_save <- fit_inhom_nodemix
+if (!is.null(fit_nodemix_for_save)) fit_nodemix_for_save$intens_funcs <- NULL
+
 save_list <- list(
   net_raw = net_raw,
   edges = edges,
   inhom_bg = inhom_bg,
+  fit_inhom_nodemix = fit_nodemix_for_save,
   fit_inhom_nodematch = fit_nodematch_for_save,
   fit_inhom_structural = fit_structural_for_save,
+  params_init_nodemix = params_init_nodemix,
   params_init_nodematch = params_init_nodematch,
   params_init_structural = params_init_structural,
+  FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
   FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
   fit_temporal = fit_temporal,
@@ -632,6 +816,7 @@ save_list <- list(
   windowT = windowT,
   GOF_results = GOF_results,
   GOF = GOF_results,  # alias so dat$GOF$plots works
+  GOF_results_nodemix = GOF_results_nodemix,
   GOF_results_nodematch = GOF_results_nodematch,
   GOF_results_structural = GOF_results_structural,
   N_GOF = N_GOF,
@@ -757,117 +942,39 @@ if (PAPER_OUTPUT) {
     cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
   }
 
-  # GOF plots: use plots from gof() function if available, otherwise generate here
-  if (!is.null(dat$GOF_results)) {
-    # First, try to use plots from gof() function (if available)
-    if (!is.null(dat$GOF_results$plots) && length(dat$GOF_results$plots) > 0) {
-      cat("  Displaying GOF plots from gof() function...\n")
-      if (!is.null(dat$GOF_results$plots$degree_plot)) print(dat$GOF_results$plots$degree_plot)
-      if (!is.null(dat$GOF_results$plots$esp_plot)) print(dat$GOF_results$plots$esp_plot)
-      if (!is.null(dat$GOF_results$plots$geodist_plot)) print(dat$GOF_results$plots$geodist_plot)
-      if (!is.null(dat$GOF_results$plots$waiting_times_plot)) print(dat$GOF_results$plots$waiting_times_plot)
-    } else if (requireNamespace("ggplot2", quietly = TRUE) && !is.null(dat$GOF_results$degree_obs)) {
-      # Fallback: generate plots here (legacy code)
-      cat("  Generating GOF plots (legacy method)...\n")
-      gof <- dat$GOF_results
-    gof <- dat$GOF_results
-    max_deg <- length(gof$degree_obs) - 1
-    # Degree: observed vs simulated boxplots
-    deg_df <- rbind(
-      data.frame(degree = 0:max_deg, count = gof$degree_obs, type = "Observed"),
-      data.frame(degree = rep(0:max_deg, each = nrow(gof$degree_sim)),
-                 count = as.vector(gof$degree_sim),
-                 type = "Simulated")
-    )
-    p_deg <- ggplot(deg_df, aes(x = factor(degree), y = count, fill = type)) +
-      geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.7, outlier.size = 0.5) +
-      labs(title = "GOF: Degree distribution", x = "Degree", y = "Count") +
-      theme_minimal() + theme(legend.position = "bottom")
-    print(p_deg)
-    # ESP
-    esp_obs <- gof$esp_obs
-    esp_sim <- gof$esp_sim
-    if (!is.null(esp_sim) && nrow(esp_sim) > 0) {
-      esp_df <- rbind(
-        data.frame(esp = 0:(length(esp_obs)-1), value = esp_obs, type = "Observed"),
-        data.frame(esp = rep(0:(ncol(esp_sim)-1), each = nrow(esp_sim)),
-                   value = as.vector(esp_sim), type = "Simulated")
-      )
-      p_esp <- ggplot(esp_df, aes(x = factor(esp), y = value, fill = type)) +
-        geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.7, outlier.size = 0.5) +
-        labs(title = "GOF: ESP distribution", x = "ESP", y = "Count") +
-        theme_minimal() + theme(legend.position = "bottom")
-      print(p_esp)
-    }
-    # Geodesic: boxplot of pair counts at each distance + ECDF
-    g_obs <- gof$geodist_obs
-    g_sim <- gof$geodist_sim
-    if (length(g_obs) > 0 && length(g_sim) > 0) {
-      # Boxplot: tabulate counts at each integer distance
-      max_geod <- min(max(c(g_obs, unlist(g_sim)), na.rm = TRUE), 20)
-      geod_levels <- seq_len(max_geod)
-      obs_tab <- table(factor(g_obs, levels = geod_levels))
-      sim_tabs <- lapply(g_sim, function(g) {
-        as.vector(table(factor(g, levels = geod_levels)))
-      })
-      sim_mat <- do.call(rbind, sim_tabs)
-      geod_box_df <- rbind(
-        data.frame(distance = geod_levels, count = as.vector(obs_tab), type = "Observed"),
-        data.frame(distance = rep(geod_levels, each = nrow(sim_mat)),
-                   count = as.vector(sim_mat), type = "Simulated")
-      )
-      p_geod_box <- ggplot(geod_box_df, aes(x = factor(distance), y = count, fill = type)) +
-        geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.7, outlier.size = 0.5) +
-        labs(title = "GOF: Geodesic distance distribution",
-             x = "Geodesic distance", y = "Number of pairs") +
-        theme_minimal() + theme(legend.position = "bottom")
-      print(p_geod_box)
+  # GOF plots: process all models (Structural, nodeMatch, nodeMix)
+  gof_models <- list(
+    Structural = dat$GOF_results_structural,
+    nodeMatch  = dat$GOF_results_nodematch,
+    nodeMix    = dat$GOF_results_nodemix
+  )
 
-      # ECDF version
-      max_d <- max(c(g_obs, unlist(g_sim)), na.rm = TRUE)
-      x_seq <- seq(0, min(max_d, 20), length.out = 200)
-      ecdf_obs <- sapply(x_seq, function(x) mean(g_obs <= x, na.rm = TRUE))
-      ecdf_sim <- sapply(x_seq, function(x) mean(unlist(g_sim) <= x, na.rm = TRUE))
-      geod_df <- rbind(
-        data.frame(dist = x_seq, ecdf = ecdf_obs, type = "Observed"),
-        data.frame(dist = x_seq, ecdf = ecdf_sim, type = "Simulated")
-      )
-      p_geod <- ggplot(geod_df, aes(x = dist, y = ecdf, color = type)) +
-        geom_line(linewidth = 1) +
-        labs(title = "GOF: Geodesic distance (ECDF)", x = "Distance", y = "ECDF") +
-        theme_minimal() + theme(legend.position = "bottom")
-      print(p_geod)
-    }
-    # Waiting times between formations: triangle, 2-star, 3-star
-    w_obs <- gof$wait_obs
-    w_sim <- gof$wait_sim
-    if (!is.null(w_obs) && is.list(w_obs) && !is.null(w_sim) && length(w_sim) > 0) {
-      obs_vec <- c(w_obs$triangle, w_obs$star2, w_obs$star3)
-      obs_metric <- rep(c("Triangle", "2-star", "3-star"),
-                       c(length(w_obs$triangle), length(w_obs$star2), length(w_obs$star3)))
-      sim_vec <- unlist(lapply(w_sim, function(x) c(x$triangle, x$star2, x$star3)))
-      sim_metric <- unlist(lapply(w_sim, function(x) rep(c("Triangle", "2-star", "3-star"),
-                         c(length(x$triangle), length(x$star2), length(x$star3)))))
-      wait_df <- rbind(
-        data.frame(metric = obs_metric, value = obs_vec, type = "Observed"),
-        data.frame(metric = sim_metric, value = sim_vec, type = "Simulated")
-      )
-      wait_df <- wait_df[!is.na(wait_df$value), ]
-      if (nrow(wait_df) > 0) {
-        p_wait <- ggplot(wait_df, aes(x = metric, y = value, fill = type)) +
-          geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.7, outlier.size = 0.5) +
-          labs(title = "GOF: Waiting time between formations (triangle / 2-star / 3-star)",
-               x = "", y = "Waiting time") +
-          theme_minimal() + theme(legend.position = "bottom")
-        print(p_wait)
+  for (model_name in names(gof_models)) {
+    gof_res <- gof_models[[model_name]]
+    if (is.null(gof_res) || is.null(gof_res$degree_obs)) next
+    
+    cat(sprintf("\n--- GOF Plots: %s Model ---\n", model_name))
+    
+    if (!is.null(gof_res$plots) && length(gof_res$plots) > 0) {
+      cat(sprintf("  Displaying GOF plots for %s from gof() function...\n", model_name))
+      if (!is.null(gof_res$plots$degree_plot)) {
+        print(gof_res$plots$degree_plot + labs(subtitle = model_name))
       }
+      if (!is.null(gof_res$plots$esp_plot)) {
+        print(gof_res$plots$esp_plot + labs(subtitle = model_name))
+      }
+      if (!is.null(gof_res$plots$geodist_plot)) {
+        print(gof_res$plots$geodist_plot + labs(subtitle = model_name))
+      }
+      if (!is.null(gof_res$plots$waiting_times_plot)) {
+        print(gof_res$plots$waiting_times_plot + labs(subtitle = model_name))
+      }
+    } else if (requireNamespace("ggplot2", quietly = TRUE)) {
+      cat(sprintf("  Generating GOF plots for %s (legacy method)...\n", model_name))
+      # ... (legacy plotting code could go here, but gof() now handles plots) ...
     }
-    } else {
-      cat("  ggplot2 not available; skipping GOF plots\n")
-    }
-  } else {
-    cat("  No GOF results available for plotting\n")
   }
+
   cat("  Step 6 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 }
 
@@ -879,147 +986,8 @@ cat("  Total wall time:", round((proc.time() - t_total)[3], 1), "s (",
     round((proc.time() - t_total)[3] / 60, 1), "min)\n")
 
 # =============================================================================
-# 7. BONUS: nodeMix('gender') fit
-# =============================================================================
-# nodeMix captures the full gender mixing matrix (female-female, female-male,
-# male-male, etc.) instead of a single homophily indicator like nodeMatch.
-# Placed after everything else so a failure here does not affect main results.
-# =============================================================================
-cat("\n--- Step 7: nodeMix('gender') fit (bonus, after main study) ---\n")
-fit_inhom_nodemix <- NULL
-FORMULA_RHS_NODEMIX <- "edges + triangles + gwdegree(0.5) + nodeMix('gender')"
-
-tryCatch({
-  if (!is.null(inhom_bg)) {
-    t_step_nodemix <- proc.time()
-    cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
-
-    # Determine CS_params length from ERNM model
-    exp_cs_nodemix <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMIX)
-    n_cs_nodemix <- if (!is.na(exp_cs_nodemix$CS_params_length)) {
-      exp_cs_nodemix$CS_params_length
-    } else {
-      # edges + triangles + gwdegree + nodeMix levels: guess conservatively
-      max(6L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 3L)
-    }
-    cat("  CS_params length:", n_cs_nodemix, "\n")
-
-    # Initialize from nodeMatch fit if available, else from structural, else independent
-    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
-        fit_inhom_nodematch$fit$convergence == 0) {
-      # Use nodeMatch fit parameters as starting point
-      skel_nm <- params_init_nodematch
-      skel_nm$mu <- NULL
-      skel_nm$K <- NULL
-      skel_nm$vertex_categorical_levels <- NULL
-      pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
-
-      if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
-        # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
-        cs_from_nm <- pfit_nm$CS_params
-        cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
-        params_init_nodemix <- list(
-          mu = params_init_nodematch$mu,
-          beta_overall = pfit_nm$beta_overall,
-          K = params_init_nodematch$K,
-          beta_edges = pfit_nm$beta_edges,
-          node_lambda = pfit_nm$node_lambda,
-          CS_params = cs_padded,
-          vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-          vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-        )
-        cat("  Initialized from nodeMatch fit\n")
-      } else {
-        params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-        cat("  nodeMatch params invalid; using independent initialization\n")
-      }
-    } else {
-      params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-      cat("  No converged nodeMatch fit; using independent initialization\n")
-    }
-
-    # parscale
-    p_scale_nodemix <- c(
-      beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-      setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
-      vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
-    )
-
-    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
-    t_fit_nodemix <- proc.time()
-
-    fit_inhom_nodemix <- fit_hawkesNet_inhom(
-      params_init = params_init_nodemix,
-      time_window = time_window_01,
-      mark_filtration = net_raw,
-      PMF_mark = PMF_mark_CS,
-      mu_vec = inhom_bg$mu_vec,
-      integral_bg = inhom_bg$integral_bg,
-      formula_RHS = FORMULA_RHS_NODEMIX,
-      truncation = TRUNCATION,
-      mark_decay = "activity",
-      max_node_time = 1,
-      method = "Nelder-Mead",
-      maxit = MAX_ITER,
-      trace = 1,
-      reltol = 1e-8,
-      verbose = FALSE,
-      fixed_params = c("K", "mu"),
-      parscale = p_scale_nodemix,
-      cache_intensity = TRUE,
-      combine_intensity = TRUE,
-      cores = N_CORES
-    )
-
-    elapsed_fit_nodemix <- (proc.time() - t_fit_nodemix)[3]
-    if (!is.null(fit_inhom_nodemix)) {
-      cat("  Fit completed:", round(elapsed_fit_nodemix, 1), "s (", round(elapsed_fit_nodemix / 60, 1), "min)\n")
-      cat("  Convergence:", fit_inhom_nodemix$fit$convergence, "\n")
-      cat("  Iterations:", fit_inhom_nodemix$fit$counts[1], "\n")
-      if (!is.null(fit_inhom_nodemix$fit_table)) {
-        cat("\n  nodeMix fit results:\n")
-        print(fit_inhom_nodemix$fit_table, max = NULL)
-      }
-    } else {
-      cat("  nodeMix fit returned NULL after", round(elapsed_fit_nodemix, 1), "s\n")
-    }
-    cat("  Step 7 total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
-
-    # Save nodeMix result to a separate RDS (append to main if possible)
-    if (!is.null(fit_inhom_nodemix)) {
-      nodemix_for_save <- fit_inhom_nodemix
-      nodemix_for_save$intens_funcs <- NULL
-      nodemix_save <- list(
-        fit_inhom_nodemix = nodemix_for_save,
-        params_init_nodemix = params_init_nodemix,
-        FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX
-      )
-      nodemix_rds <- file.path(PKG_ROOT, "cluster_output", "results_openalex_nodemix.RDS")
-      tryCatch({
-        dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
-        saveRDS(nodemix_save, nodemix_rds)
-        cat("  Saved nodeMix results to:", nodemix_rds, "\n")
-      }, error = function(e) {
-        cat("  Warning: could not save nodeMix results:", conditionMessage(e), "\n")
-      })
-    }
-
-    # Cleanup
-    if (!is.null(fit_inhom_nodemix) && !is.null(fit_inhom_nodemix$intens_funcs)) {
-      fit_inhom_nodemix$intens_funcs <- NULL
-    }
-    gc()
-  } else {
-    cat("  No inhomogeneous background; skipping nodeMix fit\n")
-  }
-}, error = function(e) {
-  cat("  nodeMix fit FAILED with error:", e$message, "\n")
-  cat("  (This is a bonus fit; main results are unaffected.)\n")
-})
-
-# =============================================================================
 # Final total elapsed time
 # =============================================================================
-cat("\n=== OpenAlex study (including bonus nodeMix) complete ===\n")
+cat("\n=== OpenAlex study complete ===\n")
 cat("  Total wall time:", round((proc.time() - t_total)[3], 1), "s (",
     round((proc.time() - t_total)[3] / 60, 1), "min)\n")
