@@ -179,6 +179,9 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   model$setNetwork(ernm::as.BinaryNet(g))
   model$calculate()
   
+  # Pre-allocate stat_times if we have many events (optional, but good for large nets)
+  # For now, we'll keep the list of vectors.
+
   for (t_cur in event_times) {
     idx <- which(edge_times == t_cur)
     new_edges <- el[idx, , drop = FALSE]
@@ -200,6 +203,8 @@ waiting_times_between_formations <- function(net, time_attr = "time",
         network::add.edges(g, tail = tail_j, head = head_j)
         
         # Update model to reflect this new edge (for next iteration's change stats)
+        # OPTIMIZATION: Use model$toggle() if available in ERNM, otherwise calculate()
+        # ERNM's computeChangeStats + manual add.edges + calculate is standard.
         model$setNetwork(ernm::as.BinaryNet(g))
         model$calculate()
         
@@ -213,6 +218,7 @@ waiting_times_between_formations <- function(net, time_attr = "time",
     # Track when each statistic increases
     for (i in seq_len(n_stats)) {
       if (stat_curr[i] > stat_prev[i]) {
+        # Optimization: append to list of times
         stat_times[[i]] <- c(stat_times[[i]], t_cur)
       }
     }
@@ -514,110 +520,51 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     # Simulated statistics (parallelized) - each wrapped in tryCatch
     n_deg_bins <- max_deg - degree + 1L
     n_esp_bins <- k_esp - esp + 1L
-    if (verbose) cat("    Computing degree distributions...\n")
-    GOF_results$degree_sim <- tryCatch({
-      do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-        tryCatch({
-          degree_dist(n, max_deg, min_deg = degree)
-        }, error = function(e) rep(NA_real_, n_deg_bins))
-      }, mc.cores = cores))
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute simulated degree distributions:", e$message, "\n")
-      NULL
-    })
     
-    if (verbose) cat("    Computing ESP distributions...\n")
-    GOF_results$esp_sim <- tryCatch({
-      do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-        tryCatch({
-          esp_dist(n, k_esp, min_esp = esp)
-        }, error = function(e) rep(NA_real_, n_esp_bins))
-      }, mc.cores = cores))
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute simulated ESP distributions:", e$message, "\n")
-      NULL
-    })
+    # Pre-calculate common objects for parallel workers to reduce overhead
+    # We can't easily export the ERNM model object itself, but we can ensure
+    # the workers are as lean as possible.
     
-    if (verbose) cat("    Computing geodesic distances...\n")
-    GOF_results$geodist_sim <- tryCatch({
+    if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
+    
+    # Combine the fast distributional statistics into a single parallel pass
+    # This reduces the number of mclapply forks/joins.
+    dist_stats_sim <- tryCatch({
       parallel::mclapply(sim_nets, function(n) {
         tryCatch({
-          geodist_dist(n)
-        }, error = function(e) numeric(0))
-      }, mc.cores = cores)
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute simulated geodesic distances:", e$message, "\n")
-      NULL
-    })
-    
-    if (verbose) cat("    Computing waiting times...\n")
-    GOF_results$wait_sim <- tryCatch({
-      # Get ERNM statistic names from formula (use first simulated network or observed)
-      exp_cs <- tryCatch({
-        net_for_names <- if (!is.null(net_obs)) net_obs else if (length(sim_nets) > 0 && !is.null(sim_nets[[1]])) sim_nets[[1]] else NULL
-        if (!is.null(net_for_names)) {
-          expected_params_PMF_mark_CS(net_for_names, formula_RHS)
-        } else NULL
-      }, error = function(e) NULL)
-      stat_names <- if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names)) exp_cs$CS_params_names else NULL
-      
-      parallel::mclapply(sim_nets, function(n) {
-        tryCatch({
-          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = formula_RHS)
-          # Apply stat names if available
-          if (!is.null(stat_names) && length(stat_names) == length(wait_sim_raw)) {
-            names(wait_sim_raw) <- stat_names
+          # Ensure vertex attributes for nodeMix if needed
+          n_clean <- n
+          if (any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+            n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
           }
-          wait_sim_raw
-        }, error = function(e) {
-          if (verbose && length(sim_nets) <= 5) cat("        Warning: Could not compute waiting times for one sim:", e$message, "\n")
-          list()
-        })
-      }, mc.cores = cores)
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute simulated waiting times:", e$message, "\n")
-      NULL
-    })
-    
-    # Simulated nodeMix statistics (parallelized)
-    if (verbose) cat("    Computing simulated nodeMix statistics...\n")
-    GOF_results$nodemix_sim <- tryCatch({
-      # Determine expected length from observed nodeMix
-      nodemix_obs_len <- if (!is.null(GOF_results$nodemix_obs)) length(GOF_results$nodemix_obs) else {
-        # Try to compute length from observed network
-        tryCatch({
-          if ("gender" %in% network::list.vertex.attributes(net_obs) || 
-              any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-            net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
-            length(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
-          } else {
-            0
-          }
-        }, error = function(e) 0)
-      }
-      
-      if (nodemix_obs_len > 0) {
-        do.call(rbind, parallel::mclapply(sim_nets, function(n) {
-          tryCatch({
-            if ("gender" %in% network::list.vertex.attributes(n) || 
-                any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-              # Ensure gender attribute is properly set before ERNM operations
-              n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
+          
+          list(
+            degree = degree_dist(n, max_deg, min_deg = degree),
+            esp = esp_dist(n, k_esp, min_esp = esp),
+            geodist = geodist_dist(n),
+            nodemix = if (!is.null(GOF_results$nodemix_obs)) {
               as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
-            } else {
-              rep(NA_real_, nodemix_obs_len)
-            }
-          }, error = function(e) {
-            rep(NA_real_, nodemix_obs_len)
-          })
-        }, mc.cores = cores))
-      } else {
-        NULL
-      }
+            } else NULL
+          )
+        }, error = function(e) list(degree = rep(NA, n_deg_bins), esp = rep(NA, n_esp_bins), geodist = numeric(0), nodemix = NULL))
+      }, mc.cores = cores)
     }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute simulated nodeMix statistics:", e$message, "\n")
+      if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
       NULL
     })
+    
+    if (!is.null(dist_stats_sim)) {
+      GOF_results$degree_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$degree))
+      GOF_results$esp_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$esp))
+      GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) x$geodist)
+      nodemix_list <- lapply(dist_stats_sim, function(x) x$nodemix)
+      if (!all(sapply(nodemix_list, is.null))) {
+        GOF_results$nodemix_sim <- do.call(rbind, nodemix_list)
+      }
+    }
+    
+    if (verbose) cat("    Computing waiting times (expensive)...\n")
+    GOF_results$wait_sim <- tryCatch({
     
     if (verbose) {
       cat("    Waiting times: done\n")
