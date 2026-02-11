@@ -565,6 +565,28 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
     GOF_results$wait_sim <- tryCatch({
+      # Get ERNM statistic names from formula (use first simulated network or observed)
+      exp_cs <- tryCatch({
+        net_for_names <- if (!is.null(net_obs)) net_obs else if (length(sim_nets) > 0 && !is.null(sim_nets[[1]])) sim_nets[[1]] else NULL
+        if (!is.null(net_for_names)) {
+          expected_params_PMF_mark_CS(net_for_names, formula_RHS)
+        } else NULL
+      }, error = function(e) NULL)
+      stat_names <- if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names)) exp_cs$CS_params_names else NULL
+      
+      parallel::mclapply(sim_nets, function(n) {
+        tryCatch({
+          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = formula_RHS)
+          if (!is.null(stat_names) && length(stat_names) == length(wait_sim_raw)) {
+            names(wait_sim_raw) <- stat_names
+          }
+          wait_sim_raw
+        }, error = function(e) list())
+      }, mc.cores = cores)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute simulated waiting times:", e$message, "\n")
+      NULL
+    })
     
     if (verbose) {
       cat("    Waiting times: done\n")
