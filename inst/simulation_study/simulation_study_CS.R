@@ -76,10 +76,10 @@ cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
 
 SEED <- 1267
 
-# parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
-# Defined here (not inside SIMULATE block) so consistency study can also use it.
-p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-             CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+  # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
+  # Defined here (not inside SIMULATE block) so consistency study can also use it.
+  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+               edges = 1, triangles = 0.1, star.2 = 0.1, star.3 = 0.1)
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: each worker runs one sim or one fit at a time.
@@ -648,29 +648,89 @@ if(PAPER_OUTPUT){
     hist(mean_deg_df$mean_deg, main = "Histogram of Mean Degrees", xlab = "Mean Degree", breaks = 10)
     abline(v = mean(mean_deg_df$mean_deg), col = "red", lwd = 2)
 
-    keep <- which(sapply(fits, function(x){ length(x) != 0 & x$fit$convergence == 0 & !any(x$fit$par > 100) & !any(x$fit$par[2] > 10) }))
-    print(paste0("keeping ", length(keep), " of ", length(fits), " fits"))
-    estims <- do.call(rbind, lapply(seq_along(keep), function(i){
-      sim_idx <- keep[i]
-      est_df <- as.data.frame(t(fits[[sim_idx]]$fit$par), names = names(fits[[sim_idx]]$fit$par))
-      est_df$sim_id <- sim_idx
-      return(est_df)
+    # --- Main study summary ---
+    keep_idx <- which(sapply(fits, function(x) {
+      is.list(x) && !is.null(x$fit) && x$fit$convergence == 0 && 
+      all(is.finite(x$fit$par)) && !any(x$fit$par > 100)
     }))
-    params_vec <- unlist(params)[names(params) %in% colnames(estims)]
-    params_init_vec <- unlist(params_init)[names(params_init) %in% colnames(estims)]
-    par_estim <- estims[, -dim(estims)[2]]
-    results <- data.frame(mean = colMeans(par_estim), sd = apply(par_estim, 2, sd), true = params_vec[colnames(par_estim)], init = params_init_vec[colnames(par_estim)])
-    print(results)
-
-    estim_long <- data.frame(param = rep(colnames(par_estim), each = nrow(par_estim)), estimate = c(as.matrix(par_estim)))
-    ref_lines <- data.frame(param = colnames(par_estim), true = as.numeric(results["true",]), init = as.numeric(results["init",]))
-    p_est_dist <- ggplot(estim_long, aes(x = estimate)) +
-      geom_histogram(bins = 20, fill = "lightblue", alpha = 0.7) +
-      geom_vline(data = ref_lines, aes(xintercept = true), color = "red", linetype = "dashed", linewidth = 1) +
-      geom_vline(data = ref_lines, aes(xintercept = init), color = "darkgreen", linetype = "dotted", linewidth = 1) +
-      facet_wrap(~param, scales = "free") +
-      labs(title = "Distribution of parameter estimates (CS)", subtitle = "Red dashed = true; green dotted = init", x = "Estimate") + theme_minimal()
-    print(p_est_dist)
+    # Additional check for beta_overall (usually index 2, but let's be safe)
+    if (length(keep_idx) > 0) {
+      keep_idx <- keep_idx[sapply(fits[keep_idx], function(x) {
+        idx <- which(names(x$fit$par) == "beta_overall")
+        if (length(idx) > 0) x$fit$par[idx] <= 10 else TRUE
+      })]
+    }
+    
+    print(paste0("keeping ", length(keep_idx), " of ", length(fits), " fits"))
+    
+    if (length(keep_idx) > 0) {
+      # Extract all fitted parameters into a data frame
+      estims <- do.call(rbind, lapply(keep_idx, function(idx) {
+        as.data.frame(t(fits[[idx]]$fit$par))
+      }))
+      
+      # Create a named vector for true and init values that matches the fit_table names
+      # (e.g. "edges" instead of "CS_params1")
+      # We use the first successful fit to get the mapping
+      sample_fit <- fits[[keep_idx[1]]]
+      par_names <- names(sample_fit$fit$par)
+      
+      # Map true values
+      true_vec <- setNames(numeric(length(par_names)), par_names)
+      true_vec["mu"] <- params$mu
+      true_vec["beta_overall"] <- params$beta_overall
+      if ("K" %in% par_names) true_vec["K"] <- params$K
+      true_vec["beta_edges"] <- params$beta_edges
+      true_vec["node_lambda"] <- params$node_lambda
+      # Map CS params using the order from the formula
+      exp_cs <- expected_params_PMF_mark_CS(sims[[1]]$net, "edges + triangles + star(c(2,3))")
+      if (!is.null(exp_cs$CS_params_names)) {
+        for (i in seq_along(exp_cs$CS_params_names)) {
+          name <- exp_cs$CS_params_names[i]
+          if (name %in% par_names) true_vec[name] <- params$CS_params[i]
+        }
+      }
+      
+      # Map init values
+      init_vec <- setNames(numeric(length(par_names)), par_names)
+      init_vec["mu"] <- params_init$mu
+      init_vec["beta_overall"] <- params_init$beta_overall
+      if ("K" %in% par_names) init_vec["K"] <- params_init$K
+      init_vec["beta_edges"] <- params_init$beta_edges
+      init_vec["node_lambda"] <- params_init$node_lambda
+      if (!is.null(exp_cs$CS_params_names)) {
+        for (i in seq_along(exp_cs$CS_params_names)) {
+          name <- exp_cs$CS_params_names[i]
+          if (name %in% par_names) init_vec[name] <- params_init$CS_params[i]
+        }
+      }
+      
+      results <- data.frame(
+        mean = colMeans(estims),
+        sd   = apply(estims, 2, sd),
+        true = true_vec[colnames(estims)],
+        init = init_vec[colnames(estims)]
+      )
+      print(results)
+      
+      # Plotting
+      estim_long <- tidyr::pivot_longer(estims, cols = everything(), names_to = "param", values_to = "estimate")
+      ref_lines <- data.frame(
+        param = par_names,
+        true  = as.numeric(true_vec),
+        init  = as.numeric(init_vec)
+      )
+      
+      p_est_dist <- ggplot(estim_long, aes(x = estimate)) +
+        geom_histogram(bins = 20, fill = "lightblue", alpha = 0.7) +
+        geom_vline(data = ref_lines, aes(xintercept = true), color = "red", linetype = "dashed", linewidth = 1) +
+        geom_vline(data = ref_lines, aes(xintercept = init), color = "darkgreen", linetype = "dotted", linewidth = 1) +
+        facet_wrap(~param, scales = "free") +
+        labs(title = "Distribution of parameter estimates (CS)", 
+             subtitle = "Red dashed = true; green dotted = init", x = "Estimate") + 
+        theme_minimal()
+      print(p_est_dist)
+    }
 
     comps <- lapply(sims, function(x) compensators_hawkesNet(params = params, mark_filtration = x$net, time_window = c(0, TIME)))
     marked_p_vals <- mapply(seq_along(keep), FUN = function(i){
