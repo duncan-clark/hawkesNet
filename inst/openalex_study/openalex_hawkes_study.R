@@ -59,7 +59,7 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   cat("Request was 128; using 256 (USE_256_WHEN_128 set)\n")
 }
 MAX_ITER <- 5000
-TRUNCATION <- 300L
+TRUNCATION <- 500L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
@@ -439,74 +439,74 @@ if (!is.null(inhom_bg)) {
   cat("  CS_params length:", n_cs_nodemix, "\n")
 
   # Initialize from nodeMatch fit if available, else from structural, else independent
-  if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
-      fit_inhom_nodematch$fit$convergence == 0) {
-    # Use nodeMatch fit parameters as starting point
-    skel_nm <- params_init_nodematch
-    skel_nm$mu <- NULL
-    skel_nm$K <- NULL
-    skel_nm$vertex_categorical_levels <- NULL
-    pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
+    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
+        fit_inhom_nodematch$fit$convergence == 0) {
+      # Use nodeMatch fit parameters as starting point
+      skel_nm <- params_init_nodematch
+      skel_nm$mu <- NULL
+      skel_nm$K <- NULL
+      skel_nm$vertex_categorical_levels <- NULL
+      pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
 
-    if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
-      # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
-      cs_from_nm <- pfit_nm$CS_params
-      cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
-      params_init_nodemix <- list(
-        mu = params_init_nodematch$mu,
-        beta_overall = pfit_nm$beta_overall,
-        K = params_init_nodematch$K,
-        beta_edges = pfit_nm$beta_edges,
-        node_lambda = pfit_nm$node_lambda,
-        CS_params = cs_padded,
-        vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-        vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-      )
-      cat("  Initialized from nodeMatch fit\n")
+      if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
+        # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
+        cs_from_nm <- pfit_nm$CS_params
+        cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
+        params_init_nodemix <- list(
+          mu = params_init_nodematch$mu,
+          beta_overall = pfit_nm$beta_overall,
+          K = params_init_nodematch$K,
+          beta_edges = pfit_nm$beta_edges,
+          node_lambda = pfit_nm$node_lambda,
+          CS_params = cs_padded,
+          vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
+          vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
+        )
+        cat("  Initialized from nodeMatch fit\n")
+      } else {
+        params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
+        cat("  nodeMatch params invalid; using independent initialization\n")
+      }
     } else {
       params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-      cat("  nodeMatch params invalid; using independent initialization\n")
+      cat("  No converged nodeMatch fit; using independent initialization\n")
     }
-  } else {
-    params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-    cat("  No converged nodeMatch fit; using independent initialization\n")
-  }
 
-  # parscale
-  p_scale_nodemix <- c(
-    beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-    setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
-    vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
-  )
+    # parscale
+    p_scale_nodemix <- c(
+      beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+      setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
+      vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
+    )
 
-  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
-  t_fit_nodemix <- proc.time()
+    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+    t_fit_nodemix <- proc.time()
 
-  fit_inhom_nodemix <- safe_run(
-    fit_hawkesNet_inhom(
-      params_init = params_init_nodemix,
-      time_window = time_window_01,
-      mark_filtration = net_raw,
-      PMF_mark = PMF_mark_CS,
-      mu_vec = inhom_bg$mu_vec,
-      integral_bg = inhom_bg$integral_bg,
-      formula_RHS = FORMULA_RHS_NODEMIX,
-      truncation = TRUNCATION,
-      mark_decay = "activity",
-      max_node_time = 1,
-      method = "Nelder-Mead",
-      maxit = MAX_ITER,
-      trace = 1,
-      reltol = 1e-8,
-      verbose = FALSE,
-      fixed_params = c("K", "mu"),
-      parscale = p_scale_nodemix,
-      cache_intensity = TRUE,
-      combine_intensity = TRUE,
-      cores = N_CORES
-    ),
-    "nodeMix fit"
-  )
+    fit_inhom_nodemix <- safe_run(
+      fit_hawkesNet(
+        params_init = params_init_nodemix,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS_NODEMIX,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        max_node_time = 1,
+        method = "Nelder-Mead",
+        maxit = MAX_ITER,
+        trace = 1,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_nodemix,
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        cores = N_CORES
+      ),
+      "nodeMix fit"
+    )
 
   elapsed_fit_nodemix <- (proc.time() - t_fit_nodemix)[3]
   if (!is.null(fit_inhom_nodemix)) {
