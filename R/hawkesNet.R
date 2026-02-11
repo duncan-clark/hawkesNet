@@ -17,7 +17,7 @@ build_optim_bounds <- function(par_names, eps = 1e-6) {
     # Add upper bounds to prevent decay parameters from blowing up to infinity
     # (Poisson-like degeneracy)
     if (par_names[i] %in% c("beta_overall", "beta_edges")) {
-      upper[i] <- 500
+      upper[i] <- 100
     }
 
     if (top_name == "vertex_categorical") {
@@ -845,6 +845,13 @@ fit_hawkesNet <- function(params_init,
       eval_env$n_eval <- eval_env$n_eval + 1L
       return(-1e10)
     }
+    
+    # Nelder-Mead Penalty: Cap beta_overall and beta_edges at 100
+    if (params_curr$beta_overall > 100 || (!is.null(params_curr$beta_edges) && params_curr$beta_edges > 100)) {
+      eval_env$n_eval <- eval_env$n_eval + 1L
+      return(-1e10)
+    }
+    
     t_validate <- proc.time()[3] - t1
 
     if (!is.null(cached_funcs)) {
