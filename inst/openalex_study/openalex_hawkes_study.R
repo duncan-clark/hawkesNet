@@ -58,7 +58,7 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- 256L
   cat("Request was 128; using 256 (USE_256_WHEN_128 set)\n")
 }
-MAX_ITER <- 5000
+MAX_ITER <- 10000
 TRUNCATION <- 300L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit

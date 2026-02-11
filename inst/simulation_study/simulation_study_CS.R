@@ -45,7 +45,7 @@ SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- TRUE
 RUN_CONSISTENCY <- FALSE
-MAX_ITER <- 2000
+MAX_ITER <- 5000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))

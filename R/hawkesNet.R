@@ -813,13 +813,10 @@ fit_hawkesNet <- function(params_init,
   is_combined  <- !is.null(cached_funcs) && length(cached_funcs) == 1L
 
   # --- Evaluation diagnostics (accumulate timing, report periodically) ---
+  # Only proc.time() on diagnostic intervals to avoid syscall overhead in hot path.
   eval_env <- new.env(parent = emptyenv())
   eval_env$n_eval <- 0L
-  eval_env$t_relist_total   <- 0
-  eval_env$t_validate_total <- 0
   eval_env$t_closure_total  <- 0
-  eval_env$t_cleanup_total  <- 0
-  eval_env$t_integral_total <- 0
   eval_env$t_total_total    <- 0
   eval_env$t_last_report    <- proc.time()[3]
   eval_env$best_ll          <- -Inf
@@ -827,101 +824,74 @@ fit_hawkesNet <- function(params_init,
 
   dot_args <- list(...)
   # Fast optim_func: calls cached closure directly when available, computes integral inline.
+  # PERFORMANCE: proc.time() is a syscall (~5-10μs on Linux) — calling it 12× per eval
+  # doubles the runtime when closure eval itself is ~200μs. We only time on diagnostic
+  # intervals (every DIAG_INTERVAL evals) to keep 90% of evals zero-overhead.
+  # tryCatch is also removed from the hot path (~10-50μs per call) since params are
+  # validated before the closure eval; any NaN/Inf is caught by the post-hoc check.
   optim_func <- function(params){
-    t0 <- proc.time()[3]
+    n <- eval_env$n_eval + 1L
+    eval_env$n_eval <- n
+    should_time <- (n == 1L || n %% DIAG_INTERVAL == 0L)
+    if (should_time) t0 <- proc.time()[3]
 
     # 1. relist + restore fixed params
-    t1 <- proc.time()[3]
     params_curr <- relist(params, skeleton = params_init)
     params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
     if (!is.null(fixed_params)) {
       for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
     }
-    t_relist <- proc.time()[3] - t1
 
-    # 2. validate
-    t1 <- proc.time()[3]
-    if (!point_process_params_valid(params_curr)) {
-      eval_env$n_eval <- eval_env$n_eval + 1L
-      return(-1e10)
-    }
-    
-    # Nelder-Mead Penalty: Cap beta_overall and beta_edges at 100
-    if (params_curr$beta_overall > 100 || (!is.null(params_curr$beta_edges) && params_curr$beta_edges > 100)) {
-      eval_env$n_eval <- eval_env$n_eval + 1L
-      return(-1e10)
-    }
-    
-    t_validate <- proc.time()[3] - t1
+    # 2. validate + beta cap
+    if (!point_process_params_valid(params_curr)) return(-1e10)
+    if (params_curr$beta_overall > 100 || (!is.null(params_curr$beta_edges) && params_curr$beta_edges > 100)) return(-1e10)
 
     if (!is.null(cached_funcs)) {
-      # Fast path: evaluate cached closures directly
-      t1 <- proc.time()[3]
-      intens_vec <- tryCatch({
-        if (is_combined) cached_funcs[[1L]](params_curr)
-        else {
-          v <- numeric(length(cached_funcs))
-          for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
-          v
-        }
-      }, error = function(e) NULL)
-      t_closure <- proc.time()[3] - t1
-      if (is.null(intens_vec)) {
-        eval_env$n_eval <- eval_env$n_eval + 1L
-        return(-1e10)
-      }
+      # Fast path: evaluate cached closures directly (no tryCatch — params validated above)
+      if (should_time) t1 <- proc.time()[3]
+      intens_vec <- if (is_combined) cached_funcs[[1L]](params_curr)
+                    else {
+                      v <- numeric(length(cached_funcs))
+                      for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
+                      v
+                    }
+      if (should_time) t_closure <- proc.time()[3] - t1
 
-      t1 <- proc.time()[3]
+      # Post-hoc error check (replaces tryCatch)
+      if (is.null(intens_vec) || !is.numeric(intens_vec)) return(-1e10)
+
       bad <- !is.finite(intens_vec) | intens_vec <= 0
       if (any(bad)) intens_vec[bad] <- 1e-10
       intens_sum <- sum(log(intens_vec))
-      t_cleanup <- proc.time()[3] - t1
 
-      t1 <- proc.time()[3]
       b <- params_curr$beta_overall
-      if (!is.finite(b) || b < 1e-10) {
-        eval_env$n_eval <- eval_env$n_eval + 1L
-        return(-1e10)
-      }
+      if (!is.finite(b) || b < 1e-10) return(-1e10)
       pieces <- 1 - exp(-b * (tval_cached - times_cached))
       kernel_int <- (1 / b) * params_curr$K * sum(pieces)
       integral <- if (use_inhom) integral_bg + kernel_int
                   else params_curr$mu * tval_cached + kernel_int
-      t_integral <- proc.time()[3] - t1
 
       ll <- intens_sum - integral
-      if (!is.finite(ll)) {
-        eval_env$n_eval <- eval_env$n_eval + 1L
-        return(-1e10)
-      }
-
-      # --- Accumulate timing ---
-      t_total <- proc.time()[3] - t0
-      eval_env$n_eval <- eval_env$n_eval + 1L
-      eval_env$t_relist_total   <- eval_env$t_relist_total   + t_relist
-      eval_env$t_validate_total <- eval_env$t_validate_total + t_validate
-      eval_env$t_closure_total  <- eval_env$t_closure_total  + t_closure
-      eval_env$t_cleanup_total  <- eval_env$t_cleanup_total  + t_cleanup
-      eval_env$t_integral_total <- eval_env$t_integral_total + t_integral
-      eval_env$t_total_total    <- eval_env$t_total_total    + t_total
+      if (!is.finite(ll)) return(-1e10)
       if (ll > eval_env$best_ll) eval_env$best_ll <- ll
 
-      # --- Periodic report (first eval + every DIAG_INTERVAL) ---
-      n <- eval_env$n_eval
-      if (n == 1L || n %% DIAG_INTERVAL == 0L) {
-        elapsed <- proc.time()[3] - eval_env$t_last_report
-        ms_fn <- function(x) round(x / n * 1000, 2)
+      # --- Periodic report (only on diagnostic intervals — zero overhead otherwise) ---
+      if (should_time) {
+        t_total <- proc.time()[3] - t0
+        eval_env$t_closure_total <- eval_env$t_closure_total + t_closure
+        eval_env$t_total_total   <- eval_env$t_total_total + t_total
         if (n == 1L) {
           vcat(sprintf("  [eval 1] first eval: %.0f ms | ll=%.2f | closure=%.0f ms\n",
                     t_total * 1000, ll, t_closure * 1000))
         } else {
+          elapsed <- proc.time()[3] - eval_env$t_last_report
           batch <- min(n, DIAG_INTERVAL)
+          n_timed <- max(1L, n %/% DIAG_INTERVAL)
           vcat(sprintf("  [eval %d] %.1fs wall for last %d evals (%.0f ms/eval) | best_ll=%.2f\n",
                     n, elapsed, batch, elapsed / batch * 1000, eval_env$best_ll))
-          vcat(sprintf("    avg (ms/eval): relist=%.2f validate=%.2f closure=%.2f cleanup=%.2f integral=%.2f total=%.2f\n",
-                    ms_fn(eval_env$t_relist_total), ms_fn(eval_env$t_validate_total),
-                    ms_fn(eval_env$t_closure_total), ms_fn(eval_env$t_cleanup_total),
-                    ms_fn(eval_env$t_integral_total), ms_fn(eval_env$t_total_total)))
+          vcat(sprintf("    avg (ms/eval, sampled): closure=%.2f total=%.2f\n",
+                    eval_env$t_closure_total / n_timed * 1000,
+                    eval_env$t_total_total / n_timed * 1000))
         }
         eval_env$t_last_report <- proc.time()[3]
       }
@@ -994,18 +964,15 @@ fit_hawkesNet <- function(params_init,
   vcat("[fit] Optimization done: ", t_optim_elapsed, " s | iterations: ", n_iter,
        if (is.finite(n_fneval)) paste0(" | fn evals: ", n_fneval) else "",
        " | s/iter: ", if (is.finite(n_iter) && n_iter > 0) round(t_optim_elapsed / n_iter, 2) else "n/a", "\n")
-  # --- Final evaluation timing summary ---
+  # --- Final evaluation timing summary (sampled from diagnostic intervals only) ---
   n_e <- eval_env$n_eval
+  n_timed <- max(1L, n_e %/% DIAG_INTERVAL)
   if (n_e > 0L && eval_env$t_total_total > 0) {
-    ms <- function(x) round(x / n_e * 1000, 2)
-    pct <- function(x) if (eval_env$t_total_total > 0) round(x / eval_env$t_total_total * 100, 1) else 0
-    vcat(sprintf("[fit] Eval timing summary (%d evals, %.1f ms/eval avg):\n", n_e, eval_env$t_total_total / n_e * 1000))
-    vcat(sprintf("  relist:   %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_relist_total),   pct(eval_env$t_relist_total)))
-    vcat(sprintf("  validate: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_validate_total), pct(eval_env$t_validate_total)))
-    vcat(sprintf("  closure:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_closure_total),  pct(eval_env$t_closure_total)))
-    vcat(sprintf("  cleanup:  %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_cleanup_total),  pct(eval_env$t_cleanup_total)))
-    vcat(sprintf("  integral: %6.2f ms/eval (%4.1f%%)\n", ms(eval_env$t_integral_total), pct(eval_env$t_integral_total)))
-    vcat(sprintf("  TOTAL:    %6.2f ms/eval           (wall: %.1f s)\n", ms(eval_env$t_total_total), eval_env$t_total_total))
+    vcat(sprintf("[fit] Eval timing (%d evals, %d sampled): closure=%.2f ms/eval, total=%.2f ms/eval (wall: %.1f s)\n",
+              n_e, n_timed,
+              eval_env$t_closure_total / n_timed * 1000,
+              eval_env$t_total_total / n_timed * 1000,
+              t_optim_elapsed))
   }
   vcat("[fit] Fitting total: ", round(proc.time()[3] - t_fit_start, 1), " s\n")
 

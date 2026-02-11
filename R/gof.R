@@ -543,27 +543,41 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
                 length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
     
-    # Combine the fast distributional statistics into a single parallel pass
-    # This reduces the number of mclapply forks/joins.
+    # Combined distributional statistics: Degree, ESP, Geodist, nodeMix
+    if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
+    cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
+                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
+    
+    # Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
+    has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
+    needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
+
     dist_stats_sim <- tryCatch({
-      # Use safe_parallel_lapply if available for better stability on cluster
       safe_parallel_lapply(sim_nets, function(n) {
         tryCatch({
+          if (is.null(n)) return(NULL)
           # Ensure vertex attributes for nodeMix if needed
           n_clean <- n
-          if (any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-            n_clean <- ensure_vertex_attribute(n, "gender", default_value = "unknown")
+          if (needs_gender) {
+            n_clean <- tryCatch(ensure_vertex_attribute(n, "gender", default_value = "unknown"), 
+                               error = function(e) n)
           }
           
           list(
             degree = degree_dist(n, max_deg, min_deg = degree),
             esp = esp_dist(n, k_esp, min_esp = esp),
             geodist = geodist_dist(n),
-            nodemix = if (!is.null(GOF_results$nodemix_obs)) {
+            nodemix = if (has_nodemix_obs) {
               as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
             } else NULL
           )
-        }, error = function(e) list(degree = rep(NA, n_deg_bins), esp = rep(NA, n_esp_bins), geodist = numeric(0), nodemix = NULL))
+        }, error = function(e) {
+          # Return a structure with NAs so rbind doesn't fail on atomic vectors
+          list(degree = rep(NA_real_, n_deg_bins), 
+               esp = rep(NA_real_, n_esp_bins), 
+               geodist = numeric(0), 
+               nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL)
+        })
       }, mc.cores = cores, parallel_type = "auto")
     }, error = function(e) {
       if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
@@ -571,12 +585,28 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     })
     
     if (!is.null(dist_stats_sim)) {
-      GOF_results$degree_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$degree))
-      GOF_results$esp_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$esp))
-      GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) x$geodist)
-      nodemix_list <- lapply(dist_stats_sim, function(x) x$nodemix)
-      if (!all(sapply(nodemix_list, is.null))) {
-        GOF_results$nodemix_sim <- do.call(rbind, nodemix_list)
+      # Filter out NULLs if any task failed completely
+      dist_stats_sim <- dist_stats_sim[!sapply(dist_stats_sim, is.null)]
+      
+      if (length(dist_stats_sim) > 0) {
+        GOF_results$degree_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$degree))
+        GOF_results$esp_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$esp))
+        GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) x$geodist)
+        nodemix_list <- lapply(dist_stats_sim, function(x) x$nodemix)
+        if (!all(sapply(nodemix_list, is.null))) {
+          # Filter out NULLs from nodemix_list before rbind
+          nodemix_list_clean <- nodemix_list[!sapply(nodemix_list, is.null)]
+          if (length(nodemix_list_clean) > 0) {
+            # Check if all elements are numeric vectors of correct length
+            if (has_nodemix_obs) {
+              expected_len <- length(GOF_results$nodemix_obs)
+              nodemix_list_clean <- lapply(nodemix_list_clean, function(x) {
+                if (is.numeric(x) && length(x) == expected_len) x else rep(NA_real_, expected_len)
+              })
+            }
+            GOF_results$nodemix_sim <- do.call(rbind, nodemix_list_clean)
+          }
+        }
       }
       rm(dist_stats_sim); gc()
     }
