@@ -126,15 +126,48 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
   tryCatch({
     children_fn  <- get("children",  envir = asNamespace("parallel"))
     mccollect_fn <- get("mccollect", envir = asNamespace("parallel"))
-    while (length(children_fn()) > 0L) {
-      mccollect_fn(wait = FALSE, timeout = 1)
+    active_children <- children_fn()
+    if (length(active_children) > 0L) {
+      message("  [parallel] Cleaning up ", length(active_children), " zombie child processes...")
+      mccollect_fn(active_children, wait = FALSE, timeout = 2)
+      # Force kill if they still persist
+      still_active <- children_fn()
+      if (length(still_active) > 0L) {
+        message("  [parallel] WARNING: ", length(still_active), " children still active, sending SIGKILL")
+        tools::pskill(still_active, tools::SIGKILL)
+        mccollect_fn(still_active, wait = FALSE)
+      }
     }
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    message("  [parallel] Error during zombie cleanup: ", e$message)
+  })
+  
+  # Log memory state before forking
+  if (!interactive()) {
+    mem <- gc()
+    message(sprintf("  [parallel] Parent memory: %.1f Mb (Vcells used)", mem[2, 2]))
+  }
+  
   gc()  # reclaim memory before forking so children inherit a lean process
   message("  [parallel] mclapply (", mc.cores, " cores, fork",
           if (mc.preschedule) ", preschedule" else "", ")")
-  parallel::mclapply(X, FUN, mc.cores = mc.cores,
-                     mc.preschedule = mc.preschedule)
+  
+  res <- parallel::mclapply(X, FUN, mc.cores = mc.cores,
+                            mc.preschedule = mc.preschedule)
+  
+  # Check for errors in results (mclapply returns try-error or NULL on some failures)
+  if (is.list(res)) {
+    errors <- vapply(res, function(x) inherits(x, "try-error"), logical(1))
+    if (any(errors)) {
+      message("  [parallel] WARNING: ", sum(errors), " tasks failed in mclapply")
+    }
+    nulls <- vapply(res, is.null, logical(1))
+    if (all(nulls) && length(res) > 0) {
+      message("  [parallel] CRITICAL: All tasks returned NULL. This often indicates a fork crash (OOM or deadlock).")
+    }
+  }
+  
+  return(res)
 }
 
 # Helper function for edge hash maps

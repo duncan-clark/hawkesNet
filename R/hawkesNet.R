@@ -545,6 +545,25 @@ loglik_hawkesNet = function(params,
       )
       intens_list <- rev(intens_list)
       message("intens list ", round((proc.time()-t)[3],2)," seconds")
+      
+      # Check if any tasks failed or returned NULL (indicates fork issues)
+      if (is.list(intens_list)) {
+        failed_tasks <- vapply(intens_list, function(x) is.null(x) || inherits(x, "try-error"), logical(1))
+        if (any(failed_tasks)) {
+          message(sprintf("  [loglik] WARNING: %d tasks failed during intensity calculation. Check for OOM or deadlocks.", sum(failed_tasks)))
+        }
+      }
+      
+      # Clean up any zombie child processes immediately after parallel call.
+      # stale pipes/signal handlers from the first call can interfere with the second.
+      tryCatch({
+        children_fn  <- get("children",  envir = asNamespace("parallel"))
+        mccollect_fn <- get("mccollect", envir = asNamespace("parallel"))
+        while (length(children_fn()) > 0L) {
+          mccollect_fn(wait = FALSE, timeout = 1)
+        }
+      }, error = function(e) NULL)
+      gc()
     }else{
       t1 <- proc.time()
       intens_list <- lapply(seq_along(times), intens_func)
