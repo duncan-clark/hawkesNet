@@ -515,7 +515,8 @@ loglik_hawkesNet = function(params,
       # Only log for a subset of tasks to avoid flooding
       should_log <- (i == 1L || i == length(times) || (i %% 50 == 0))
       if (should_log) {
-        cat(sprintf("  [intens_func] Task %d/%d starting (pid %d)\n", i, length(times), Sys.getpid()), file = stderr())
+        cat(sprintf("  [intens_func] Task %d/%d starting (pid %d) at %s\n", 
+                    i, length(times), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
       }
       
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
@@ -547,7 +548,8 @@ loglik_hawkesNet = function(params,
       }
       
       if (should_log) {
-        cat(sprintf("  [intens_func] Task %d/%d complete\n", i, length(times)), file = stderr())
+        cat(sprintf("  [intens_func] Task %d/%d complete (pid %d) at %s\n", 
+                    i, length(times), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
       }
       out
     }

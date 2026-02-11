@@ -173,22 +173,29 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
   message("  [parallel] mclapply (", mc.cores, " cores, fork",
           if (mc.preschedule) ", preschedule" else "", ")")
   
-  # Wrap FUN to log task start/end in children
+    # Wrap FUN to log task start/end in children
   FUN_wrapped <- function(i) {
     # Only log for a subset of tasks to avoid flooding
-    should_log <- (i == 1L || i == length(X) || (i %% 50 == 0))
+    # For smaller lists (like GOF simulations), log more frequently
+    should_log <- (length(X) <= 100) || (i == 1L || i == length(X) || (i %% 50 == 0))
     if (should_log) {
-      cat(sprintf("  [parallel-child] Task %d/%d starting (pid %d)\n", i, length(X), Sys.getpid()), file = stderr())
+      cat(sprintf("  [parallel-child] Task %d/%d starting (pid %d) at %s\n", 
+                  i, length(X), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
     }
     
-    out <- tryCatch(FUN(i), error = function(e) {
-      cat(sprintf("  [parallel-child] Task %d FAILED: %s\n", i, e$message), file = stderr())
-      stop(e)
+    out <- tryCatch({
+      res_fun <- FUN(i)
+      if (should_log) {
+        cat(sprintf("  [parallel-child] Task %d/%d complete (pid %d) at %s\n", 
+                    i, length(X), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
+      }
+      res_fun
+    }, error = function(e) {
+      cat(sprintf("  [parallel-child] Task %d FAILED (pid %d): %s\n", i, Sys.getpid(), e$message), file = stderr())
+      # Return a try-error so the parent can detect it
+      structure(list(message = e$message, call = e$call), class = "try-error")
     })
     
-    if (should_log) {
-      cat(sprintf("  [parallel-child] Task %d/%d complete\n", i, length(X)), file = stderr())
-    }
     out
   }
 
