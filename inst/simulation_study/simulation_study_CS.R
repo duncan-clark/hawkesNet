@@ -112,49 +112,53 @@ make_cluster <- function(n_workers) {
 }
 
 if(SIMULATE){
-  # make the cluster: use N_CORES_OUTER for outer parallelization
+  # 1. Simulation Step: Use ALL available cores for outer workers
+  # Simulation is single-threaded, so nested parallelism is not needed here.
   t <- proc.time()
-  cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("N_CORES_INNER"))
-  set.seed(SEED)
+  cat("Commencing simulation using", N_CORES, "parallel workers...\n")
+  cl_sim <- makeCluster(N_CORES)
+  registerDoParallel(cl_sim)
+  clusterEvalQ(cl_sim, {
+    library(hawkesNet)
+    library(ernm)
+    library(network)
+    library(data.table)
+  })
+  clusterExport(cl_sim, c("params", "TIME", "TRUNCATION", "SEED"))
   
-  # Ensure the cluster will be stopped no matter what.
-  on.exit({
-    if (!is.null(cl)) {
-      stopCluster(cl)
-    }
-  }, add = TRUE)
-
-  cat("Commencing simulation:\n")
-  cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
-  sims <- parLapply(cl=cl,1:N_SIMS,function(x){
-    results <- tryCatch({
-      sim_hawkesNet(params =  params,
-                          time_window = c(0,TIME),
-                          PMF_mark = PMF_mark_CS,
-                          cond_intensity = cond_intensity,
-                          hashed_edges = TRUE,
-                          verbose = FALSE,
-                          mu_multiplier = 3,
-                          joint_accept = FALSE,
-                          truncation = TRUNCATION,
-                          formula_RHS = "edges + triangles + star(c(2,3))")
+  set.seed(SEED)
+  sims <- parLapply(cl=cl_sim, 1:N_SIMS, function(x){
+    tryCatch({
+      sim_hawkesNet(params = params,
+                    time_window = c(0, TIME),
+                    PMF_mark = PMF_mark_CS,
+                    cond_intensity = cond_intensity,
+                    hashed_edges = TRUE,
+                    verbose = FALSE,
+                    mu_multiplier = 3,
+                    joint_accept = FALSE,
+                    truncation = TRUNCATION,
+                    formula_RHS = "edges + triangles + star(c(2,3))")
     }, error = function(e) {
-      # Already inside parallel worker; just return NULL or partial data
       message("Error in sim_hawkesNet: ", e$message)
       return(NULL)
     })
-    return(results)
   })
+  stopCluster(cl_sim)
   cat("Simulation took:", round((proc.time() - t)[3], 1), "s\n")
   
   # only keep non null sims:
-  sims <- sims[sapply(sims,length)!=0]
-  
-  # --- Cleanup: free simulation overhead before fitting ---
+  sims <- sims[sapply(sims, length) != 0]
   gc()
   
-  fits <- NULL
+  # 2. Fitting Step: Use nested parallelism (Outer x Inner)
+  # Fitting is bottlenecked by the intensity cache, which is multi-threaded.
+  cat("\nCommencing Fitting\n")
+  cat("Using nested parallelism:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner cores each\n")
+  
+  cl_fit <- make_cluster(N_CORES_OUTER)
+  clusterExport(cl_fit, c("N_CORES_INNER"))
+  
   params_init <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
@@ -162,12 +166,10 @@ if(SIMULATE){
                       node_lambda = 1,
                       CS_params = c(-10,0,0,0)
   )
-  clusterExport(cl, c("params_init", "N_CORES_INNER", "p_scale"))
-  cat("Commencing Fitting\n")
-  cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
+  clusterExport(cl_fit, c("params_init", "p_scale", "TIME", "MAX_ITER", "TRUNCATION"))
+  
   t1 <- proc.time()
-  fits <- parLapply(cl=cl,sims,function(x){
-    # Detailed logging for each outer worker
+  fits <- parLapply(cl=cl_fit, sims, function(x){
     worker_id <- Sys.getpid()
     message(sprintf("  [Outer Worker %d] Starting fit for sim with %d events...", worker_id, length(x$events$t)))
     
@@ -178,7 +180,7 @@ if(SIMULATE){
         mark_filtration = x$net,
         PMF_mark = PMF_mark_CS,
         formula_RHS = "edges + triangles + star(c(2,3))",
-        trace = 1, # Increased trace for more optim info
+        trace = 1,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
         fixed_params = c("K"),
@@ -187,7 +189,7 @@ if(SIMULATE){
         cores = N_CORES_INNER,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
-        verbose = TRUE # Set to TRUE for inner diagnostics
+        verbose = TRUE
       )
     }, error = function(e) {
       message(sprintf("  [Outer Worker %d] ERROR: %s", worker_id, e$message))
@@ -201,37 +203,27 @@ if(SIMULATE){
     }
     return(fit)
   })
-  # Strip intensity caches from fits to free memory (each fit has n_events closures)
-  fits <- lapply(fits, function(f) {
-    if (is.list(f) && !is.null(f$intens_funcs)) f$intens_funcs <- NULL
-    f
-  })
+  
   cat("Fitting took:", round((proc.time() - t1)[3], 1), "s\n")
-  # Save the fits and final network for analysis (temporal Hawkes is fast; parallelise on existing cluster):
-  temp_hawkes_fits <- parLapply(cl, sims, function(x){
-    fit <- fit_temporal_hawkes(params_init = list(mu = 0.1,
-                                                  beta = 1,
-                                                  K = 0.1),
-                               realiz = data.frame(t = x$events$t,
-                                                   n = rep(x$events$n,length(x$events$t))),
-                               windowT = c(0,TIME),
-                               trace = 0,
-                               maxit = 1000
-    )
-    return(fit)
+  
+  # 3. Temporal Hawkes: Use all cores again
+  cat("\nFitting Temporal Hawkes models...\n")
+  # (Reuse cl_fit logic or just use parLapply on all cores)
+  temp_hawkes_fits <- parLapply(cl_fit, sims, function(x){
+    fit_temporal_hawkes(params_init = list(mu = 0.1, beta = 1, K = 0.1),
+                        realiz = data.frame(t = x$events$t, n = rep(x$events$n, length(x$events$t))),
+                        windowT = c(0, TIME), trace = 0, maxit = 1000)
   })
-  stopCluster(cl)
-  cl <- NULL
+  
+  stopCluster(cl_fit)
+  
   saveRDS(list(sims=sims,
                fits = fits,
                temp_hawkes_fits = temp_hawkes_fits,
                params = params,
                params_init = params_init),
           file = file.path(CLUSTER_OUTPUT_DIR, "results_CS.RDS"))
-  cat("Simulating and fitting took:", round((proc.time() - t)[3], 1), "s\n")
-
-  # --- Cleanup: remove main study temporaries before next study ---
-  rm(t, t1)
+  cat("Total SIMULATE block took:", round((proc.time() - t)[3], 1), "s\n")
   gc()
 }
 
