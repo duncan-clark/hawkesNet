@@ -212,7 +212,7 @@ if (!is.null(inhom_bg)) {
     setNames(rep(0.1, n_cs_structural), paste0("CS_params", seq_len(n_cs_structural)))
   )
   
-  cat("  Method: L-BFGS-B (max", MAX_ITER, "iterations)\n")
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_structural <- proc.time()
   
   fit_inhom_structural <- safe_run(
@@ -227,7 +227,7 @@ if (!is.null(inhom_bg)) {
       truncation = TRUNCATION,
       mark_decay = "activity",
       max_node_time = 1,
-      method = "L-BFGS-B",
+      method = "Nelder-Mead",
       maxit = MAX_ITER,
       trace = 1,
       reltol = 1e-8,
@@ -368,7 +368,7 @@ if (!is.null(inhom_bg)) {
   if (exists("cs_init_nodematch", inherits = FALSE)) rm(cs_init_nodematch)
   if (exists("beta_overall_valid", inherits = FALSE)) rm(beta_overall_valid, beta_edges_valid, node_lambda_valid, cs_valid)
 
-  cat("  Method: L-BFGS-B (max", MAX_ITER, "iterations)\n")
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
   t_fit_nodematch <- proc.time()
   
   fit_inhom_nodematch <- safe_run(
@@ -383,7 +383,7 @@ if (!is.null(inhom_bg)) {
       truncation = TRUNCATION,
       mark_decay = "activity",
       max_node_time = 1,
-      method = "L-BFGS-B",
+      method = "Nelder-Mead",
       maxit = MAX_ITER,
       trace = 1,
       reltol = 1e-8,
@@ -479,7 +479,7 @@ if (!is.null(inhom_bg)) {
       vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
     )
 
-    cat("  Method: L-BFGS-B (max", MAX_ITER, "iterations)\n")
+    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
     t_fit_nodemix <- proc.time()
 
     fit_inhom_nodemix <- safe_run(
@@ -494,7 +494,7 @@ if (!is.null(inhom_bg)) {
         truncation = TRUNCATION,
         mark_decay = "activity",
         max_node_time = 1,
-        method = "L-BFGS-B",
+        method = "Nelder-Mead",
         maxit = MAX_ITER,
         trace = 1,
         reltol = 1e-8,

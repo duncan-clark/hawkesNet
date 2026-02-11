@@ -13,6 +13,13 @@ build_optim_bounds <- function(par_names, eps = 1e-6) {
     if (base_name %in% positive_params || top_name %in% positive_params) {
       lower[i] <- eps
     }
+    
+    # Add upper bounds to prevent decay parameters from blowing up to infinity
+    # (Poisson-like degeneracy)
+    if (par_names[i] %in% c("beta_overall", "beta_edges")) {
+      upper[i] <- 500
+    }
+
     if (top_name == "vertex_categorical") {
       lower[i] <- eps
       upper[i] <- 1 - eps
