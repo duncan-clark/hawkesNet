@@ -87,7 +87,8 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     # PSOCK (no fork) when: Windows (no fork), macOS (fork often deadlocks on 2nd call),
     # or any interactive session (RStudio / GUI are multi-threaded; fork can deadlock).
     # Fork (mclapply) only for non-interactive Linux (e.g. SLURM Rscript).
-    use_psock <- (os == "Darwin") || (os == "Windows") || interactive()
+    use_psock <- (os == "Darwin") || (os == "Windows") || interactive() ||
+                 isTRUE(getOption("hawkesNet.force_psock", FALSE))
   } else {
     use_psock <- (parallel_type == "psock")
   }
@@ -148,11 +149,50 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     message(sprintf("  [parallel] Parent memory: %.1f Mb (Vcells used)", mem[2, 2]))
   }
   
+  # CRITICAL: Disable multi-threading in BLAS/OpenMP before forking.
+  # Many BLAS libraries (OpenBLAS, MKL) are not fork-safe and will deadlock
+  # on the second fork if a thread pool was initialized in the first.
+  if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+    old_blas <- RhpcBLASctl::blas_get_num_procs()
+    old_omp  <- RhpcBLASctl::omp_get_max_threads()
+    RhpcBLASctl::blas_set_num_threads(1)
+    RhpcBLASctl::omp_set_num_threads(1)
+    on.exit({
+      RhpcBLASctl::blas_set_num_threads(old_blas)
+      RhpcBLASctl::omp_set_num_threads(old_omp)
+    }, add = TRUE)
+  } else {
+    # Fallback: set environment variables (only works if set before library load,
+    # but some libraries check them dynamically or we can at least try).
+    Sys.setenv(OMP_NUM_THREADS = "1")
+    Sys.setenv(MKL_NUM_THREADS = "1")
+    Sys.setenv(OPENBLAS_NUM_THREADS = "1")
+  }
+  
   gc()  # reclaim memory before forking so children inherit a lean process
   message("  [parallel] mclapply (", mc.cores, " cores, fork",
           if (mc.preschedule) ", preschedule" else "", ")")
   
-  res <- parallel::mclapply(X, FUN, mc.cores = mc.cores,
+  # Wrap FUN to log task start/end in children
+  FUN_wrapped <- function(i) {
+    # Only log for a subset of tasks to avoid flooding
+    should_log <- (i == 1L || i == length(X) || (i %% 50 == 0))
+    if (should_log) {
+      cat(sprintf("  [parallel-child] Task %d/%d starting (pid %d)\n", i, length(X), Sys.getpid()), file = stderr())
+    }
+    
+    out <- tryCatch(FUN(i), error = function(e) {
+      cat(sprintf("  [parallel-child] Task %d FAILED: %s\n", i, e$message), file = stderr())
+      stop(e)
+    })
+    
+    if (should_log) {
+      cat(sprintf("  [parallel-child] Task %d/%d complete\n", i, length(X)), file = stderr())
+    }
+    out
+  }
+
+  res <- parallel::mclapply(X, FUN_wrapped, mc.cores = mc.cores,
                             mc.preschedule = mc.preschedule)
   
   # Check for errors in results (mclapply returns try-error or NULL on some failures)
@@ -248,6 +288,11 @@ events_to_net <- function(events_list,
 filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
+  # CRITICAL: network objects can be modified in-place by delete.edges/vertices.
+  # We must work on a copy to avoid corrupting the original network, especially
+  # when this is called inside parallel workers or loops.
+  net <- network::network.copy(net)
+  
   # make sure to leave one less edge or vertex that if equals
   delete.edges(net, which(get.edge.attribute(net,"time")>t))
   delete.vertices(net,which(get.vertex.attribute(net,"time")>t))

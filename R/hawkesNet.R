@@ -503,6 +503,13 @@ loglik_hawkesNet = function(params,
     extra_args[c("cores", "formula_RHS", "combine_intensity",
                  "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i){
+      # Log start of task in child
+      # Only log for a subset of tasks to avoid flooding
+      should_log <- (i == 1L || i == length(times) || (i %% 50 == 0))
+      if (should_log) {
+        cat(sprintf("  [intens_func] Task %d/%d starting (pid %d)\n", i, length(times), Sys.getpid()), file = stderr())
+      }
+      
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
       model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
         createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
@@ -529,6 +536,10 @@ loglik_hawkesNet = function(params,
           extra_args)
         intensity <- do.call(cond_intensity, call_args)
         out <- list(result = intensity$result, func = intensity$func)
+      }
+      
+      if (should_log) {
+        cat(sprintf("  [intens_func] Task %d/%d complete\n", i, length(times)), file = stderr())
       }
       out
     }
