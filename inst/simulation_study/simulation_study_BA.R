@@ -48,10 +48,10 @@ N_SIMS = 100
 N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 128))
 # Core allocation: outer = parallel sim+fit workers; inner = cores per fit (intensity cache).
 # For 128 cores: 4 inner x 32 outer keeps fits fast and uses all cores.
+# R < 4.4.0 has a socket limit of 128. We cap outer workers at 60 to be safe.
 N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
-N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+N_CORES_OUTER <- min(60L, max(1L, floor(N_CORES / N_CORES_INNER)))
 if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
-  N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
 }
 
@@ -87,13 +87,16 @@ make_cluster <- function(N_CORES){
 }
 
 if(SIMULATE){
-  # make the cluster: N_CORES_OUTER workers, each fit uses N_CORES_INNER for intensity list
+  # make the cluster: N_CORES_OUTER workers (capped at 120 for R socket limit)
   t <- proc.time()
-  cl <- make_cluster(N_CORES_OUTER)
+  # R < 4.4.0 has a limit of 128 total connections. PSOCK workers use 1 each.
+  # We cap at 120 to leave room for files/stdout/etc.
+  N_BA_WORKERS <- min(N_CORES_OUTER, 120L)
+  cl <- make_cluster(N_BA_WORKERS)
   clusterExport(cl, c("N_CORES_INNER"))
   set.seed(SEED)
-  cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
-      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+  cat("Core allocation:", N_BA_WORKERS, "outer x", N_CORES_INNER, "inner =",
+      N_BA_WORKERS * N_CORES_INNER, "total (of", N_CORES, "available)\n")
   
   # Ensure the cluster will be stopped no matter what.
   on.exit({

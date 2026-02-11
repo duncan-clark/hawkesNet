@@ -58,6 +58,7 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
 }
 # Core allocation: 128 -> 16 outer x 8 inner; 256 -> 16 outer x 16 inner.
 # We prioritize inner cores now because the intensity cache is the bottleneck.
+# R < 4.4.0 has a socket limit of 128. We cap outer workers at 64 to be safe.
 CORES_OUTER_ENV <- Sys.getenv("CORES_OUTER", "")
 if (nzchar(CORES_OUTER_ENV)) {
   N_CORES_OUTER <- as.numeric(CORES_OUTER_ENV)
@@ -71,6 +72,11 @@ if (nzchar(CORES_OUTER_ENV)) {
   N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 8)) # Default to 8 inner
   N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
 }
+# Final safety cap for R socket limits (128 total)
+# Each PSOCK worker with outfile="" uses 2 connections.
+N_CORES_OUTER <- min(N_CORES_OUTER, 60L)
+N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+
 cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
     N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
 
@@ -121,11 +127,14 @@ make_cluster <- function(n_workers) {
 }
 
 if(SIMULATE){
-  # 1. Simulation Step: Use ALL available cores for outer workers
+  # 1. Simulation Step: Use ALL available cores for outer workers (capped at 120 for R socket limit)
   # Simulation is single-threaded, so nested parallelism is not needed here.
   t <- proc.time()
-  cat("Commencing simulation using", N_CORES, "parallel workers...\n")
-  cl_sim <- makeCluster(N_CORES)
+  # R < 4.4.0 has a limit of 128 total connections. PSOCK workers use 1 each.
+  # We cap at 120 to leave room for files/stdout/etc.
+  N_SIM_WORKERS <- min(N_CORES, 120L)
+  cat("Commencing simulation using", N_SIM_WORKERS, "parallel workers (capped at 120 for socket limits)...\n")
+  cl_sim <- makeCluster(N_SIM_WORKERS)
   registerDoParallel(cl_sim)
   clusterEvalQ(cl_sim, {
     library(hawkesNet)
