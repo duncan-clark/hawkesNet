@@ -56,26 +56,20 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- 256L
   cat("Request was 128; using 256 (USE_256_WHEN_128 set; typical when squeue shows 256)\n")
 }
-# Core allocation: 128 -> 32 outer x 4 inner (128, full use); 256 -> 51 outer x 5 inner. Override: CORES_OUTER or CORES_INNER.
+# Core allocation: 128 -> 16 outer x 8 inner; 256 -> 16 outer x 16 inner.
+# We prioritize inner cores now because the intensity cache is the bottleneck.
 CORES_OUTER_ENV <- Sys.getenv("CORES_OUTER", "")
 if (nzchar(CORES_OUTER_ENV)) {
   N_CORES_OUTER <- as.numeric(CORES_OUTER_ENV)
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
-} else if (N_CORES == 128L) {
-  N_CORES_OUTER <- 32L
-  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))  # 4 -> 32*4=128, full utilization
-  cat("Using 128 cores:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
-} else if (N_CORES == 256L) {
-  N_CORES_OUTER <- 51L
-  N_CORES_INNER <- max(1L, ceiling(N_CORES / N_CORES_OUTER))  # 5 -> 51*5=255
-  cat("Using 256 cores:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
+} else if (N_CORES >= 128L) {
+  # Use fewer outer workers but many more inner cores for intensity cache speedup
+  N_CORES_OUTER <- 16L 
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
+  cat("Using high-core mode:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
 } else {
-  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 4))
+  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 8)) # Default to 8 inner
   N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
-  if (N_CORES_OUTER * N_CORES_INNER > N_CORES) {
-    N_CORES_OUTER <- max(1L, floor(sqrt(N_CORES)))
-    N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
-  }
 }
 cat("Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
     N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
@@ -173,6 +167,10 @@ if(SIMULATE){
   cat("Using", N_CORES_OUTER, "outer workers,", N_CORES_INNER, "inner cores each\n")
   t1 <- proc.time()
   fits <- parLapply(cl=cl,sims,function(x){
+    # Detailed logging for each outer worker
+    worker_id <- Sys.getpid()
+    message(sprintf("  [Outer Worker %d] Starting fit for sim with %d events...", worker_id, length(x$events$t)))
+    
     fit <- tryCatch({
       fit_hawkesNet(
         params_init = params_init,
@@ -180,7 +178,7 @@ if(SIMULATE){
         mark_filtration = x$net,
         PMF_mark = PMF_mark_CS,
         formula_RHS = "edges + triangles + star(c(2,3))",
-        trace = 0,
+        trace = 1, # Increased trace for more optim info
         maxit = MAX_ITER,
         truncation = TRUNCATION,
         fixed_params = c("K"),
@@ -189,14 +187,18 @@ if(SIMULATE){
         cores = N_CORES_INNER,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
-        verbose = FALSE
+        verbose = TRUE # Set to TRUE for inner diagnostics
       )
     }, error = function(e) {
-      # Already inside parallel worker; just return NULL or partial data
-      message("Error in fit_hawkesNet: ", e$message)
+      message(sprintf("  [Outer Worker %d] ERROR: %s", worker_id, e$message))
       return(e$message)
     })
-    if (is.list(fit) && !is.null(fit$intens_funcs)) fit$intens_funcs <- NULL
+    
+    if (is.list(fit)) {
+      message(sprintf("  [Outer Worker %d] Fit complete (convergence=%d, iterations=%d)", 
+                      worker_id, fit$fit$convergence, fit$fit$counts[1]))
+      if (!is.null(fit$intens_funcs)) fit$intens_funcs <- NULL
+    }
     return(fit)
   })
   # Strip intensity caches from fits to free memory (each fit has n_events closures)
