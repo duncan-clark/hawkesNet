@@ -667,6 +667,9 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
   if (is.null(fit_inhom_structural)) cat("  No structural fit available; skipping structural GOF\n")
 }
 
+# --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
+cat(sprintf("  [GOF] Memory after structural GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
+
 # GOF for nodeMatch model (second)
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   cat("\n  GOF for nodeMatch model...\n")
@@ -715,6 +718,9 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMatch GOF\n")
   if (is.null(fit_inhom_nodematch)) cat("  No nodeMatch fit available; skipping nodeMatch GOF\n")
 }
+
+# --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
+cat(sprintf("  [GOF] Memory after nodeMatch GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
 # GOF for nodeMix model (third)
 if (RUN_GOF && !is.null(fit_inhom_nodemix)) {

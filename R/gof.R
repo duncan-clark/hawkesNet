@@ -393,14 +393,22 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       cat("  Simulations will use homogeneous background (cond_intensity)\n")
     }
   }
+  # CRITICAL: Use safe_parallel_lapply instead of raw parallel::mclapply.
+  # Raw mclapply doesn't guard BLAS/OpenMP threads before forking and doesn't
+  # clean up zombie children from prior mclapply calls (e.g. the fitting step).
+  # After sequential fits, BLAS threads may be restored to multi-threaded state;
+  # forking with active BLAS threads causes deadlock on the second fork.
+  cat(sprintf("  [GOF] Memory before simulation fork: %.1f Mb\n", gc()[2, 2]), file = stderr())
+  cat(sprintf("  [GOF] Starting %d parallel simulations on %d cores at %s\n",
+              n_sim, cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
   sim_results <- tryCatch({
-    parallel::mclapply(seq_len(n_sim), function(i) {
+    safe_parallel_lapply(seq_len(n_sim), function(i) {
       s <- tryCatch(
         sim_hawkesNet(
           params = pfit,
           time_window = time_window,
           PMF_mark = PMF_mark,
-          cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom if use_inhom
+          cond_intensity = cond_intensity,
           formula_RHS = formula_RHS,
           truncation = truncation,
           mark_decay = mark_decay,
@@ -409,7 +417,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           verbose = FALSE,
           mu_multiplier = mu_multiplier,
           stop_on_full_network = FALSE,
-          inhom_bg = inhom_bg  # Pass inhom_bg to enable inhomogeneous simulation
+          inhom_bg = inhom_bg
         ),
         error = function(e) { 
           return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
@@ -419,11 +427,13 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
         return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
       }
       return(list(net = s$net, error = NULL))
-    }, mc.cores = cores)
+    }, mc.cores = cores, parallel_type = "auto")
   }, error = function(e) {
     if (verbose) cat("  ERROR: Failed to run simulations:", e$message, "\n")
+    cat(sprintf("  [GOF] Simulation FAILED: %s\n", e$message), file = stderr())
     list()  # Return empty list if simulations fail completely
   })
+  cat(sprintf("  [GOF] Simulations complete at %s\n", format(Sys.time(), "%H:%M:%S")), file = stderr())
   
   if (is.null(sim_results) || length(sim_results) == 0) {
     if (verbose) cat("  No simulation results; returning empty GOF results\n")
@@ -530,6 +540,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     # the workers are as lean as possible.
     
     if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
+    cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
+                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
     
     # Combine the fast distributional statistics into a single parallel pass
     # This reduces the number of mclapply forks/joins.
@@ -570,6 +582,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
+    cat(sprintf("  [GOF] Starting waiting times (%d nets, %d cores) at %s\n",
+                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
     GOF_results$wait_sim <- tryCatch({
       # Get ERNM statistic names from formula (use first simulated network or observed)
       exp_cs <- tryCatch({
@@ -595,6 +609,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       NULL
     })
     
+    cat(sprintf("  [GOF] Waiting times complete at %s\n", format(Sys.time(), "%H:%M:%S")), file = stderr())
     if (verbose) {
       cat("    Waiting times: done\n")
       cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")

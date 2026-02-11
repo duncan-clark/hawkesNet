@@ -82,9 +82,9 @@ p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
              CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
-  # PSOCK cluster: n_workers = N_CORES_OUTER. Each worker runs one sim or one fit at a time;
-  # fit_hawkesNet(..., cores = N_CORES_INNER) uses that many cores for the intensity cache.
-  cl <- makeCluster(n_workers)
+  # PSOCK cluster: each worker runs one sim or one fit at a time.
+  # outfile="" ensures worker stdout/stderr are forwarded to the master (visible in .out/.err).
+  cl <- makeCluster(n_workers, outfile = "")
   registerDoParallel(cl)
   # export libraries to cluster:
   clusterEvalQ(cl, {
@@ -151,13 +151,17 @@ if(SIMULATE){
   sims <- sims[sapply(sims, length) != 0]
   gc()
   
-  # 2. Fitting Step: Use nested parallelism (Outer x Inner)
-  # Fitting is bottlenecked by the intensity cache, which is multi-threaded.
+  # 2. Fitting Step: All outer parallelism, sequential intensity cache per worker.
+  # CRITICAL: Nested parallelism (PSOCK outer + fork inner) is unstable:
+  # forking inside PSOCK workers can deadlock when BLAS threads are active,
+  # and RhpcBLASctl may not be available in the worker environment.
+  # Since fitting is fast with combined intensity closures, sequential cache
+  # build per worker is acceptable with maximum outer parallelism.
+  N_FIT_WORKERS <- min(N_CORES, length(sims))
   cat("\nCommencing Fitting\n")
-  cat("Using nested parallelism:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner cores each\n")
+  cat("Using", N_FIT_WORKERS, "parallel workers (sequential intensity cache per worker)\n")
   
-  cl_fit <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl_fit, c("N_CORES_INNER"))
+  cl_fit <- make_cluster(N_FIT_WORKERS)
   
   params_init <- list(mu = 10,
                       beta_overall = 1,
@@ -186,7 +190,7 @@ if(SIMULATE){
         fixed_params = c("K"),
         method = "Nelder-Mead",
         parscale = p_scale,
-        cores = N_CORES_INNER,
+        cores = 1L,  # Sequential: no forking inside PSOCK worker (avoids BLAS deadlock)
         cache_intensity = TRUE,
         combine_intensity = TRUE,
         verbose = TRUE
@@ -248,17 +252,18 @@ if(RUN_CONSISTENCY){
                       node_lambda = 1,
                       CS_params = c(-6.7, 2, 0.1, -0.1))
 
-  # Setup Cluster — use N_CORES_OUTER workers, each fit gets N_CORES_INNER for intensity cache
+  # Setup Cluster — all-outer parallelism, sequential intensity cache per worker.
+  # No nested parallelism (fork inside PSOCK) to avoid BLAS deadlocks.
+  N_CONSISTENCY_WORKERS <- min(N_CORES, N_SIMS_CONSISTENCY)
   t_consistency_total <- proc.time()
   cat("=== Consistency Study (CS) ===\n")
   cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
   cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
-  cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
-      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+  cat("  Using", N_CONSISTENCY_WORKERS, "parallel workers (sequential intensity cache per worker)\n")
   cat("Setting up cluster...\n")
   t_cluster <- proc.time()
-  cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER", "p_scale"))
+  cl <- make_cluster(N_CONSISTENCY_WORKERS)
+  clusterExport(cl, c("params_true", "TRUNCATION", "MAX_ITER", "p_scale"))
   cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
 
   # Storage for results
@@ -273,8 +278,8 @@ if(RUN_CONSISTENCY){
     clusterExport(cl, "curr_time", envir = environment())
 
     # Parallel Simulation & Fitting Loop
-    cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
-        N_CORES_INNER, "inner cores...\n")
+    cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CONSISTENCY_WORKERS,
+        "parallel workers (sequential cache)...\n")
     t_simfit <- proc.time()
     res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
 
@@ -320,7 +325,7 @@ if(RUN_CONSISTENCY){
                             verbose = FALSE,
                             fixed_params = c("K"),
                             parscale = p_scale,
-                            cores = N_CORES_INNER,
+                            cores = 1L,  # Sequential: no forking inside PSOCK worker
                             method = "Nelder-Mead")
       }, error = function(e) return(NULL))
 
