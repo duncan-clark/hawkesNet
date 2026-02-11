@@ -585,14 +585,22 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     })
     
     if (!is.null(dist_stats_sim)) {
-      # Filter out NULLs if any task failed completely
-      dist_stats_sim <- dist_stats_sim[!sapply(dist_stats_sim, is.null)]
+      # Filter out NULLs and atomic vectors (error messages) if any task failed
+      dist_stats_sim <- dist_stats_sim[sapply(dist_stats_sim, is.list)]
       
       if (length(dist_stats_sim) > 0) {
-        GOF_results$degree_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$degree))
-        GOF_results$esp_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) x$esp))
-        GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) x$geodist)
-        nodemix_list <- lapply(dist_stats_sim, function(x) x$nodemix)
+        GOF_results$degree_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) {
+          if (is.list(x) && !is.null(x$degree)) x$degree else rep(NA_real_, n_deg_bins)
+        }))
+        GOF_results$esp_sim <- do.call(rbind, lapply(dist_stats_sim, function(x) {
+          if (is.list(x) && !is.null(x$esp)) x$esp else rep(NA_real_, n_esp_bins)
+        }))
+        GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) {
+          if (is.list(x) && !is.null(x$geodist)) x$geodist else numeric(0)
+        })
+        nodemix_list <- lapply(dist_stats_sim, function(x) {
+          if (is.list(x)) x$nodemix else NULL
+        })
         if (!all(sapply(nodemix_list, is.null))) {
           # Filter out NULLs from nodemix_list before rbind
           nodemix_list_clean <- nodemix_list[!sapply(nodemix_list, is.null)]

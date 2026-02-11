@@ -64,6 +64,9 @@ GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
+RUN_FIT_STRUCTURAL <- TRUE
+RUN_FIT_NODEMATCH <- FALSE
+RUN_FIT_NODEMIX <- FALSE
 TOPIC <- "Point processes and geometric inequalities"
 
 # Reproducibility
@@ -193,7 +196,7 @@ fit_inhom_structural <- NULL
 # gwdegree(0.5) captures the full degree distribution with one parameter
 # (geometrically weighted), replacing star(c(2,3,4,5)) which needed 4 params.
 FORMULA_RHS_STRUCTURAL <- "edges + triangles + gwdegree(0.5)"
-if (!is.null(inhom_bg)) {
+if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
   t_step_structural <- proc.time()
@@ -264,7 +267,7 @@ if (!is.null(inhom_bg)) {
 # =============================================================================
 fit_inhom_nodematch <- NULL
 FORMULA_RHS_NODEMATCH <- "edges + triangles + gwdegree(0.5) + nodeMatch('gender')"
-if (!is.null(inhom_bg)) {
+if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
   t_step_nodematch <- proc.time()
@@ -423,7 +426,7 @@ if (!is.null(inhom_bg)) {
 # =============================================================================
 fit_inhom_nodemix <- NULL
 FORMULA_RHS_NODEMIX <- "edges + triangles + gwdegree(0.5) + nodeMix('gender')"
-if (!is.null(inhom_bg)) {
+if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
   cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
   t_step_nodemix <- proc.time()

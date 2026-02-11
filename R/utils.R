@@ -203,15 +203,19 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
                             mc.preschedule = mc.preschedule)
   
   # Check for errors in results (mclapply returns try-error or NULL on some failures)
-  if (is.list(res)) {
-    errors <- vapply(res, function(x) inherits(x, "try-error"), logical(1))
-    if (any(errors)) {
-      message("  [parallel] WARNING: ", sum(errors), " tasks failed in mclapply")
-    }
-    nulls <- vapply(res, is.null, logical(1))
-    if (all(nulls) && length(res) > 0) {
-      message("  [parallel] CRITICAL: All tasks returned NULL. This often indicates a fork crash (OOM or deadlock).")
-    }
+  if (!is.list(res)) {
+    # If res is not a list (e.g. character vector of errors), wrap it
+    message("  [parallel] CRITICAL: mclapply did not return a list. This usually indicates a major fork failure.")
+    res <- lapply(res, function(x) structure(list(message = as.character(x)), class = "try-error"))
+  }
+  
+  errors <- vapply(res, function(x) inherits(x, "try-error"), logical(1))
+  if (any(errors)) {
+    message("  [parallel] WARNING: ", sum(errors), " tasks failed in mclapply")
+  }
+  nulls <- vapply(res, is.null, logical(1))
+  if (all(nulls) && length(res) > 0) {
+    message("  [parallel] CRITICAL: All tasks returned NULL. This often indicates a fork crash (OOM or deadlock).")
   }
   
   return(res)
