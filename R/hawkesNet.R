@@ -233,9 +233,17 @@ sim_hawkesNet <- function(params,
   t_last_accepted <- time_window[1]  # time of last accepted event (or start)
   beta_overall <- params$beta_overall
 
+  # Optimization: pre-calculate mu_fun values if inhomogeneous
+  if (use_inhom) {
+    # The event_queue times are fixed at start.
+    # Pre-evaluate mu_fun for all proposed points.
+    mu_proposed <- pmax(mu_fun(event_queue$time), 1e-12)
+  }
+
   while (nrow(event_queue) > 0) {
     t <- proc.time()
     current_event <- event_queue[1, ,drop = FALSE]
+    curr_idx <- n_proposed + 1L
     event_queue <- event_queue[-1, ,drop = FALSE]  # Remove the processed event
 
     if(is.null(current_net %v% 'n')){
@@ -275,7 +283,7 @@ sim_hawkesNet <- function(params,
         # Joint acceptance: need full conditional intensity (mark density * ground intensity)
         # Get mu_at_t for inhomogeneous case
         mu_at_t <- if (use_inhom) {
-          pmax(mu_fun(current_event$time), 1e-12)
+          mu_proposed[curr_idx]
         } else { NULL }
         if (use_inhom) {
           intensity <- cond_intensity_inhom(new_net = net,
@@ -301,7 +309,7 @@ sim_hawkesNet <- function(params,
         if(!is.null(n_mark_sample)){
           # Importance sampling path: need full cond_intensity
           mu_at_t <- if (use_inhom) {
-            pmax(mu_fun(current_event$time), 1e-12)
+            mu_proposed[curr_idx]
           } else { NULL }
           imp_sample <- sapply(1:n_mark_sample,function(i){
             mark_sample <- PMF_mark(time = current_event$time,
@@ -352,7 +360,7 @@ sim_hawkesNet <- function(params,
           # Use O(1) kernel recurrence instead of O(N) sum.
           dt <- current_event$time - t_last_accepted
           kernel_sum_at_t <- kernel_R * exp(-beta_overall * dt)
-          mu_ground <- if (use_inhom) pmax(mu_fun(current_event$time), 1e-12) else params$mu
+          mu_ground <- if (use_inhom) mu_proposed[curr_idx] else params$mu
           intensity <- mu_ground + params$K * kernel_sum_at_t
         }
         # Use the same proposed mark for acceptance and for updating (do not resample)

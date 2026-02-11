@@ -517,6 +517,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
     })
     
+    # --- Optimization: Clean up net_obs before parallel stats if possible ---
+    # (Actually we need it for names, but we can clear some memory)
+    gc()
+
     # Simulated statistics (parallelized) - each wrapped in tryCatch
     n_deg_bins <- max_deg - degree + 1L
     n_esp_bins <- k_esp - esp + 1L
@@ -530,7 +534,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     # Combine the fast distributional statistics into a single parallel pass
     # This reduces the number of mclapply forks/joins.
     dist_stats_sim <- tryCatch({
-      parallel::mclapply(sim_nets, function(n) {
+      # Use safe_parallel_lapply if available for better stability on cluster
+      safe_parallel_lapply(sim_nets, function(n) {
         tryCatch({
           # Ensure vertex attributes for nodeMix if needed
           n_clean <- n
@@ -547,7 +552,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
             } else NULL
           )
         }, error = function(e) list(degree = rep(NA, n_deg_bins), esp = rep(NA, n_esp_bins), geodist = numeric(0), nodemix = NULL))
-      }, mc.cores = cores)
+      }, mc.cores = cores, parallel_type = "auto")
     }, error = function(e) {
       if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
       NULL
@@ -561,6 +566,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       if (!all(sapply(nodemix_list, is.null))) {
         GOF_results$nodemix_sim <- do.call(rbind, nodemix_list)
       }
+      rm(dist_stats_sim); gc()
     }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
@@ -574,7 +580,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       }, error = function(e) NULL)
       stat_names <- if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names)) exp_cs$CS_params_names else NULL
       
-      parallel::mclapply(sim_nets, function(n) {
+      # Use safe_parallel_lapply for stability
+      safe_parallel_lapply(sim_nets, function(n) {
         tryCatch({
           wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = formula_RHS)
           if (!is.null(stat_names) && length(stat_names) == length(wait_sim_raw)) {
@@ -582,7 +589,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           }
           wait_sim_raw
         }, error = function(e) list())
-      }, mc.cores = cores)
+      }, mc.cores = cores, parallel_type = "auto")
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute simulated waiting times:", e$message, "\n")
       NULL
