@@ -1,2 +1,8 @@
 ^hawkesNet\.Rproj$
 ^\.Rproj\.user$
+^cluster_output$
+^paper_dump$
+^Rplots\.pdf$
+^\.lib_local$
+^\.Rcheck$
+^\.\.Rcheck$

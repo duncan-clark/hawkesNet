@@ -19,5 +19,5 @@ Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
 \code{node_lambda} are strictly positive and finite when present, and that
 \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
 finite, and sum to strictly less than 1 (so the reference level gets positive
-probability). If any check fails, \code{stop()} is called with a message.
+probability).  If any check fails, \code{stop()} is called with a message.
 }

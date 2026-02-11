@@ -26,17 +26,25 @@ make_network_growth_animation <- function(net_list,
                                           times,
                                           adjust = 10,
                                           file = NULL){
+  if (!requireNamespace("networkDynamic", quietly = TRUE)) {
+    stop("Package 'networkDynamic' is required for make_network_growth_animation(). ",
+         "Install it with install.packages('networkDynamic').")
+  }
+  if (!requireNamespace("animation", quietly = TRUE) && !is.null(file)) {
+    stop("Package 'animation' is required to save animation to file. ",
+         "Install it with install.packages('animation').")
+  }
 
   for(i in seq_along(net_list)){
     set.vertex.attribute(net_list[[i]],'vertex.names',1:(net_list[[i]] %n% 'n'))
   }
 
-  animate <- networkDynamic(network.list=net_list,
+  animate <- networkDynamic::networkDynamic(network.list=net_list,
                             onsets = adjust*times,
                             termini = adjust * c(times[seq_len(length(times))[-1]], max(times)),
                             vertex.pid = "vertex.names"
   )
-  render.animation(animate,
+  ndtv::render.animation(animate,
                    render.par = list(tween.frames = 1,
                                      show.time = TRUE,
                                      show.stats = NULL,
@@ -46,7 +54,7 @@ make_network_growth_animation <- function(net_list,
                    displayisolates = TRUE
   )
   if(!is.null(file)){
-    saveVideo(ani.replay(),
+    animation::saveVideo(animation::ani.replay(),
               video.name=file,
               other.opts="-b 5000k",
               clean=TRUE)
@@ -86,10 +94,10 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
 
   if (use_psock) {
     n_workers <- mc.cores
-    # Cap PSOCK workers by default to avoid OOM on interactive nodes (e.g. RStudio on NeSI).
-    # Each worker loads packages + a copy of the network; 50+ workers can exhaust memory
-    # and cause "error reading from connection" when workers are killed.
-    max_psock <- getOption("hawkesNet.max_psock_workers", 16L)
+    # Cap PSOCK workers to avoid OOM. Each worker loads packages + a copy of the network.
+    # Default: 16 for interactive sessions (laptops), higher for SLURM batch jobs.
+    default_cap <- if (!interactive() && nzchar(Sys.getenv("SLURM_JOB_ID"))) 64L else 16L
+    max_psock <- getOption("hawkesNet.max_psock_workers", default_cap)
     if (n_workers > max_psock) {
       message("  [parallel] Capping PSOCK workers to ", max_psock, " (avoid OOM; set options(hawkesNet.max_psock_workers = N) to override)")
       n_workers <- as.integer(max_psock)
@@ -112,7 +120,19 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
   }
 
   # Fork-based: plain mclapply (no pbmcapply progress pipe)
-  message("  [parallel] mclapply (", mc.cores, " cores, fork)")
+  # Clean up any zombie child processes from previous mclapply calls.
+  # Without this, the second mclapply in the same session can hang because
+  # stale pipes/signal handlers from the first call interfere.
+  tryCatch({
+    children_fn  <- get("children",  envir = asNamespace("parallel"))
+    mccollect_fn <- get("mccollect", envir = asNamespace("parallel"))
+    while (length(children_fn()) > 0L) {
+      mccollect_fn(wait = FALSE, timeout = 1)
+    }
+  }, error = function(e) NULL)
+  gc()  # reclaim memory before forking so children inherit a lean process
+  message("  [parallel] mclapply (", mc.cores, " cores, fork",
+          if (mc.preschedule) ", preschedule" else "", ")")
   parallel::mclapply(X, FUN, mc.cores = mc.cores,
                      mc.preschedule = mc.preschedule)
 }
@@ -265,32 +285,36 @@ points(t, rep(0, length(t)), pch = 19, col = "blue", cex = 1.5)
 
 plot_kde_intensity <- function(event_times,
                                bw_adjust = 0.5) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Package 'ggplot2' is required for plot_kde_intensity(). ",
+         "Install it with install.packages('ggplot2').")
+  }
   # event_times: numeric vector (0 to 1)
   df <- data.frame(time = event_times)
   
-  ggplot(df, aes(x = time)) +
+  ggplot2::ggplot(df, ggplot2::aes(x = time)) +
     # 1. The KDE Line (Raw Intensity)
-    stat_density(
-      aes(y = after_stat(density)), 
-      geom = "line", 
-      color = "#2c3e50", 
-      size = 1.2, 
+    ggplot2::stat_density(
+      ggplot2::aes(y = ggplot2::after_stat(density)),
+      geom = "line",
+      color = "#2c3e50",
+      linewidth = 1.2,
       adjust = bw_adjust
     ) +
     # 2. Add rug marks to see the actual event locations
-    geom_rug(alpha = 0.4, color = "firebrick") +
+    ggplot2::geom_rug(alpha = 0.4, color = "firebrick") +
     # 3. Formatting
-    scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
-    labs(
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::labs(
       title = "Estimated Event Intensity over Time",
       subtitle = paste0("KDE Line Plot (Bandwidth Adjust = ", bw_adjust, ")"),
       x = "Normalized Time (0 = Oldest, 1 = Newest)",
       y = "Intensity (Event Density)"
     ) +
-    theme_minimal() +
-    theme(
-      panel.grid.minor = element_blank(),
-      axis.title = element_text(face = "bold")
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.title = ggplot2::element_text(face = "bold")
     )
 }
 
@@ -420,27 +444,6 @@ point_process_params_valid <- function(params, eps = 1e-10) {
   TRUE
 }
 
-#' Validate point process parameters and stop if invalid
-#'
-#' Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
-#' \code{node_lambda} are strictly positive and finite when present, and that
-#' \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
-#' finite, and sum to strictly less than 1 (so the reference level gets positive
-#' probability). If any check fails, \code{stop()} is called with a message.
-#'
-#' @param params List of parameters (e.g. passed to \code{sim_hawkesNet}).
-#' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
-#' @return \code{invisible(params)} if valid.
-#' @export
-#' Repair/clamp vertex_categorical parameters to valid range
-#'
-#' Ensures vertex_categorical parameters are non-negative, finite, and sum < 1.
-#' Used after Nelder-Mead optimization which doesn't respect bounds.
-#'
-#' @param params Parameter list (may contain vertex_categorical).
-#' @param eps Small positive value used as floor (default 1e-6).
-#' @return Parameter list with repaired vertex_categorical.
-#' @noRd
 #' Reconstruct vertex_categorical parameters with correct names after relist
 #'
 #' When parameters are flattened and then relisted, vertex_categorical names may be lost.
@@ -570,6 +573,18 @@ repair_vertex_categorical_params <- function(params, eps = 1e-6) {
   params
 }
 
+#' Validate point process parameters and stop if invalid
+#'
+#' Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
+#' \code{node_lambda} are strictly positive and finite when present, and that
+#' \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
+#' finite, and sum to strictly less than 1 (so the reference level gets positive
+#' probability).  If any check fails, \code{stop()} is called with a message.
+#'
+#' @param params List of parameters (e.g. passed to \code{sim_hawkesNet}).
+#' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
+#' @return \code{invisible(params)} if valid.
+#' @export
 validate_point_process_params <- function(params, eps = 1e-10) {
   if (is.null(params) || length(params) == 0) return(invisible(params))
   eps <- max(eps, .Machine$double.eps)
@@ -637,7 +652,10 @@ pp_intensity_ggplot <- function(times,
                                 spikes = TRUE,
                                 smooth = TRUE,
                                 title = "Point process intensity-style plot") {
-  
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Package 'ggplot2' is required for pp_intensity_ggplot(). ",
+         "Install it with install.packages('ggplot2').")
+  }
   times <- sort(as.numeric(times))
   times <- times[is.finite(times)]
   if (!length(times)) stop("times is empty after removing non-finite values.")
@@ -673,9 +691,9 @@ pp_intensity_ggplot <- function(times,
     plot_layers <- c(
       plot_layers,
       list(
-        geom_line(
+        ggplot2::geom_line(
           data = df_lambda,
-          aes(time, intensity),
+          ggplot2::aes(time, intensity),
           linewidth = 1*line_multiplier
         )
       )
@@ -691,22 +709,22 @@ pp_intensity_ggplot <- function(times,
     plot_layers <- c(
       plot_layers,
       list(
-        geom_linerange(
+        ggplot2::geom_linerange(
           data = df_events,
-          aes(x = time, ymin = 0, ymax = ymax),
+          ggplot2::aes(x = time, ymin = 0, ymax = ymax),
           alpha = 0.6
         )
       )
     )
   }
   
-  ggplot() +
+  ggplot2::ggplot() +
     plot_layers +
-    coord_cartesian(xlim = c(t0, t1), ylim = c(0, ymax)) +
-    labs(
+    ggplot2::coord_cartesian(xlim = c(t0, t1), ylim = c(0, ymax)) +
+    ggplot2::labs(
       x = "time",
       y = "intensity",
       title = title
     ) +
-    theme_minimal(base_size = 1*base_multiplier)
+    ggplot2::theme_minimal(base_size = 1*base_multiplier)
 }

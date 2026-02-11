@@ -16,6 +16,12 @@ fit_hawkesNet(
   parscale = NULL,
   fixed_params = NULL,
   cache_intensity = TRUE,
+  combine_intensity = TRUE,
+  method = "Nelder-Mead",
+  verbose = TRUE,
+  parallel_type = "auto",
+  mu_vec = NULL,
+  integral_bg = NULL,
   ...
 )
 }
@@ -26,7 +32,7 @@ fit_hawkesNet(
 
 \item{mark_filtration}{Observed network.}
 
-\item{PMF_mark}{Mark PMF function.}
+\item{PMF_mark}{Mark PMF function (e.g. \code{\link{PMF_mark_BA}} or \code{\link{PMF_mark_CS}}).}
 
 \item{maxit}{Maximum number of iterations for the optimizer.}
 
@@ -42,11 +48,57 @@ fit_hawkesNet(
 
 \item{cache_intensity}{If \code{TRUE}, cache intensity functions (default \code{TRUE}).}
 
-\item{...}{Passed to \code{loglik_hawkesNet} (e.g. \code{truncation}, \code{formula_RHS}).}
+\item{combine_intensity}{If \code{TRUE} (default) and fitting with an
+inhomogeneous background (\code{mu_vec} supplied), combine per-event closures
+into one vectorized closure for faster evaluation.}
+
+\item{method}{Optimization method: \code{"Nelder-Mead"} (default, derivative-free) or
+\code{"L-BFGS-B"} (gradient-based with box constraints).}
+
+\item{verbose}{Print diagnostics to \code{stderr} (default \code{TRUE}).}
+
+\item{parallel_type}{Parallelization strategy for intensity cache build:
+\code{"auto"} (default), \code{"psock"}, or \code{"fork"}.}
+
+\item{mu_vec}{Optional numeric vector of background rates at each event time.
+When supplied together with \code{integral_bg}, the model uses an
+inhomogeneous background rate instead of constant \code{params$mu}.}
+
+\item{integral_bg}{Optional scalar: integral of the background rate over
+the observation window.  Required when \code{mu_vec} is supplied.}
+
+\item{...}{Passed to \code{\link{loglik_hawkesNet}} and \code{PMF_mark}
+(e.g. \code{truncation}, \code{formula_RHS}, \code{cores}).}
 }
 \value{
-List with \code{fit} (output of \code{optim}), \code{intens_funcs}, \code{fit_table} (parameter estimates and standard errors), and \code{hessian} (numerical Hessian of negative log-likelihood at MLE, if numDeriv available).
+List with:
+\describe{
+\item{fit}{Output of \code{\link[stats]{optim}}.}
+\item{intens_funcs}{Cached intensity closures (can be large; NULL out and \code{gc()} when done).}
+\item{params_init_old}{Original \code{params_init} (for relist / GOF).}
+\item{fit_table}{Data frame of parameter estimates and standard errors.}
+\item{hessian}{Numerical Hessian of negative log-likelihood at MLE.}
+}
 }
 \description{
-Fit the Hawkes network growth model by maximum likelihood
+Estimates parameters of a Hawkes-driven network growth model via numerical
+optimisation of the log-likelihood.
+Supports both homogeneous (constant \code{mu}) and inhomogeneous (time-varying
+\code{mu(t)}) background rates; supply \code{mu_vec} and \code{integral_bg}
+(from \code{\link{prepare_inhomogeneous_background}}) for the latter.
+}
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+fit <- fit_hawkesNet(params, c(0, 3), sim$net, PMF_mark_BA,
+                     maxit = 50, verbose = FALSE, truncation = 30)
+fit$fit_table
+}
+}
+\seealso{
+\code{\link{loglik_hawkesNet}}, \code{\link{sim_hawkesNet}},
+\code{\link{prepare_inhomogeneous_background}}, \code{\link{gof}}
 }

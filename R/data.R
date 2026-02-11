@@ -19,12 +19,17 @@ NULL
 
 #' Hypertext 2009 contact list (temporal edges)
 #'
-#' @docType data
 #' @name ht09_contact_list
 #' @description
 #' Contact list / proximity network with temporal edge list: time and node pair.
-#' Stored as a tab-separated file in the package \code{data/} directory.
+#' Stored as a tab-separated file in \code{inst/extdata/ht09_contact_list.dat}.
 #' Used by the hypertext-conference example to fit or illustrate Hawkes network growth.
+#'
+#' Load with:
+#' \preformatted{
+#'   f <- system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet")
+#'   ht09 <- read.table(f)
+#' }
 #' @format
 #' A tab-separated text file: \code{time node_i node_j}.
 #' Time is in seconds; node IDs identify individuals.

@@ -2,38 +2,66 @@
 % Please edit documentation in R/mark_PMF.R
 \name{normalize_vertex_categorical_probs}
 \alias{normalize_vertex_categorical_probs}
-\title{Mark PMF for change statistic (ERGM-style) attachment}
+\alias{PMF_mark_CS}
+\title{Mark probability mass function using Change Statistics (CS/ERNM)}
 \usage{
 normalize_vertex_categorical_probs(probs, eps = 1e-10)
+
+PMF_mark_CS(
+  time,
+  params,
+  mark_filtration,
+  mark = NULL,
+  generate_mark = FALSE,
+  generate_density = TRUE,
+  new_edge_hash = NULL,
+  formula_RHS,
+  truncation = 1,
+  mark_decay = "node_entrance",
+  model = NULL,
+  max_node_time = NULL,
+  ...
+)
 }
 \arguments{
+\item{probs}{Named numeric vector of vertex categorical probabilities (used by helpers).}
+
+\item{eps}{Small positive value for probability clamping (default 1e-10).}
+
 \item{time}{Current event time.}
 
-\item{params}{List including \code{node_lambda}, \code{CS_params}, and optionally \code{beta_edges}, \code{K}, etc.}
+\item{params}{List with \code{node_lambda}, \code{CS_params}, \code{beta_edges},
+and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
-\item{mark_filtration}{Observed network up to \code{time}.}
+\item{mark_filtration}{Observed network (filtration) up to \code{time}.}
 
-\item{mark}{Optional network at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
+\item{mark}{Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
 
-\item{generate_mark}{If \code{TRUE}, sample a new edge (default \code{FALSE}).}
+\item{generate_mark}{If \code{TRUE}, generate a random mark sample.}
+
+\item{generate_density}{If \code{TRUE} (default), compute the log-density of the mark.}
 
 \item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
 
-\item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).}
+\item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).}
 
-\item{truncation}{Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.}
+\item{truncation}{Maximum number of nodes to consider for edge candidates (default 1).}
 
-\item{vertex_categorical}{Optional named list in \code{params}: for each discrete vertex attribute, a named
-numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
-Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).
-Values are normalized to sum to 1 per attribute; any positive values are valid.}
+\item{mark_decay}{Character string controlling how temporal weights decay.
+One of \code{"node_entrance"} (default) or \code{"activity"}.}
+
+\item{model}{Optional pre-built ERNM model object to reuse.}
+
+\item{max_node_time}{Optional maximum node time for temporal truncation.}
+
+\item{...}{Additional arguments; pass \code{return_combined_inputs = TRUE} to
+include change-statistic inputs in the return list.}
 }
 \value{
-List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
+List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 }
 \description{
-Probability mass function for the mark using an ERNM/ERGM-style model with change statistics and optional truncation.
-}
-\seealso{
-\code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
+\code{...} can include \code{return_combined_inputs = TRUE}: then the return list
+gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
+caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
 }

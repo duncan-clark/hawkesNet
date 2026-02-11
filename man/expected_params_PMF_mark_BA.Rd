@@ -7,7 +7,7 @@
 expected_params_PMF_mark_BA()
 }
 \value{
-List with \code{required} (character vector of parameter names).
+List with \code{required} (character vector: \code{beta_edges}, \code{m}).
 }
 \description{
 Expected parameter names for PMF_mark_BA

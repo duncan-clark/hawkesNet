@@ -1,15 +1,23 @@
 Package: hawkesNet
 Title: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models
-Version: 0.0.1
+Version: 0.1.0
 Author: Duncan A. Clark
 Maintainer: Duncan A. Clark <dac6@williams.edu>
 Authors@R: 
-    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
-Description: Simulate and fit maximum likelihood for Hawkesian network growth models.
+    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0000-0000-0000"))
+Description: Provides tools for simulating and fitting Hawkes-process-driven
+    network growth models via maximum likelihood.
+    Supports both homogeneous and inhomogeneous (KDE-estimated) background
+    rates, Barabási--Albert and change-statistic (ERNM) mark distributions,
+    parallel intensity-cache construction, and goodness-of-fit diagnostics.
 License: MIT + file LICENSE
+URL: https://github.com/duncan-clark/hawkesNet
+BugReports: https://github.com/duncan-clark/hawkesNet/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+Config/testthat/edition: 3
 Depends: 
     R (>= 3.5.0),
     data.table,
@@ -18,10 +26,16 @@ Depends:
     network,
     sna
 Imports:
-    Rcpp
+    graphics,
+    parallel,
+    stats,
+    utils
 Suggests:
     testthat (>= 3.0.0),
+    ggplot2,
+    httr,
     networkDynamic,
+    ndtv,
     animation,
     numDeriv,
     gender,

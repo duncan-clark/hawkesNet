@@ -13,27 +13,40 @@ PMF_mark_BA(
   generate_density = TRUE,
   new_edge_hash = NULL,
   truncation = NULL,
+  mark_decay = "node_entrance",
   ...
 )
 }
 \arguments{
 \item{time}{Current event time.}
 
-\item{params}{List with \code{beta_edges} (and optionally \code{beta_overall}, \code{K}, \code{mu}).}
+\item{params}{List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally \code{beta_overall}, \code{K}, \code{mu}.}
 
 \item{mark_filtration}{Observed network up to \code{time}.}
 
 \item{mark}{Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
 
-\item{generate_mark}{If \code{TRUE}, also sample a new edge (default \code{FALSE}).}
+\item{generate_mark}{If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).}
+
+\item{generate_density}{If \code{TRUE} (default), compute the log-density of the mark.}
 
 \item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
+
+\item{truncation}{Optional integer cap on the number of edges per event.}
+
+\item{mark_decay}{Character string controlling how temporal weights decay.
+One of \code{"node_entrance"} (default) or \code{"activity"}.}
+
+\item{...}{Additional arguments (currently unused).}
 }
 \value{
-List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
+List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 }
 \description{
-Probability mass function for the mark (new edge) given the filtration; uses degree-weighted attachment with exponential time decay.
+Probability mass function for the mark at each event: one new node and K edges from that node to existing nodes,
+where K ~ Poisson(m). So \code{m} is the expected number of edges added per time step. Edges are sampled
+without replacement with probabilities proportional to (degree * time decay); the likelihood uses the
+approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
 }
 \seealso{
 \code{\link[network]{network}}, \code{\link[network]{add.vertices}}

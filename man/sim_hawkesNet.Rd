@@ -9,23 +9,26 @@ sim_hawkesNet(
   time_window,
   PMF_mark,
   cond_intensity,
-  hashed_edges = F,
-  verbose = F,
+  hashed_edges = FALSE,
+  verbose = FALSE,
   mu_multiplier = 10,
-  joint_accept = F,
+  joint_accept = FALSE,
   n_mark_sample = NULL,
   stop_on_full_network = TRUE,
+  inhom_bg = NULL,
   ...
 )
 }
 \arguments{
-\item{params}{List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).}
+\item{params}{List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).
+For inhomogeneous background, \code{mu} is ignored and \code{mu_at_t} is used instead.}
 
 \item{time_window}{Numeric vector \code{c(t0, t1)}.}
 
 \item{PMF_mark}{Mark PMF function (e.g. \code{PMF_mark_BA} or \code{PMF_mark_CS}).}
 
-\item{cond_intensity}{Conditional intensity function (e.g. \code{cond_intensity}).}
+\item{cond_intensity}{Conditional intensity function (e.g. \code{cond_intensity} or \code{cond_intensity_inhom}).
+If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automatically.}
 
 \item{hashed_edges}{If \code{TRUE}, use a hash for edge lookup (default \code{FALSE}).}
 
@@ -39,6 +42,9 @@ sim_hawkesNet(
 
 \item{stop_on_full_network}{If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.}
 
+\item{inhom_bg}{Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
+If provided, uses \code{cond_intensity_inhom} with time-varying background rate.}
+
 \item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
 \value{
@@ -46,7 +52,8 @@ List with \code{events}, \code{net}, \code{accept_probs}.
 }
 \description{
 Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
+Supports both homogeneous (constant mu) and inhomogeneous (time-varying mu) background rates.
 }
 \seealso{
-\code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
+\code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
 }

@@ -144,7 +144,7 @@ process_dat <- function(dat,
               fit_temp = fit_temp))
 }
 
-net_dat <- read.table('hawkesNet/data/ht09_contact_list.dat')
+net_dat <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 net_dat <- data.frame(
   from = net_dat$V2,
   to = net_dat$V3,

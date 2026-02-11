@@ -10,7 +10,12 @@
 #' @param mark_filtration Observed network up to \code{time}.
 #' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
 #' @param generate_mark If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).
+#' @param generate_density If \code{TRUE} (default), compute the log-density of the mark.
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
+#' @param truncation Optional integer cap on the number of edges per event.
+#' @param mark_decay Character string controlling how temporal weights decay.
+#'   One of \code{"node_entrance"} (default) or \code{"activity"}.
+#' @param ... Additional arguments (currently unused).
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
@@ -629,6 +634,25 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
 #' caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
 #'
+#' @param time Current event time.
+#' @param params List with \code{node_lambda}, \code{CS_params}, \code{beta_edges},
+#'   and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.
+#' @param mark_filtration Observed network (filtration) up to \code{time}.
+#' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
+#' @param generate_mark If \code{TRUE}, generate a random mark sample.
+#' @param generate_density If \code{TRUE} (default), compute the log-density of the mark.
+#' @param new_edge_hash Optional hash of existing edges for fast lookup.
+#' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).
+#' @param truncation Maximum number of nodes to consider for edge candidates (default 1).
+#' @param mark_decay Character string controlling how temporal weights decay.
+#'   One of \code{"node_entrance"} (default) or \code{"activity"}.
+#' @param model Optional pre-built ERNM model object to reuse.
+#' @param max_node_time Optional maximum node time for temporal truncation.
+#' @param ... Additional arguments; pass \code{return_combined_inputs = TRUE} to
+#'   include change-statistic inputs in the return list.
+#' @param probs Named numeric vector of vertex categorical probabilities (used by helpers).
+#' @param eps Small positive value for probability clamping (default 1e-10).
+#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 #' @rdname PMF_mark_CS
 #' @export
 PMF_mark_CS <- function(time,

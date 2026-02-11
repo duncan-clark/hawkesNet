@@ -9,6 +9,8 @@ loglik_hawkesNet(
   time_window,
   mark_filtration,
   PMF_mark,
+  mu_vec = NULL,
+  integral_bg = NULL,
   edge_hash_list = NULL,
   verbose = FALSE,
   intens_funcs = NULL,
@@ -16,13 +18,21 @@ loglik_hawkesNet(
 )
 }
 \arguments{
-\item{params}{List of parameters.}
+\item{params}{List of parameters (\code{mu}, \code{beta_overall}, \code{K}, etc.).}
 
 \item{time_window}{Numeric \code{c(t0, t1)}.}
 
 \item{mark_filtration}{Observed network (filtration).}
 
-\item{PMF_mark}{Mark PMF function.}
+\item{PMF_mark}{Mark PMF function (e.g. \code{\link{PMF_mark_BA}} or \code{\link{PMF_mark_CS}}).}
+
+\item{mu_vec}{Optional numeric vector of background rates at each event time
+(same length as the event times extracted from \code{mark_filtration}).
+When \code{NULL} (default), a homogeneous rate \code{params$mu} is used.}
+
+\item{integral_bg}{Optional scalar: integral of the background rate over the
+observation window.
+Required (non-\code{NULL}) whenever \code{mu_vec} is supplied.}
 
 \item{edge_hash_list}{Optional list of edge hashes per event (for internal use).}
 
@@ -30,14 +40,31 @@ loglik_hawkesNet(
 
 \item{intens_funcs}{Precomputed intensity functions (for fitting).}
 
-\item{...}{Passed to \code{cond_intensity} / \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}).}
+\item{...}{Passed to \code{\link{cond_intensity}} or \code{\link{cond_intensity_inhom}}
+and to \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}, \code{cores},
+\code{combine_intensity}, \code{parallel_type}).}
 }
 \value{
-List with \code{loglik} and \code{intens_funcs}.
+List with \code{loglik} (scalar) and \code{intens_funcs} (list of closures).
 }
 \description{
 Computes the log-likelihood for a given parameter vector and observed network.
+Supports both homogeneous (constant \code{mu}) and inhomogeneous (time-varying
+\code{mu(t)}) background rates.  For an inhomogeneous background, supply
+\code{mu_vec} and \code{integral_bg} (from
+\code{\link{prepare_inhomogeneous_background}}).
+}
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+ll <- loglik_hawkesNet(params, c(0, 3), sim$net, PMF_mark_BA, truncation = 30)
+ll$loglik
+}
 }
 \seealso{
-\code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}
+\code{\link{fit_hawkesNet}}, \code{\link{prepare_inhomogeneous_background}},
+\code{\link{cond_intensity}}, \code{\link{cond_intensity_inhom}}
 }

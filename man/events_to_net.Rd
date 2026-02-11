@@ -4,7 +4,7 @@
 \alias{events_to_net}
 \title{Convert an event list (edge additions over time) to a network}
 \usage{
-events_to_net(events_list, net = NULL, directed = F)
+events_to_net(events_list, net = NULL, directed = FALSE)
 }
 \arguments{
 \item{events_list}{List with components \code{i} (head vertex indices), \code{j} (tail), and optionally \code{t} (times).}

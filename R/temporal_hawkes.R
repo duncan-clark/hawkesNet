@@ -109,6 +109,10 @@ loglik_temporal_hawkes <- function(params, realiz, windowT, dists = NULL,
 #' @param windowT Vector of `[start, end]` times
 #' @param method Optimization method (default "L-BFGS-B")
 #' @param kernel "exp" or "powerlaw"
+#' @param maxit Maximum number of iterations for the optimizer (default 200).
+#' @param trace Non-negative integer controlling optimizer output (default 0, silent).
+#' @param low Optional numeric vector of lower bounds for L-BFGS-B.
+#' @param upp Optional numeric vector of upper bounds for L-BFGS-B.
 #' @export
 fit_temporal_hawkes <- function(params_init,
                                 realiz,

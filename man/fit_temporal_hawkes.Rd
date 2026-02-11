@@ -25,7 +25,15 @@ fit_temporal_hawkes(
 
 \item{method}{Optimization method (default "L-BFGS-B")}
 
+\item{maxit}{Maximum number of iterations for the optimizer (default 200).}
+
 \item{kernel}{"exp" or "powerlaw"}
+
+\item{trace}{Non-negative integer controlling optimizer output (default 0, silent).}
+
+\item{low}{Optional numeric vector of lower bounds for L-BFGS-B.}
+
+\item{upp}{Optional numeric vector of upper bounds for L-BFGS-B.}
 }
 \description{
 Fits a Hawkes process with KDE background and specified kernel.
