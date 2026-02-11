@@ -184,7 +184,7 @@ if(SIMULATE){
         maxit = MAX_ITER,
         truncation = TRUNCATION,
         fixed_params = c("K"),
-        method = "Nelder-Mead",
+        method = "L-BFGS-B",
         parscale = p_scale,
         cores = N_CORES_INNER,
         cache_intensity = TRUE,
@@ -321,7 +321,7 @@ if(RUN_CONSISTENCY){
                             fixed_params = c("K"),
                             parscale = p_scale,
                             cores = N_CORES_INNER,
-                            method = "Nelder-Mead")
+                            method = "L-BFGS-B")
       }, error = function(e) return(NULL))
 
       if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
