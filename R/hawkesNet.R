@@ -1011,7 +1011,8 @@ fit_hawkesNet <- function(params_init,
     intens_funcs = cached_funcs,
     params_init_old = params_init_old,
     fit_table = fit_table,
-    hessian = hessian
+    hessian = hessian,
+    fixed_params = fixed_params
   )
 }
 

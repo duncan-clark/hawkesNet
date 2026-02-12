@@ -317,21 +317,44 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   if (verbose) cat("  Simulating", n_sim, "networks from fitted model...\n")
   
-  # Reconstruct fitted params: strip vertex_categorical_levels from skeleton
-  # (the fitter stripped it before unlist, so fit$par doesn't include it)
+  # Reconstruct fitted params from fit$par.
+  # fit_hawkesNet strips fixed_params and vertex_categorical_levels from the
+
+  # skeleton before optim, so fit$par only contains the FREE parameters.
+  # We must strip the same fields from our skeleton before relisting, then
+  # merge the fitted values back into the full params_init structure.
+  
+  fixed <- fit$fixed_params
+  if (verbose && !is.null(fixed)) cat("  Fixed parameters:", paste(fixed, collapse = ", "), "\n")
+  
+  # Build skeleton matching exactly what optim saw (no fixed params, no levels)
   skel <- params_init
+  if (!is.null(fixed)) {
+    for (p in fixed) skel[[p]] <- NULL
+  }
   skel$vertex_categorical_levels <- NULL
-  pfit <- tryCatch({
+  
+  pfit_vals <- tryCatch({
     relist(fit$fit$par, skeleton = skel)
   }, error = function(e) {
-    if (verbose) cat("  ERROR: Failed to reconstruct parameters:", e$message, "\n")
-    if (verbose) cat("  Using params_init as fallback\n")
-    params_init
+    if (verbose) cat("  ERROR: relist failed:", e$message, "\n")
+    if (verbose) cat("    fit$par length:", length(fit$fit$par), "| skeleton length:", length(unlist(skel)), "\n")
+    if (verbose) cat("    fit$par names:", paste(names(fit$fit$par), collapse = ", "), "\n")
+    if (verbose) cat("    skeleton names:", paste(names(unlist(skel)), collapse = ", "), "\n")
+    if (verbose) cat("  FALLING BACK to params_init — GOF simulations may be wrong!\n")
+    NULL
   })
 
-  # Restore metadata and fixed params
+  # Merge fitted values back into full parameter structure
+  pfit <- params_init
+  if (!is.null(pfit_vals)) {
+    for (n in names(pfit_vals)) pfit[[n]] <- pfit_vals[[n]]
+  } else {
+    if (verbose) cat("  WARNING: Using params_init as fallback (relist failed)\n")
+  }
+
+  # Restore metadata
   pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
-  pfit$K <- params_init$K
   
   # Handle inhomogeneous background
   use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
@@ -344,16 +367,31 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     if (verbose) {
       cat("  Using inhomogeneous background for simulations (matches fitted model)\n")
     }
-  } else {
-    pfit$mu <- params_init$mu
   }
+  # If mu is fixed, it stays at params_init$mu (already in pfit from the merge above)
+  # If mu is free, the fitted value is already in pfit from pfit_vals
   
   # Ensure parameters are within valid ranges
   pfit$K <- min(max(pfit$K, 0.001), 0.999)  # K must be in (0,1) for stability
   pfit$mu <- max(pfit$mu, 0.001)  # mu must be positive
-  pfit$node_lambda <- max(pfit$node_lambda, 1)  # node_lambda must be >= 1 for stability
+  pfit$node_lambda <- max(pfit$node_lambda, 0.1)  # node_lambda must be positive
   pfit$beta_overall <- max(pfit$beta_overall, 0.001)
   pfit$beta_edges <- max(pfit$beta_edges, 0.001)
+  
+  # Log the actual parameters being used for GOF simulations
+  if (verbose) {
+    cat("  GOF simulation parameters:\n")
+    scalar_params <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda")
+    for (p in scalar_params) {
+      if (!is.null(pfit[[p]])) {
+        src <- if (!is.null(fixed) && p %in% fixed) "(fixed)" else "(fitted)"
+        cat(sprintf("    %s = %.6f %s\n", p, pfit[[p]], src))
+      }
+    }
+    if (!is.null(pfit$CS_params)) {
+      cat("    CS_params =", paste(round(pfit$CS_params, 4), collapse = ", "), "(fitted)\n")
+    }
+  }
   
   # Set vertex_categorical if it exists (use defaults if needed)
   if (!is.null(params_init$vertex_categorical)) {

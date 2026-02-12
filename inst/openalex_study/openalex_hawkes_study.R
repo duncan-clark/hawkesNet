@@ -631,23 +631,12 @@ if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
 if (RUN_GOF && !is.null(fit_inhom_structural)) {
   cat("  GOF for structural-only model...\n")
   
-  # Reconstruct params_init for structural model (skeleton must exclude fixed params mu, K)
-  skel_structural_gof <- params_init_structural
-  skel_structural_gof$mu <- NULL
-  skel_structural_gof$K <- NULL
-  params_init_structural_gof <- tryCatch(
-    relist(fit_inhom_structural$fit$par, skeleton = skel_structural_gof),
-    error = function(e) { cat("  Warning: GOF relist failed:", e$message, "\n"); skel_structural_gof }
-  )
-  params_init_structural_gof$K <- params_init_structural$K
-  params_init_structural_gof$mu <- params_init_structural$mu
-  
   # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
   # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results_structural <- gof(
     fit = fit_inhom_structural,
     net_obs = net_raw,
-    params_init = params_init_structural_gof,
+    params_init = params_init_structural,
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS_STRUCTURAL,
@@ -677,29 +666,12 @@ cat(sprintf("  [GOF] Memory after structural GOF: %.1f Mb\n", gc()[2, 2]), file 
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   cat("\n  GOF for nodeMatch model...\n")
   
-  # Reconstruct params_init for nodeMatch (skeleton must exclude fixed params mu, K and vertex_categorical_levels)
-  skel_nodematch_gof <- params_init_nodematch
-  skel_nodematch_gof$vertex_categorical_levels <- NULL
-  skel_nodematch_gof$mu <- NULL
-  skel_nodematch_gof$K <- NULL
-  params_init_nodematch_gof <- tryCatch(
-    relist(fit_inhom_nodematch$fit$par, skeleton = skel_nodematch_gof),
-    error = function(e) { cat("  Warning: GOF nodeMatch relist failed:", e$message, "\n"); skel_nodematch_gof }
-  )
-  params_init_nodematch_gof$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
-  params_init_nodematch_gof$K <- params_init_nodematch$K
-  params_init_nodematch_gof$mu <- params_init_nodematch$mu
-  # Restore names and repair parameters before GOF
-  params_init_nodematch_gof <- hawkesNet:::reconstruct_vertex_categorical_names(
-    params_init_nodematch_gof, params_init_nodematch$vertex_categorical_levels)
-  params_init_nodematch_gof <- hawkesNet:::repair_vertex_categorical_params(params_init_nodematch_gof, eps = 1e-6)
-  
   # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
   # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results_nodematch <- gof(
     fit = fit_inhom_nodematch,
     net_obs = net_raw,
-    params_init = params_init_nodematch_gof,
+    params_init = params_init_nodematch,
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS_NODEMATCH,
@@ -729,29 +701,12 @@ cat(sprintf("  [GOF] Memory after nodeMatch GOF: %.1f Mb\n", gc()[2, 2]), file =
 if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
   cat("\n  GOF for nodeMix model...\n")
   
-  # Reconstruct params_init for nodeMix (skeleton must exclude fixed params mu, K and vertex_categorical_levels)
-  skel_nodemix_gof <- params_init_nodemix
-  skel_nodemix_gof$vertex_categorical_levels <- NULL
-  skel_nodemix_gof$mu <- NULL
-  skel_nodemix_gof$K <- NULL
-  params_init_nodemix_gof <- tryCatch(
-    relist(fit_inhom_nodemix$fit$par, skeleton = skel_nodemix_gof),
-    error = function(e) { cat("  Warning: GOF nodeMix relist failed:", e$message, "\n"); skel_nodemix_gof }
-  )
-  params_init_nodemix_gof$vertex_categorical_levels <- params_init_nodemix$vertex_categorical_levels
-  params_init_nodemix_gof$K <- params_init_nodemix$K
-  params_init_nodemix_gof$mu <- params_init_nodemix$mu
-  # Restore names and repair parameters before GOF
-  params_init_nodemix_gof <- hawkesNet:::reconstruct_vertex_categorical_names(
-    params_init_nodemix_gof, params_init_nodemix$vertex_categorical_levels)
-  params_init_nodemix_gof <- hawkesNet:::repair_vertex_categorical_params(params_init_nodemix_gof, eps = 1e-6)
-  
   # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
   # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
   GOF_results_nodemix <- gof(
     fit = fit_inhom_nodemix,
     net_obs = net_raw,
-    params_init = params_init_nodemix_gof,
+    params_init = params_init_nodemix,
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
     formula_RHS = FORMULA_RHS_NODEMIX,
