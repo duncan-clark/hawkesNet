@@ -65,7 +65,7 @@ N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 RUN_FIT_STRUCTURAL <- TRUE
-RUN_FIT_NODEMATCH <- FALSE
+RUN_FIT_NODEMATCH <- TRUE
 RUN_FIT_NODEMIX <- FALSE
 TOPIC <- "Point processes and geometric inequalities"
 
@@ -813,9 +813,9 @@ save_list <- list(
   fit_inhom_nodemix = fit_nodemix_for_save,
   fit_inhom_nodematch = fit_nodematch_for_save,
   fit_inhom_structural = fit_structural_for_save,
-  params_init_nodemix = params_init_nodemix,
-  params_init_nodematch = params_init_nodematch,
-  params_init_structural = params_init_structural,
+  params_init_nodemix = if (exists("params_init_nodemix")) params_init_nodemix else NULL,
+  params_init_nodematch = if (exists("params_init_nodematch")) params_init_nodematch else NULL,
+  params_init_structural = if (exists("params_init_structural")) params_init_structural else NULL,
   FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
   FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
