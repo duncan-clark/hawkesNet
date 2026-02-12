@@ -683,7 +683,7 @@ PMF_mark_CS <- function(time,
     new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
     network::add.vertices(new_net,new_nodes-old_nodes)
-    set.vertex.attribute(new_net,"time",c(last_net %v% 'time',rep(time,new_nodes)))
+    set.vertex.attribute(new_net,"time",c(last_net %v% 'time',rep(time,new_nodes-old_nodes)))
   }else{
     last_net <- NULL
     new_net <- network::network(matrix(1),directed = FALSE)
@@ -967,8 +967,10 @@ PMF_mark_CS <- function(time,
       old_nodes <- last_net %n% 'n'
       
       if(mark_sample %n% 'n' < 4){
-        old_new_net <- mark_sample
-        new_nodes <- 4 - (mark_sample %n% 'n')
+        # ERNM model requires >= 4 nodes to compute change statistics;
+        # add just enough nodes to reach 4.  Once we have >= 4 nodes the
+        # Poisson(node_lambda) model takes over for subsequent events.
+        new_nodes <- 4L - (mark_sample %n% 'n')
       }else{
         if(time > max_node_time){
           new_nodes <- 0
@@ -980,6 +982,9 @@ PMF_mark_CS <- function(time,
       }
       new_nodes <- as.integer(round(new_nodes))
       if (!is.finite(new_nodes) || new_nodes < 0) new_nodes <- 0L
+      # Guarantee at least 4 total nodes for ERNM (safety net)
+      min_needed <- 4L - (mark_sample %n% 'n')
+      if (min_needed > 0L && new_nodes < min_needed) new_nodes <- min_needed
       mark_sample <- network::add.vertices(mark_sample, new_nodes)
       # if(mark_sample %n% 'n' > 4){
       #   browser()
