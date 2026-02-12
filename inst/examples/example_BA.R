@@ -22,7 +22,7 @@ sim <- sim_hawkesNet(
 )
 
 cat("Number of events:", length(sim$events$t), "\n")
-cat("Network size (vertices):", network::network.size(sim$net), "\n")
+cat("Network size (vertices):", network.size(sim$net), "\n")
 
 # Fit the model to the simulated network
 cat("Fitting BA model...\n")

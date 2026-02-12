@@ -11,6 +11,7 @@
 library(spatstat)
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 library(data.table)
 library(pbapply)
 library(parallel)
@@ -97,6 +98,7 @@ make_cluster <- function(n_workers) {
     library(spatstat)
     library(ggplot2)
     library(dplyr)
+    library(tidyr)
     library(data.table)
     library(pbapply)
     library(parallel)
@@ -369,6 +371,10 @@ if(RUN_CONSISTENCY){
 
     # Bind results
     res_df <- do.call(rbind, res_list)
+    if (is.null(res_df) || nrow(res_df) == 0) {
+      cat("  WARNING: No successful fits in this window!\n")
+      next
+    }
     n_success <- length(unique(res_df$sim_id))
     n_fail <- N_SIMS_CONSISTENCY - n_success
     consistency_results <- rbind(consistency_results, res_df)
@@ -400,49 +406,56 @@ if(RUN_CONSISTENCY){
   # ==========================
   # Visualization
   # ==========================
-  prop_keep <- consistency_results %>%
-    group_by(time_window, param) %>%
-    summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
-  print(prop_keep)
+  if (nrow(consistency_results) > 0) {
+    prop_keep <- consistency_results %>%
+      group_by(time_window, param) %>%
+      summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+    print(prop_keep)
 
-  # Calculate Bias and RMSE (use all runs; keep filter commented)
-  summary_stats <- consistency_results %>%
-    # filter(keep == TRUE) %>%
-    group_by(time_window, param) %>%
-    summarise(
-      mean_est = mean(estimate),
-      sd_est = sd(estimate),
-      rmse = sqrt(mean((estimate - true_value)^2)),
-      true_val = mean(true_value),
-    )
+    # Calculate Bias and RMSE (use all runs; keep filter commented)
+    summary_stats <- consistency_results %>%
+      # filter(keep == TRUE) %>%
+      group_by(time_window, param) %>%
+      summarise(
+        mean_est = mean(estimate),
+        sd_est = sd(estimate),
+        rmse = sqrt(mean((estimate - true_value)^2)),
+        true_val = mean(true_value),
+      )
 
-  print(summary_stats,n=100)
+    print(summary_stats,n=100)
 
-  # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
-  p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep == TRUE) 
-    geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
-    geom_jitter(width = 0.2, alpha = 0.3) +
-    geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
-    facet_wrap(~param, scales = "free_y") +
-    labs(title = "Parameter Consistency vs Time Window (T) - CS model",
-         subtitle = "Red dashed line indicates true parameter value",
-         x = "Time Window Length (T)",
-         y = "Parameter Estimate") +
-    theme_minimal()
+    # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
+    p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep == TRUE) 
+      geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
+      geom_jitter(width = 0.2, alpha = 0.3) +
+      geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
+      facet_wrap(~param, scales = "free_y") +
+      labs(title = "Parameter Consistency vs Time Window (T) - CS model",
+           subtitle = "Red dashed line indicates true parameter value",
+           x = "Time Window Length (T)",
+           y = "Parameter Estimate") +
+      theme_minimal()
 
-  print(p_cons)
+    print(p_cons)
 
-  # Plot 2: RMSE decay (The "Getting Better" plot)
-  p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
-    geom_line(size = 1) +
-    geom_point(size = 3) +
-    facet_wrap(~param, scales = "free_y") +
-    labs(title = "RMSE Decay as Data Increases (CS model)",
-         x = "Time Window Length (T)",
-         y = "Root Mean Squared Error") +
-    theme_bw()
+    # Plot 2: RMSE decay (The "Getting Better" plot)
+    p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
+      geom_line(size = 1) +
+      geom_point(size = 3) +
+      facet_wrap(~param, scales = "free_y") +
+      labs(title = "RMSE Decay as Data Increases (CS model)",
+           x = "Time Window Length (T)",
+           y = "Root Mean Squared Error") +
+      theme_bw()
 
-  print(p_rmse)
+    print(p_rmse)
+  } else {
+    cat("  WARNING: consistency_results is empty. Skipping consistency plots.\n")
+    summary_stats <- NULL
+    p_cons <- NULL
+    p_rmse <- NULL
+  }
 }
 
 # ==============================================================================
@@ -633,8 +646,8 @@ if(PAPER_OUTPUT){
   if(!is.null(dat$sims)){
     net_stats <- do.call(rbind, lapply(sims, function(s){
       net <- s$net
-      degs <- ernm::calculateStatistics(net ~ degree(0:20,"in"))
-      esps <- ernm::calculateStatistics(net ~ esp(0:20))
+      degs <- calculateStatistics(net ~ degree(0:20,"in"))
+      esps <- calculateStatistics(net ~ esp(0:20))
       tmp <- as.data.frame(cbind(c(degs,esps), rep(0:20, times = 2), c(rep("degree",21), rep("esp",21))))
       rownames(tmp) <- NULL
       return(tmp)
@@ -723,7 +736,7 @@ if(PAPER_OUTPUT){
       print(results)
       
       # Plotting
-      estim_long <- tidyr::pivot_longer(estims, cols = everything(), names_to = "param", values_to = "estimate")
+      estim_long <- pivot_longer(estims, cols = everything(), names_to = "param", values_to = "estimate")
       ref_lines <- data.frame(
         param = par_names,
         true  = as.numeric(true_vec),
@@ -757,12 +770,12 @@ if(PAPER_OUTPUT){
   }
 
   # ---------- Consistency study output ----------
-  if(!is.null(dat$consistency_results)){
+  if(!is.null(dat$consistency_results) && nrow(dat$consistency_results) > 0){
     prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
     print(prop_keep)
-    print(summary_stats)
-    print(p_cons)
-    print(p_rmse)
+    if (!is.null(summary_stats)) print(summary_stats)
+    if (!is.null(p_cons)) print(p_cons)
+    if (!is.null(p_rmse)) print(p_rmse)
   }
 
   # ---------- Explosive study output ----------

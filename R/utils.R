@@ -17,7 +17,7 @@
 #' \code{animation::saveVideo} is used to write a video file.
 #' @examples
 #' \dontrun{
-#' nets <- list(network::network(2, directed = FALSE))
+#' nets <- list(network(2, directed = FALSE))
 #' make_network_growth_animation(nets, times = 0, file = "growth.mp4")
 #' }
 #' @rdname make_network_growth_animation
@@ -72,8 +72,8 @@ make_network_growth_animation <- function(net_list,
 # So we avoid fork on Darwin entirely.
 #
 # This helper routes to:
-#   - PSOCK cluster (parallel::parLapply) on macOS and Windows → no fork.
-#   - parallel::mclapply on Linux (fast fork).
+#   - PSOCK cluster (parLapply) on macOS and Windows → no fork.
+#   - mclapply on Linux (fast fork).
 #
 # Users can override with parallel_type = "fork" / "psock" / "auto".
 # @noRd
@@ -105,10 +105,10 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     } else {
       message("  [parallel] PSOCK cluster (", n_workers, " workers)")
     }
-    cl <- parallel::makeCluster(n_workers)
-    on.exit(parallel::stopCluster(cl), add = TRUE)
+    cl <- makeCluster(n_workers)
+    on.exit(stopCluster(cl), add = TRUE)
     # Load packages that intens_func's captured closures depend on
-    parallel::clusterEvalQ(cl, {
+    clusterEvalQ(cl, {
       suppressPackageStartupMessages({
         library(hawkesNet)
         library(ernm)
@@ -116,7 +116,7 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
         library(sna)
       })
     })
-    result <- parallel::parLapply(cl, X, FUN)
+    result <- parLapply(cl, X, FUN)
     return(result)
   }
 
@@ -201,7 +201,7 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     out
   }
 
-  res <- parallel::mclapply(seq_along(X), FUN_wrapped_idx, mc.cores = mc.cores,
+  res <- mclapply(seq_along(X), FUN_wrapped_idx, mc.cores = mc.cores,
                             mc.preschedule = mc.preschedule)
   
   # Check for errors in results (mclapply returns try-error or NULL on some failures)
@@ -256,29 +256,29 @@ events_to_net <- function(events_list,
 
   for(k in seq_along(events_list$i)){
     if(k==1 & is.null(net)){
-      net <- network::network(matrix(c(events_list$i[k],events_list$j[k]),nrow = 1),directed = directed)
-      network::set.vertex.attribute(net,"time",events_list$t[k],v=events_list$i[k])
-      network::set.vertex.attribute(net,"time",events_list$t[k],v=events_list$j[k])
+      net <- network(matrix(c(events_list$i[k],events_list$j[k]),nrow = 1),directed = directed)
+      set.vertex.attribute(net,"time",events_list$t[k],v=events_list$i[k])
+      set.vertex.attribute(net,"time",events_list$t[k],v=events_list$j[k])
     }else{
       N <- net %n% 'n'
       over_i <- events_list$i[k] - N
       over_j <- events_list$j[k] - N
       if(over_i > 0){
-        net <- network::add.vertices(net,over_i)
-        network::set.vertex.attribute(net,"time",events_list$t[k],v=events_list$i[k])
+        net <- add.vertices(net,over_i)
+        set.vertex.attribute(net,"time",events_list$t[k],v=events_list$i[k])
         # since network is now bigger amend the over j
         over_j <- over_j - 1
       }
       if(over_j > 0){
-        net <- network::add.vertices(net,over_j)
-        network::set.vertex.attribute(net,"time",events_list$t[k],v=events_list$j[k])
+        net <- add.vertices(net,over_j)
+        set.vertex.attribute(net,"time",events_list$t[k],v=events_list$j[k])
       }
       add.edge(net, events_list$i[k], events_list$j[k])
     }
     e <- get.dyads.eids(net,
                         events_list$i[k],
                         events_list$j[k])
-    network::set.edge.attribute(net,
+    set.edge.attribute(net,
                                 "time",
                                 events_list$t[k],
                                 e = e[[1]]
@@ -304,7 +304,7 @@ filtration_to_net <- function(net,
   # CRITICAL: network objects can be modified in-place by delete.edges/vertices.
   # We must work on a copy to avoid corrupting the original network, especially
   # when this is called inside parallel workers or loops.
-  net <- network::network.copy(net)
+  net <- network.copy(net)
   
   # make sure to leave one less edge or vertex that if equals
   delete.edges(net, which(get.edge.attribute(net,"time")>t))
@@ -358,8 +358,8 @@ filtration_to_net_both <- function(net,t){
 #' @rdname get_times
 #' @export
 get_times <- function(net, time_name = 'time'){
-  node_times <- network::get.vertex.attribute(net,time_name)
-  edge_times <- network::get.edge.attribute(net,time_name)
+  node_times <- get.vertex.attribute(net,time_name)
+  edge_times <- get.edge.attribute(net,time_name)
   return(list(node_times = node_times,
               edge_times = edge_times,
               times = sort(unique(c(node_times,edge_times)))
@@ -470,7 +470,7 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
   norm01 <- function(x) (x - rng[1]) / (rng[2] - rng[1])
   
   # Vertex times
-  v_times <- network::get.vertex.attribute(net, attr)
+  v_times <- get.vertex.attribute(net, attr)
   if (!is.null(v_times)) {
     v_times <- as.numeric(v_times)
     if (rng[2] == rng[1]) {
@@ -479,11 +479,11 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
       idx <- !is.na(v_times)
       v_times[idx] <- norm01(v_times[idx])
     }
-    network::set.vertex.attribute(net, attr, v_times)
+    set.vertex.attribute(net, attr, v_times)
   }
   
   # Edge times
-  e_times <- network::get.edge.attribute(net, attr)
+  e_times <- get.edge.attribute(net, attr)
   if (!is.null(e_times)) {
     e_times <- as.numeric(e_times)
     if (rng[2] == rng[1]) {
@@ -492,7 +492,7 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
       idx <- !is.na(e_times)
       e_times[idx] <- norm01(e_times[idx])
     }
-    network::set.edge.attribute(net, attr, e_times)
+    set.edge.attribute(net, attr, e_times)
   }
   
   net

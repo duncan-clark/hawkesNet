@@ -8,9 +8,9 @@
 ## ---- Helper: Pre-compute KDE Background ----
 # Call this before fitting to get the background 'mu' vector
 compute_kde_background <- function(times, windowT, bw = "nrd0") {
-  dens <- stats::density(times, from = windowT[1], to = windowT[2], bw = bw)
+  dens <- density(times, from = windowT[1], to = windowT[2], bw = bw)
   # Interpolate to get exact density at event times
-  mu_at_events <- stats::approx(dens$x, dens$y, xout = times)$y
+  mu_at_events <- approx(dens$x, dens$y, xout = times)$y
   # Return both the values at events and the total integral (should be ~1)
   list(mu_vec = mu_at_events, total_int = 1) 
 }
@@ -204,9 +204,9 @@ compensator_temporal_hawkes <- function(params,
   # If use_kde is FALSE, we integrate a Uniform(windowT) distribution.
   if (use_kde) {
     # KDE integral up to each ti (Cumulative Density Function of the KDE)
-    dens <- stats::density(realiz$t, from = windowT[1], to = windowT[2])
+    dens <- density(realiz$t, from = windowT[1], to = windowT[2])
     # Create an interpolation function for the CDF
-    bg_cdf_fun <- stats::approxfun(dens$x, cumsum(dens$y)/sum(dens$y), rule = 2)
+    bg_cdf_fun <- approxfun(dens$x, cumsum(dens$y)/sum(dens$y), rule = 2)
     bg_integral <- gamma * bg_cdf_fun(realiz$t)
   } else {
     # Uniform Background: Rate = gamma / (T_end - T_start)

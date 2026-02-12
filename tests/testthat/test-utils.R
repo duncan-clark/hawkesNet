@@ -1,9 +1,9 @@
 # Unit tests for utility functions: get_times, has_edge, events_to_net, filtration_to_net
 
 test_that("get_times returns list with node_times, edge_times, times", {
-  net <- network::network(matrix(c(1, 2), nrow = 1), directed = FALSE)
-  network::set.vertex.attribute(net, "time", c(0.1, 0.2))
-  network::set.edge.attribute(net, "time", 0.15)
+  net <- network(matrix(c(1, 2), nrow = 1), directed = FALSE)
+  set.vertex.attribute(net, "time", c(0.1, 0.2))
+  set.edge.attribute(net, "time", 0.15)
   out <- get_times(net)
   expect_type(out, "list")
   expect_true("node_times" %in% names(out))
@@ -13,8 +13,8 @@ test_that("get_times returns list with node_times, edge_times, times", {
 })
 
 test_that("get_times with single vertex has times from vertex only", {
-  net <- network::network.initialize(1, directed = FALSE)
-  network::set.vertex.attribute(net, "time", 0.5)
+  net <- network.initialize(1, directed = FALSE)
+  set.vertex.attribute(net, "time", 0.5)
   out <- get_times(net)
   expect_equal(out$times, 0.5)
 })
@@ -34,15 +34,15 @@ test_that("events_to_net builds network from event list", {
   )
   net <- events_to_net(events_list)
   expect_s3_class(net, "network")
-  expect_equal(network::network.size(net), 3)
-  expect_equal(network::network.edgecount(net), 3)
+  expect_equal(network.size(net), 3)
+  expect_equal(network.edgecount(net), 3)
   expect_equal(net %n% "n", 3)
 })
 
 test_that("events_to_net with directed = TRUE creates directed network", {
   events_list <- list(i = 1L, j = 2L, t = 0.1)
   net <- events_to_net(events_list, directed = TRUE)
-  expect_true(network::is.directed(net))
+  expect_true(is.directed(net))
 })
 
 test_that("filtration_to_net subsets by time", {
@@ -53,8 +53,8 @@ test_that("filtration_to_net subsets by time", {
   )
   net <- events_to_net(events_list)
   net_t <- filtration_to_net(net, 0.25, equals = FALSE)
-  expect_true(network::network.size(net_t) <= 3)
-  expect_true(network::network.edgecount(net_t) <= 3)
+  expect_true(network.size(net_t) <= 3)
+  expect_true(network.edgecount(net_t) <= 3)
 })
 
 test_that("normalize_times_01 scales network times to [0, 1]", {
@@ -72,8 +72,8 @@ test_that("normalize_times_01 scales network times to [0, 1]", {
 })
 
 test_that("normalize_times_01 handles single time value", {
-  net <- network::network.initialize(1, directed = FALSE)
-  network::set.vertex.attribute(net, "time", 5)
+  net <- network.initialize(1, directed = FALSE)
+  set.vertex.attribute(net, "time", 5)
   out <- normalize_times_01(net, constant_value = 0)
-  expect_equal(network::get.vertex.attribute(out, "time"), 0)
+  expect_equal(get.vertex.attribute(out, "time"), 0)
 })

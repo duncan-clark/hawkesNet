@@ -30,7 +30,7 @@ The animation displays the network at each event time; if \code{file} is provide
 }
 \examples{
 \dontrun{
-nets <- list(network::network(2, directed = FALSE))
+nets <- list(network(2, directed = FALSE))
 make_network_growth_animation(nets, times = 0, file = "growth.mp4")
 }
 }

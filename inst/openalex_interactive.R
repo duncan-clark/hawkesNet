@@ -68,11 +68,11 @@ out <- get_network(email = EMAIL, pages = PAGES, per_page = PER_PAGE,
                    string = SEARCH_STRING, min_date = MIN_DATE, max_date = MAX_DATE, topics_include = c(TOPIC))
 net_raw <- out$net
 edges <- out$edges
-network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
-network::set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
-net_raw <- hawkesNet::normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
-n_events <- length(hawkesNet::get_times(net_raw)$times)
-n_nodes <- network::network.size(net_raw)
+set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
+set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
+net_raw <- normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
+n_events <- length(get_times(net_raw)$times)
+n_nodes <- network.size(net_raw)
 cat("  Network:", n_events, "events,", n_nodes, "nodes\n")
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 

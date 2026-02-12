@@ -89,16 +89,16 @@ get_network <- function(email = "",
       first_name = first_name
     )
   }) %>%
-    dplyr::mutate(date = as.Date(date_str)) %>%
-    dplyr::filter(!is.na(date)) %>%
-    dplyr::filter(date >= as.Date(min_date)) %>%
-    dplyr::filter(date <= as.Date(max_date)) %>%
-    dplyr::arrange(date)
+    mutate(date = as.Date(date_str)) %>%
+    filter(!is.na(date)) %>%
+    filter(date >= as.Date(min_date)) %>%
+    filter(date <= as.Date(max_date)) %>%
+    arrange(date)
   
   if(!is.null(min_topic)){
     topic_counts <- table(nodes$topic)
     nodes <- nodes %>%
-      dplyr::mutate(topic = ifelse(topic_counts[topic] < 5, "Other", topic)) %>%
+      mutate(topic = ifelse(topic_counts[topic] < 5, "Other", topic)) %>%
       filter(!topic == "Other")
   }
   
@@ -170,13 +170,13 @@ get_network <- function(email = "",
         
         # Call gender() with years parameter
         gender_preds <- gender_func(unique_names, years = years_range, method = "ssa") %>%
-          dplyr::select(first_name = name, predicted_gender = gender) %>%
+          select(first_name = name, predicted_gender = gender) %>%
           # Handle case where multiple rows per name (shouldn't happen with unique names, but be safe)
-          dplyr::distinct(first_name, .keep_all = TRUE)
+          distinct(first_name, .keep_all = TRUE)
         
         nodes <- nodes %>%
-          dplyr::left_join(gender_preds, by = "first_name") %>%
-          dplyr::mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
+          left_join(gender_preds, by = "first_name") %>%
+          mutate(predicted_gender = ifelse(is.na(predicted_gender), "unknown", predicted_gender))
         
         # Check if gender prediction actually worked
         gender_counts <- table(nodes$predicted_gender, useNA = "ifany")
@@ -209,32 +209,32 @@ get_network <- function(email = "",
   # One row per work (same id can appear in multiple API pages). Required so the edge join
   # is many-to-one and the network has no multiedges; otherwise structural fit, nodeMatch, GOF and saved edges are wrong.
   nodes <- nodes %>%
-    dplyr::mutate(time_scaled = as.numeric(date - min_d) / as.numeric(max_d - min_d)) %>%
-    dplyr::distinct(id, .keep_all = TRUE)
+    mutate(time_scaled = as.numeric(date - min_d) / as.numeric(max_d - min_d)) %>%
+    distinct(id, .keep_all = TRUE)
   message("Building edge list with temporal attributes...")
   edges <- map_df(all_results, function(x) {
     if (is.null(x$referenced_works) || length(x$referenced_works) == 0) return(NULL)
     tibble(citing_id = x$id, cited_id = unlist(x$referenced_works))
   }) %>%
-    dplyr::filter(citing_id %in% nodes$id & cited_id %in% nodes$id) %>%
-    dplyr::left_join(nodes %>% dplyr::select(id, date_str, time_scaled), by = c("citing_id" = "id"), relationship = "many-to-one") %>%
-    dplyr::rename(edge_time = date_str, edge_time_scaled = time_scaled)
+    filter(citing_id %in% nodes$id & cited_id %in% nodes$id) %>%
+    left_join(nodes %>% select(id, date_str, time_scaled), by = c("citing_id" = "id"), relationship = "many-to-one") %>%
+    rename(edge_time = date_str, edge_time_scaled = time_scaled)
   nodes$index <- 1:nrow(nodes)
   id_map <- nodes$index
   names(id_map) <- nodes$id
-  net <- network::network.initialize(nrow(nodes), directed = FALSE)
+  net <- network.initialize(nrow(nodes), directed = FALSE)
   if (nrow(edges) > 0) {
-    network::add.edges(net, tail = id_map[edges$citing_id], head = id_map[edges$cited_id])
-    network::set.edge.attribute(net, "time", edges$edge_time)
-    network::set.edge.attribute(net, "time_scaled", edges$edge_time_scaled)
+    add.edges(net, tail = id_map[edges$citing_id], head = id_map[edges$cited_id])
+    set.edge.attribute(net, "time", edges$edge_time)
+    set.edge.attribute(net, "time_scaled", edges$edge_time_scaled)
   }
-  network::set.vertex.attribute(net, "title", nodes$title)
-  network::set.vertex.attribute(net, "entry_time", nodes$date_str)
-  network::set.vertex.attribute(net, "time_scaled", nodes$time_scaled)
-  network::set.vertex.attribute(net, "citations", nodes$citations)
-  network::set.vertex.attribute(net, "topic", as.vector(nodes$topic))
-  network::set.vertex.attribute(net, "type", nodes$type)
-  network::set.vertex.attribute(net, "author_name", nodes$first_author_name)
-  network::set.vertex.attribute(net, "gender", nodes$predicted_gender)
+  set.vertex.attribute(net, "title", nodes$title)
+  set.vertex.attribute(net, "entry_time", nodes$date_str)
+  set.vertex.attribute(net, "time_scaled", nodes$time_scaled)
+  set.vertex.attribute(net, "citations", nodes$citations)
+  set.vertex.attribute(net, "topic", as.vector(nodes$topic))
+  set.vertex.attribute(net, "type", nodes$type)
+  set.vertex.attribute(net, "author_name", nodes$first_author_name)
+  set.vertex.attribute(net, "gender", nodes$predicted_gender)
   return(list(net = net, edges = edges,nodes = nodes))
 }

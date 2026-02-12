@@ -4,7 +4,7 @@
 ## -- Suppress R CMD check notes for non-standard evaluation symbols ------
 ## ggplot2 aes(), data.table column references, closure variables, etc.
 if (getRversion() >= "2.15.1") {
-  utils::globalVariables(c(
+  globalVariables(c(
     # ggplot2 aes() aesthetics (used in gof.R, utils.R)
     "time", "intensity", "density", "value", "x", "type",
     "proportion", "distance", "waiting_time", "statistic",

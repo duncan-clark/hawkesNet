@@ -42,7 +42,7 @@ PMF_mark_BA <- function(time,
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
-    network::add.vertices(new_net, nv = new_nodes)
+    add.vertices(new_net, nv = new_nodes)
     set.vertex.attribute(new_net, "time", c(get.vertex.attribute(last_net, "time"), rep(time, new_nodes)))
   } else {
     last_net <- NULL
@@ -114,7 +114,7 @@ PMF_mark_BA <- function(time,
       in_mark <- has_edge(heads, tails, new_edge_hash)
     }
     K_obs <- sum(in_mark, na.rm = TRUE)
-    log_poisson <- stats::dpois(K_obs, m_val, log = TRUE)
+    log_poisson <- dpois(K_obs, m_val, log = TRUE)
     p_in <- pmax(probs[in_mark], .Machine$double.eps)
     p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
     log_mark_density <- log_poisson + sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
@@ -122,14 +122,14 @@ PMF_mark_BA <- function(time,
   } else {
     in_mark <- rep(1, length(heads))
     K_obs <- if (length(heads) > 0) sum(in_mark, na.rm = TRUE) else 0
-    log_mark_density <- stats::dpois(K_obs, m_val, log = TRUE)
+    log_mark_density <- dpois(K_obs, m_val, log = TRUE)
     mark_density <- exp(log_mark_density)
   }
   
   # 1. Define the lightweight log-density function for BA (includes Poisson(m) for K_obs edges)
   log_density_func_light <- function(params) {
     m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
-    log_poisson <- stats::dpois(K_obs, m_p, log = TRUE)
+    log_poisson <- dpois(K_obs, m_p, log = TRUE)
     if (!is.finite(log_poisson)) return(-1e10)
     if (!is.null(node_degrees)) {
       degs <- node_degrees * exp(-params$beta_edges * (time - times))
@@ -181,7 +181,7 @@ PMF_mark_BA <- function(time,
       mark_sample <- last_net
       old_nodes <- last_net %n% 'n'
       new_nodes <- 1
-      mark_sample <- network::add.vertices(mark_sample, new_nodes)
+      mark_sample <- add.vertices(mark_sample, new_nodes)
       set.vertex.attribute(mark_sample, "time", c((last_net %v% 'time'), rep(time, new_nodes)))
       new_node_idx <- old_nodes + 1
 
@@ -213,35 +213,35 @@ PMF_mark_BA <- function(time,
       probs[probs <= 0 | !is.finite(probs)] <- eps_p
       probs <- probs / sum(probs)
 
-      K <- stats::rpois(1, m_val)
+      K <- rpois(1, m_val)
       # Join to at most all eligible targets (one node added per event; edges capped by available targets)
       K <- min(K, length(eligible_heads))
       if (K > 0 && length(eligible_heads) > 0) {
         sampled_idx <- sample(length(eligible_heads), size = K, replace = FALSE, prob = probs)
         heads_to_add <- eligible_heads[sampled_idx]
         tails_to_add <- rep(new_node_idx, K)
-        network::add.edges(mark_sample, heads_to_add, tails_to_add)
+        add.edges(mark_sample, heads_to_add, tails_to_add)
         p_chosen <- pmax(probs[sampled_idx], .Machine$double.eps)
-        log_mark_sample_density <- stats::dpois(K, m_val, log = TRUE) + sum(log(p_chosen), na.rm = TRUE)
+        log_mark_sample_density <- dpois(K, m_val, log = TRUE) + sum(log(p_chosen), na.rm = TRUE)
       } else {
-        log_mark_sample_density <- stats::dpois(K, m_val, log = TRUE)
+        log_mark_sample_density <- dpois(K, m_val, log = TRUE)
       }
       mark_sample_density <- exp(log_mark_sample_density)
     } else {
       if (is.null(last_net) || (last_net %n% 'n') < 2) {
         if (is.null(last_net)) {
-          mark_sample <- network::network(matrix(1), directed = FALSE)
+          mark_sample <- network(matrix(1), directed = FALSE)
           set.vertex.attribute(mark_sample, "time", time)
         } else {
           mark_sample <- last_net
         }
         times <- mark_sample %v% 'time'
-        mark_sample <- network::add.vertices(mark_sample, 1)
+        mark_sample <- add.vertices(mark_sample, 1)
         if (mark_sample %n% 'n' == 2) {
-          network::add.edges(mark_sample, 2, 1)
+          add.edges(mark_sample, 2, 1)
         }
         set.vertex.attribute(mark_sample, "time", c(times, time))
-        log_mark_sample_density <- stats::dpois(1, m_val, log = TRUE)
+        log_mark_sample_density <- dpois(1, m_val, log = TRUE)
         mark_sample_density <- exp(log_mark_sample_density)
       }
     }
@@ -317,7 +317,7 @@ log_categorical_density <- function(params, mark, old_nodes, new_nodes, eps = 1e
     return(list(log_dens = ld, observed = observed))
   }
   for (attr_name in names(vcat)) {
-    if (attr_name %in% network::list.vertex.attributes(mark)) {
+    if (attr_name %in% list.vertex.attributes(mark)) {
       obs_vals <- (mark %v% attr_name)[(old_nodes + 1):new_nodes]
       observed[[attr_name]] <- obs_vals
       level_names <- vertex_categorical_level_names(params, attr_name, mark)
@@ -351,12 +351,12 @@ sample_vertex_attrs <- function(params, last_net, mark_sample, old_nodes, new_no
     if (is.null(p)) next
     levs <- names(p)
     if (any(!is.finite(p)) || sum(p) <= 0) { p <- rep(1 / length(levs), length(levs)); names(p) <- levs }
-    existing <- if (attr_name %in% network::list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
+    existing <- if (attr_name %in% list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
     if (new_nodes > 0) {
       sampled <- sample(levs, size = new_nodes, replace = TRUE, prob = p)
-      network::set.vertex.attribute(mark_sample, attr_name, c(existing, sampled))
+      set.vertex.attribute(mark_sample, attr_name, c(existing, sampled))
     } else {
-      network::set.vertex.attribute(mark_sample, attr_name, existing)
+      set.vertex.attribute(mark_sample, attr_name, existing)
     }
   }
   mark_sample
@@ -370,20 +370,20 @@ sample_vertex_attrs <- function(params, last_net, mark_sample, old_nodes, new_no
 ensure_vertex_attrs <- function(params, net) {
   vcat <- params$vertex_categorical
   if (is.null(vcat) || !is.list(vcat)) return(net)
-  nv <- network::network.size(net)
+  nv <- network.size(net)
   for (attr_name in names(vcat)) {
     levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
       params$vertex_categorical_levels[[attr_name]]
     } else { c("unknown") }
     if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
-    if (!attr_name %in% network::list.vertex.attributes(net)) {
-      network::set.vertex.attribute(net, attr_name, rep(levs[1L], nv))
+    if (!attr_name %in% list.vertex.attributes(net)) {
+      set.vertex.attribute(net, attr_name, rep(levs[1L], nv))
     } else {
       attr_vals <- net %v% attr_name
       if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
         if (length(attr_vals) < nv) attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
         attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
-        network::set.vertex.attribute(net, attr_name, attr_vals)
+        set.vertex.attribute(net, attr_name, attr_vals)
       }
     }
   }
@@ -442,7 +442,7 @@ vertex_categorical_level_names <- function(params, attr_name, mark = NULL) {
   if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
     return(params$vertex_categorical_levels[[attr_name]])
   }
-  if (!is.null(mark) && attr_name %in% network::list.vertex.attributes(mark)) {
+  if (!is.null(mark) && attr_name %in% list.vertex.attributes(mark)) {
     return(sort(unique(mark %v% attr_name)))
   }
   NULL
@@ -476,26 +476,26 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   if (length(times) == 0) return(list(required = required, CS_params_length = CS_params_length))
   # use the last net since stuff ight not be added til the end
   net <- filtration_to_net(mark_filtration, times[length(times)], equals = TRUE)
-  nv <- network::network.size(net)
+  nv <- network.size(net)
   if (!is.finite(nv) || is.na(nv)) nv <- 0
   if (nv < 4) {
-    network::add.vertices(net, 4 - nv)
+    add.vertices(net, 4 - nv)
     t0 <- if (nv > 0) (net %v% "time")[1] else times[1]
-    network::set.vertex.attribute(net, "time", c(net %v% "time", rep(t0, 4 - nv)))
+    set.vertex.attribute(net, "time", c(net %v% "time", rep(t0, 4 - nv)))
   }
-  if ("na" %in% network::list.vertex.attributes(net)) {
+  if ("na" %in% list.vertex.attributes(net)) {
     delete.vertex.attribute(net, "na")
   }
   # If formula uses nodeMatch('gender'), ensure network has 'gender' so createCppModel/setNetwork succeed
   if (grepl("nodeMatch\\s*\\(\\s*['\"]gender['\"]", formula_RHS) && nv > 0L) {
-    if (!"gender" %in% network::list.vertex.attributes(net)) {
-      network::set.vertex.attribute(net, "gender", rep("unknown", nv))
+    if (!"gender" %in% list.vertex.attributes(net)) {
+      set.vertex.attribute(net, "gender", rep("unknown", nv))
     } else {
-      attr_vals <- network::get.vertex.attribute(net, "gender")
+      attr_vals <- get.vertex.attribute(net, "gender")
       if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
         attr_vals <- if (length(attr_vals) < nv) c(attr_vals, rep("unknown", nv - length(attr_vals))) else attr_vals
         attr_vals[is.na(attr_vals) | attr_vals == ""] <- "unknown"
-        network::set.vertex.attribute(net, "gender", attr_vals)
+        set.vertex.attribute(net, "gender", attr_vals)
       }
     }
   }
@@ -682,11 +682,11 @@ PMF_mark_CS <- function(time,
   if(last_net %n% 'n' != 0){
     new_nodes <- mark %n% 'n'
     old_nodes <- last_net %n% 'n'
-    network::add.vertices(new_net,new_nodes-old_nodes)
+    add.vertices(new_net,new_nodes-old_nodes)
     set.vertex.attribute(new_net,"time",c(last_net %v% 'time',rep(time,new_nodes-old_nodes)))
   }else{
     last_net <- NULL
-    new_net <- network::network(matrix(1),directed = FALSE)
+    new_net <- network(matrix(1),directed = FALSE)
     delete.vertex.attribute(new_net,'na')
     set.vertex.attribute(new_net,"time",time)
     old_nodes <- 0
@@ -711,7 +711,7 @@ PMF_mark_CS <- function(time,
       # if new net has less than 4 nodes add some:
       if(new_net %n% 'n' < 4){
         old_new_net <- new_net
-        new_net <- network::add.vertices(new_net,4 - (new_net %n% 'n'))
+        new_net <- add.vertices(new_net,4 - (new_net %n% 'n'))
       }else{
         old_new_net <- new_net
       }
@@ -722,17 +722,17 @@ PMF_mark_CS <- function(time,
       
       # Copy discrete vertex attributes from mark so change stats (e.g. nodeMix) are correct
       if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
-        nv <- network::network.size(new_net)
+        nv <- network.size(new_net)
         for (attr_name in names(params$vertex_categorical)) {
-          if (attr_name %in% network::list.vertex.attributes(mark)) {
+          if (attr_name %in% list.vertex.attributes(mark)) {
             g <- mark %v% attr_name
             nm <- length(g)
             if (nv <= nm) {
-              network::set.vertex.attribute(new_net, attr_name, g[seq_len(nv)])
+              set.vertex.attribute(new_net, attr_name, g[seq_len(nv)])
             } else {
               levs <- vertex_categorical_level_names(params, attr_name, mark)
               if (is.null(levs) || length(levs) == 0) levs <- "unknown"
-              network::set.vertex.attribute(new_net, attr_name, c(g, rep(levs[1L], nv - nm)))
+              set.vertex.attribute(new_net, attr_name, c(g, rep(levs[1L], nv - nm)))
             }
           }
         }
@@ -809,7 +809,7 @@ PMF_mark_CS <- function(time,
       if(time >max_node_time){
         node_dens <- 0
       }else{
-        dval <- stats::dpois(new_nodes-old_nodes, params$node_lambda)
+        dval <- dpois(new_nodes-old_nodes, params$node_lambda)
         if (!is.finite(dval) || dval <= 0) {
           warning("PMF_mark_CS: degenerate node count density (dpois=0 or non-finite); using large negative log-density.")
           node_dens <- -1e10
@@ -849,7 +849,7 @@ PMF_mark_CS <- function(time,
     }
     
     eta    <- as.vector(change_stats %*% params$CS_params)
-    p_base <- stats::plogis(eta)
+    p_base <- plogis(eta)
     
     # same decay factor as direct
     p <- p_base * exp(-params$beta_edges * diffs)
@@ -867,7 +867,7 @@ PMF_mark_CS <- function(time,
     node_dens <- if (!is.null(max_node_time) && time > max_node_time) {
       0
     } else {
-      dval <- stats::dpois(new_nodes - old_nodes, params$node_lambda)
+      dval <- dpois(new_nodes - old_nodes, params$node_lambda)
       if (!is.finite(dval) || dval <= 0) -1e10 else log(dval)
     }
     vcat <- params$vertex_categorical
@@ -985,7 +985,7 @@ PMF_mark_CS <- function(time,
       # Guarantee at least 4 total nodes for ERNM (safety net)
       min_needed <- 4L - (mark_sample %n% 'n')
       if (min_needed > 0L && new_nodes < min_needed) new_nodes <- min_needed
-      mark_sample <- network::add.vertices(mark_sample, new_nodes)
+      mark_sample <- add.vertices(mark_sample, new_nodes)
       # if(mark_sample %n% 'n' > 4){
       #   browser()
       # }
@@ -1012,7 +1012,7 @@ PMF_mark_CS <- function(time,
       
       # Ensure ALL nodes have required vertex attributes before createCppModel
       mark_sample <- ensure_vertex_attrs(params, mark_sample)
-      if ("na" %in% network::list.vertex.attributes(mark_sample)) {
+      if ("na" %in% list.vertex.attributes(mark_sample)) {
         delete.vertex.attribute(mark_sample, "na")
       }
       
@@ -1024,7 +1024,7 @@ PMF_mark_CS <- function(time,
       }
       key <- formula_RHS
       if (is.null(cache[[key]])) {
-        g0 <- network::network.initialize(0L, directed = FALSE)
+        g0 <- network.initialize(0L, directed = FALSE)
         cache[[key]] <- createCppModel(as.formula(paste("g0 ~ ", formula_RHS)))
         cache[[key]]$setNetwork(as.BinaryNet(g0))
       }
@@ -1045,9 +1045,9 @@ PMF_mark_CS <- function(time,
         }
         warning("PMF_mark_CS (generate_mark): no candidate edges (full network); returning mark with no new edges (stop_on_full_network = FALSE).")
         if (new_nodes == 0) {
-          nv_before <- network::network.size(mark_sample)
-          mark_sample <- network::add.vertices(mark_sample, 1)
-          network::set.vertex.attribute(mark_sample, "time", c(mark_sample %v% "time", time))
+          nv_before <- network.size(mark_sample)
+          mark_sample <- add.vertices(mark_sample, 1)
+          set.vertex.attribute(mark_sample, "time", c(mark_sample %v% "time", time))
           mark_sample <- sample_vertex_attrs(params, mark_sample, mark_sample, nv_before, 1L, eps)
         }
         mark_sample_density <- 1
@@ -1088,7 +1088,7 @@ PMF_mark_CS <- function(time,
       )
       set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
       # --- Safety: safe log and dpois for sample density (suggestion 6 & 8) ---
-      dpois_val <- stats::dpois(new_nodes-old_nodes, params$node_lambda)
+      dpois_val <- dpois(new_nodes-old_nodes, params$node_lambda)
       if (!is.finite(dpois_val) || dpois_val <= 0) {
         warning("PMF_mark_CS (generate_mark): degenerate dpois for node count; using small positive value for density.")
         dpois_val <- 1e-300
@@ -1106,13 +1106,13 @@ PMF_mark_CS <- function(time,
       }
       }else{
         if(is.null(last_net)){
-          mark_sample <- network::network(matrix(1),directed = FALSE)
+          mark_sample <- network(matrix(1),directed = FALSE)
           set.vertex.attribute(mark_sample,"time",time)
         }else{
           mark_sample <- last_net
         }
         times <- mark_sample %v% 'time'
-        mark_sample <- network::add.vertices(mark_sample,1)
+        mark_sample <- add.vertices(mark_sample,1)
         set.vertex.attribute(mark_sample,
                              "time",
                              c(times,time))

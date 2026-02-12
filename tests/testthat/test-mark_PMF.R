@@ -18,9 +18,9 @@ test_that("expected_params_PMF_mark_CS returns required and CS_params_length", {
 })
 
 test_that("expected_params_PMF_mark_CS with formula and net returns CS_params_length when possible", {
-  net <- network::network(matrix(c(1, 2), nrow = 1), directed = FALSE)
-  network::set.vertex.attribute(net, "time", c(0, 0))
-  network::set.edge.attribute(net, "time", 0)
+  net <- network(matrix(c(1, 2), nrow = 1), directed = FALSE)
+  set.vertex.attribute(net, "time", c(0, 0))
+  set.edge.attribute(net, "time", 0)
   out <- expected_params_PMF_mark_CS(net, "edges")
   expect_true("CS_params_length" %in% names(out))
 })

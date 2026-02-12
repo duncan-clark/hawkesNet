@@ -222,7 +222,7 @@ if (SEED_EVENTS > 0) {
       seed_times <- all_times[1:SEED_EVENTS]
       cat(sprintf("Seeding with first %d events (up to t=%.4f)\n", SEED_EVENTS, t_seed))
       cat(sprintf("Seed network size: %d nodes, %d edges\n", 
-                  network::network.size(seed_net), network::network.edgecount(seed_net)))
+                  network.size(seed_net), network.edgecount(seed_net)))
     }
 }
 

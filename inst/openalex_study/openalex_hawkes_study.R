@@ -148,14 +148,14 @@ out <- get_network(email = EMAIL, pages = PAGES, per_page = PER_PAGE,
                    string = SEARCH_STRING, min_date = MIN_DATE, max_date = MAX_DATE,topics_include = c(TOPIC))
 net_raw <- out$net
 edges <- out$edges
-network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
-network::set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
-net_raw <- hawkesNet::normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
-n_events <- length(hawkesNet::get_times(net_raw)$times)
-n_nodes <- network::network.size(net_raw)
+set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
+set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
+net_raw <- normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
+n_events <- length(get_times(net_raw)$times)
+n_nodes <- network.size(net_raw)
 cat("  Network:", n_events, "events,", n_nodes, "nodes\n")
 # Check gender distribution
-if ("gender" %in% network::list.vertex.attributes(net_raw)) {
+if ("gender" %in% list.vertex.attributes(net_raw)) {
   gender_vals <- net_raw %v% "gender"
   gender_counts <- table(gender_vals, useNA = "ifany")
   cat("  Gender distribution:", paste(names(gender_counts), "=", gender_counts, collapse = ", "), "\n")
@@ -556,8 +556,8 @@ gc()
 # =============================================================================
 cat("--- Step 3: Temporal Hawkes fit + KS test ---\n")
 t_step <- proc.time()
-t_events <- sort(unique(c(hawkesNet::get_times(net_raw)$node_times,
-                         hawkesNet::get_times(net_raw)$edge_times)))
+t_events <- sort(unique(c(get_times(net_raw)$node_times,
+                         get_times(net_raw)$edge_times)))
 t_events <- t_events[!is.na(t_events)]
 windowT <- c(min(t_events), max(t_events))
 realiz <- data.frame(t = t_events)
@@ -567,7 +567,7 @@ params_init_exp <- list(gamma = init_gamma, beta = 10, K = 0.2)
 cat("  Fitting temporal Hawkes (exp kernel)...\n")
 t_fit <- proc.time()
 fit_temporal <- safe_run(
-  hawkesNet::fit_temporal_hawkes(
+  fit_temporal_hawkes(
     params_init = params_init_exp,
     realiz = realiz,
     windowT = windowT,
@@ -586,7 +586,7 @@ ks_temporal_pval <- NA_real_
 if (!is.null(fit_temporal) && exists("ks_test_pval_temporal")) {
   cat("  Computing KS test...\n")
   ks_temporal_pval <- safe_run(
-    hawkesNet::ks_test_pval_temporal(
+    ks_test_pval_temporal(
       realiz = realiz,
       windowT = windowT,
       hawkes_par = fit_temporal$par,
@@ -878,9 +878,9 @@ if (PAPER_OUTPUT) {
       if (!is.null(pfit_nodematch)) {
         pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
         # Restore names and repair parameters before expanding
-        pfit_nodematch <- hawkesNet:::reconstruct_vertex_categorical_names(
+        pfit_nodematch <- :reconstruct_vertex_categorical_names(
           pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
-        pfit_nodematch <- hawkesNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
+        pfit_nodematch <- :repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
         if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
           levs <- params_init_nodematch$vertex_categorical_levels$gender
           pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)

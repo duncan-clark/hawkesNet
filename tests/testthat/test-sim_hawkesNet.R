@@ -66,8 +66,8 @@ test_that("sim_hawkesNet net has time attribute on vertices when non-empty", {
     mu_multiplier = 5,
     truncation = 100
   )
-  n_verts <- network::network.size(out$net)
+  n_verts <- network.size(out$net)
   if (n_verts > 0) {
-    expect_true("time" %in% network::list.vertex.attributes(out$net))
+    expect_true("time" %in% list.vertex.attributes(out$net))
   }
 })

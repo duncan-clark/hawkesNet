@@ -391,12 +391,12 @@ test_that("validate_point_process_params accepts valid params", {
 # ===========================================================================
 
 test_that("normalize_times_01 rescales to [0,1]", {
-  net <- network::network(matrix(c(1, 2), nrow = 1), directed = FALSE)
-  network::set.vertex.attribute(net, "time", c(10, 20))
-  network::set.edge.attribute(net, "time", 15, e = 1)
+  net <- network(matrix(c(1, 2), nrow = 1), directed = FALSE)
+  set.vertex.attribute(net, "time", c(10, 20))
+  set.edge.attribute(net, "time", 15, e = 1)
   net_norm <- normalize_times_01(net)
-  vtimes <- network::get.vertex.attribute(net_norm, "time")
-  etimes <- network::get.edge.attribute(net_norm, "time")
+  vtimes <- get.vertex.attribute(net_norm, "time")
+  etimes <- get.edge.attribute(net_norm, "time")
   expect_true(all(vtimes >= 0 & vtimes <= 1))
   expect_true(all(etimes >= 0 & etimes <= 1))
 })
@@ -408,6 +408,6 @@ test_that("normalize_times_01 rescales to [0,1]", {
 test_that("events_to_net builds network from event list", {
   el <- list(i = c(1, 1, 2), j = c(2, 3, 3), t = c(0.1, 0.2, 0.3))
   net <- events_to_net(el)
-  expect_true(network::network.size(net) == 3)
-  expect_true(network::network.edgecount(net) == 3)
+  expect_true(network.size(net) == 3)
+  expect_true(network.edgecount(net) == 3)
 })
