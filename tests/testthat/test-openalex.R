@@ -42,13 +42,13 @@ test_that("OpenAlex network loading works with minimal data", {
   
   net <- out$net
   expect_s3_class(net, "network")
-  expect_gt(network::network.size(net), 0)
+  expect_gt(network.size(net), 0)
   
   # Check that network has time attributes
-  expect_true("time_scaled" %in% network::list.vertex.attributes(net))
+  expect_true("time_scaled" %in% list.vertex.attributes(net))
   
   # Check gender attribute exists (even if all unknown)
-  if ("gender" %in% network::list.vertex.attributes(net)) {
+  if ("gender" %in% list.vertex.attributes(net)) {
     gender_vals <- net %v% "gender"
     expect_true(all(gender_vals %in% c("female", "male", "unknown", NA)))
     
@@ -116,15 +116,15 @@ test_that("waiting_times_between_formations works on OpenAlex network", {
   })
   
   net_raw <- out$net
-  network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
-  network::set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
+  set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
+  set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
   net_raw <- normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
   
   # Only test if network has edges
-  if (network::network.edgecount(net_raw) > 0) {
+  if (network.edgecount(net_raw) > 0) {
     formula_RHS <- "edges + triangles + star(c(2,3))"
     wait_results <- tryCatch({
-      hawkesNet:::waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
+      :waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
     }, error = function(e) {
       skip(paste("waiting_times_between_formations failed:", e$message))
     })
@@ -162,12 +162,12 @@ test_that("GOF function can run on OpenAlex network (slow)", {
   })
   
   net_raw <- out$net
-  network::set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
-  network::set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
+  set.vertex.attribute(net_raw, "time", net_raw %v% "time_scaled")
+  set.edge.attribute(net_raw, "time", net_raw %e% "time_scaled")
   net_raw <- normalize_times_01(net_raw, attr = "time", keep_na = TRUE)
   
   # Only test if network has edges
-  if (network::network.edgecount(net_raw) == 0) {
+  if (network.edgecount(net_raw) == 0) {
     skip("Network has no edges")
   }
   

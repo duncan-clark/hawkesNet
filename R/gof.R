@@ -10,7 +10,7 @@
 #' @return Numeric vector of counts for degrees min_deg through max_deg.
 #' @noRd
 degree_dist <- function(net, max_deg = 20, min_deg = 0) {
-  degs <- sna::degree(net, gmode = "graph")
+  degs <- degree(net, gmode = "graph")
   tab <- table(factor(degs, levels = min_deg:max_deg))
   as.vector(tab)
 }
@@ -24,7 +24,7 @@ degree_dist <- function(net, max_deg = 20, min_deg = 0) {
 #' @noRd
 esp_dist <- function(net, k_max = 15, min_esp = 0) {
   tryCatch({
-    as.vector(ernm::calculateStatistics(net ~ esp(min_esp:k_max)))
+    as.vector(calculateStatistics(net ~ esp(min_esp:k_max)))
   }, error = function(e) rep(NA_real_, k_max - min_esp + 1))
 }
 
@@ -34,7 +34,7 @@ esp_dist <- function(net, k_max = 15, min_esp = 0) {
 #' @return Numeric vector of geodesic distances (excluding Inf and self-distances).
 #' @noRd
 geodist_dist <- function(net) {
-  d <- sna::geodist(net, inf.replace = NA)
+  d <- geodist(net, inf.replace = NA)
   if (is.list(d)) d <- d$gdist
   d <- as.vector(d)
   d <- d[!is.na(d) & d > 0]
@@ -53,29 +53,29 @@ geodist_dist <- function(net) {
 #' @return Network object with attribute properly set.
 #' @noRd
 ensure_vertex_attribute <- function(net, attr_name, default_value = "unknown") {
-  nv <- network::network.size(net)
+  nv <- network.size(net)
   if (nv == 0) return(net)
   
   # Remove problematic 'na' attribute if it exists
-  if ("na" %in% network::list.vertex.attributes(net)) {
-    network::delete.vertex.attribute(net, "na")
+  if ("na" %in% list.vertex.attributes(net)) {
+    delete.vertex.attribute(net, "na")
   }
   
   # Check if attribute exists
-  if (!attr_name %in% network::list.vertex.attributes(net)) {
+  if (!attr_name %in% list.vertex.attributes(net)) {
     # Attribute doesn't exist: set all nodes to default
-    network::set.vertex.attribute(net, attr_name, rep(default_value, nv))
+    set.vertex.attribute(net, attr_name, rep(default_value, nv))
   } else {
     # Attribute exists: check and fix missing/NA values
-    attr_vals <- network::get.vertex.attribute(net, attr_name)
+    attr_vals <- get.vertex.attribute(net, attr_name)
     if (length(attr_vals) < nv) {
       # Not enough values: pad with default
       attr_vals <- c(attr_vals, rep(default_value, nv - length(attr_vals)))
-      network::set.vertex.attribute(net, attr_name, attr_vals)
+      set.vertex.attribute(net, attr_name, attr_vals)
     } else if (any(is.na(attr_vals)) || any(attr_vals == "")) {
       # Has NA or empty values: replace with default
       attr_vals[is.na(attr_vals) | attr_vals == ""] <- default_value
-      network::set.vertex.attribute(net, attr_name, attr_vals)
+      set.vertex.attribute(net, attr_name, attr_vals)
     }
   }
   
@@ -96,31 +96,31 @@ ensure_vertex_attribute <- function(net, attr_name, default_value = "unknown") {
 waiting_times_between_formations <- function(net, time_attr = "time", 
                                              formula_RHS = "triangles + star(c(2,3))") {
   # Get edge list and edge times
-  el <- network::as.edgelist(net)
+  el <- as.edgelist(net)
   
   # Determine number of statistics by creating a temporary model
-  n <- network::network.size(net)
-  g_temp <- network::network.initialize(n, directed = network::is.directed(net))
+  n <- network.size(net)
+  g_temp <- network.initialize(n, directed = is.directed(net))
   
   # Copy vertex attributes from net to g_temp (required for nodeMatch/nodeMix)
-  vattrs <- network::list.vertex.attributes(net)
+  vattrs <- list.vertex.attributes(net)
   for (attr_name in vattrs) {
     if (attr_name != "na") {
-      attr_vals <- network::get.vertex.attribute(net, attr_name)
+      attr_vals <- get.vertex.attribute(net, attr_name)
       if (length(attr_vals) == n) {
-        network::set.vertex.attribute(g_temp, attr_name, attr_vals)
+        set.vertex.attribute(g_temp, attr_name, attr_vals)
       }
     }
   }
-  if ("na" %in% network::list.vertex.attributes(g_temp)) {
-    network::delete.vertex.attribute(g_temp, "na")
+  if ("na" %in% list.vertex.attributes(g_temp)) {
+    delete.vertex.attribute(g_temp, "na")
   }
   
   # Create formula with g_temp in the environment
   formula_str <- paste0("g_temp ~ ", formula_RHS)
   formula_obj <- as.formula(formula_str)
-  model_temp <- ernm::createCppModel(formula_obj)
-  model_temp$setNetwork(ernm::as.BinaryNet(g_temp))
+  model_temp <- createCppModel(formula_obj)
+  model_temp$setNetwork(as.BinaryNet(g_temp))
   model_temp$calculate()
   n_stats <- length(model_temp$statistics())
   rm(model_temp, g_temp)
@@ -132,12 +132,12 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 
   # Try edge times first; fall back to vertex times for edge ordering
   edge_times <- NULL
-  if (time_attr %in% network::list.edge.attributes(net)) {
-    edge_times <- network::get.edge.attribute(net, time_attr)
+  if (time_attr %in% list.edge.attributes(net)) {
+    edge_times <- get.edge.attribute(net, time_attr)
   }
   if (is.null(edge_times) || length(edge_times) != nrow(el)) {
     # Use vertex times: assign each edge the max time of its endpoints
-    vtimes <- network::get.vertex.attribute(net, time_attr)
+    vtimes <- get.vertex.attribute(net, time_attr)
     if (is.null(vtimes) || all(is.na(vtimes))) {
       return(setNames(rep(list(numeric()), n_stats), paste0("stat", seq_len(n_stats))))
     }
@@ -151,20 +151,20 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 
   # Group edges by unique event times
   event_times <- unique(edge_times)
-  g <- network::network.initialize(n, directed = network::is.directed(net))
+  g <- network.initialize(n, directed = is.directed(net))
   
   # Copy vertex attributes from net to g (required for nodeMatch/nodeMix)
-  vattrs <- network::list.vertex.attributes(net)
+  vattrs <- list.vertex.attributes(net)
   for (attr_name in vattrs) {
     if (attr_name != "na") {
-      attr_vals <- network::get.vertex.attribute(net, attr_name)
+      attr_vals <- get.vertex.attribute(net, attr_name)
       if (length(attr_vals) == n) {
-        network::set.vertex.attribute(g, attr_name, attr_vals)
+        set.vertex.attribute(g, attr_name, attr_vals)
       }
     }
   }
-  if ("na" %in% network::list.vertex.attributes(g)) {
-    network::delete.vertex.attribute(g, "na")
+  if ("na" %in% list.vertex.attributes(g)) {
+    delete.vertex.attribute(g, "na")
   }
 
   # Initialize tracking for all statistics
@@ -175,8 +175,8 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   # Create formula with g now that it exists
   formula_str <- paste0("g ~ ", formula_RHS)
   formula_obj <- as.formula(formula_str)
-  model <- ernm::createCppModel(formula_obj)
-  model$setNetwork(ernm::as.BinaryNet(g))
+  model <- createCppModel(formula_obj)
+  model$setNetwork(as.BinaryNet(g))
   model$calculate()
   
   # Pre-allocate stat_times if we have many events (optional, but good for large nets)
@@ -200,12 +200,12 @@ waiting_times_between_formations <- function(net, time_attr = "time",
         delta_stats <- change_stats_j[1, ]
         
         # Add edge to network
-        network::add.edges(g, tail = tail_j, head = head_j)
+        add.edges(g, tail = tail_j, head = head_j)
         
         # Update model to reflect this new edge (for next iteration's change stats)
         # OPTIMIZATION: Use model$toggle() if available in ERNM, otherwise calculate()
         # ERNM's computeChangeStats + manual add.edges + calculate is standard.
-        model$setNetwork(ernm::as.BinaryNet(g))
+        model$setNetwork(as.BinaryNet(g))
         model$calculate()
         
         # Update statistics incrementally
@@ -618,11 +618,11 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     # Observed nodeMix statistics (if gender attribute exists)
     if (verbose) cat("    Computing observed nodeMix statistics...\n")
     tryCatch({
-      if ("gender" %in% network::list.vertex.attributes(net_obs) || 
+      if ("gender" %in% list.vertex.attributes(net_obs) || 
           any(grepl("nodeMix|nodeMatch", formula_RHS))) {
         # Ensure gender attribute is properly set for all nodes before ERNM operations
         net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
-        GOF_results$nodemix_obs <- as.vector(ernm::calculateStatistics(net_obs_clean ~ nodeMix('gender')))
+        GOF_results$nodemix_obs <- as.vector(calculateStatistics(net_obs_clean ~ nodeMix('gender')))
       }
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
@@ -669,7 +669,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
             esp = esp_dist(n, k_esp, min_esp = esp),
             geodist = geodist_dist(n),
             nodemix = if (has_nodemix_obs) {
-              as.vector(ernm::calculateStatistics(n_clean ~ nodeMix('gender')))
+              as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
             } else NULL
           )
         }, error = function(e) {
@@ -812,20 +812,20 @@ create_gof_plots <- function(GOF_results) {
     
     x_lab <- if (is.null(x_label)) "Index" else x_label
     x_levels <- sort(unique(x_vals))
-    p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x, levels = x_levels), y = value)) +
-      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
-      ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x, levels = x_levels), y = value),
+    p <- ggplot(df_sim, aes(x = factor(x, levels = x_levels), y = value)) +
+      geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      geom_point(data = df_obs, aes(x = factor(x, levels = x_levels), y = value),
                           color = "#E69F00", size = 2, shape = 19) +
-      ggplot2::labs(
+      labs(
         title = paste(stat_name, "Distribution"),
         x = x_lab,
         y = "Count",
         fill = "Type"
       ) +
-      ggplot2::theme_minimal() +
-      ggplot2::theme(
+      theme_minimal() +
+      theme(
         legend.position = "bottom",
-        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold")
+        plot.title = element_text(hjust = 0.5, face = "bold")
       )
     
     p
@@ -893,20 +893,20 @@ create_gof_plots <- function(GOF_results) {
     )
     df_obs_dot <- df_geod[df_geod$type == "Observed", ]
     
-    plots$geodist_plot <- ggplot2::ggplot(df_sim_box, ggplot2::aes(x = factor(distance), y = proportion)) +
-      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
-      ggplot2::geom_point(data = df_obs_dot, ggplot2::aes(x = factor(distance), y = proportion),
+    plots$geodist_plot <- ggplot(df_sim_box, aes(x = factor(distance), y = proportion)) +
+      geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      geom_point(data = df_obs_dot, aes(x = factor(distance), y = proportion),
                          color = "#E69F00", size = 2, shape = 19) +
-      ggplot2::labs(
+      labs(
         title = "Geodesic Distance Distribution (Relative Proportions)",
         x = "Geodesic Distance",
         y = "Proportion of Pairs",
         fill = "Type"
       ) +
-      ggplot2::theme_minimal() +
-      ggplot2::theme(
+      theme_minimal() +
+      theme(
         legend.position = "bottom",
-        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold")
+        plot.title = element_text(hjust = 0.5, face = "bold")
       )
   }
   
@@ -976,22 +976,22 @@ create_gof_plots <- function(GOF_results) {
       if (diff(x_range) < .Machine$double.eps) x_range <- x_range + c(-0.5, 0.5)
       # facet_wrap so each panel (statistic x type) has its own y-scale; otherwise Observed
       # density spike compresses Simulated in the same row when using facet_grid.
-      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
-        ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density)),
+      plots$waiting_times_plot <- ggplot(df_wait, aes(x = waiting_time, fill = type)) +
+        geom_histogram(aes(y = after_stat(density)),
                                 alpha = 0.7, bins = 30, position = "identity") +
-        ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
-        ggplot2::facet_wrap(ggplot2::vars(statistic, type), scales = "free_y", ncol = 2L) +
-        ggplot2::coord_cartesian(xlim = x_range) +
-        ggplot2::labs(
+        scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+        facet_wrap(vars(statistic, type), scales = "free_y", ncol = 2L) +
+        coord_cartesian(xlim = x_range) +
+        labs(
           title = "Waiting Times Between Structure Formations",
           x = "Waiting Time",
           y = "Density"
         ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(
+        theme_minimal() +
+        theme(
           legend.position = "none",
-          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
-          strip.text = ggplot2::element_text(face = "bold")
+          plot.title = element_text(hjust = 0.5, face = "bold"),
+          strip.text = element_text(face = "bold")
         )
     }
   }
