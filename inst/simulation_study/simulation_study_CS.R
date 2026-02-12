@@ -44,7 +44,7 @@ TRUNCATION  <- 100
 SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- TRUE
-RUN_CONSISTENCY <- FALSE
+RUN_CONSISTENCY <- TRUE
 MAX_ITER <- 5000
 
 N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
@@ -256,8 +256,8 @@ if(SIMULATE){
 if(RUN_CONSISTENCY){
 
   # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 20, 30, 40, 50)
-  N_SIMS_CONSISTENCY <- 50
+  time_windows <- c(5, 10, 25, 50, 75, 100)
+  N_SIMS_CONSISTENCY <- 25
 
   # Parameters (Standard/Stable regime) - CS model
   params_true <- list(mu = 10,
