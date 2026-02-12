@@ -255,6 +255,12 @@ sim_hawkesNet <- function(params,
     
     # Filter event_queue to only include points after t_last_accepted
     event_queue <- event_queue[time > t_last_accepted]
+    n_bg <- nrow(event_queue)
+    
+    # Re-allocate buffers to the new size
+    event_times_buf <- numeric(n_bg)
+    mark_density_buf <- numeric(n_bg)
+    accept_probs_buf <- numeric(n_bg)
     
     if (verbose) {
       cat(sprintf("Conditional simulation: seeded with %d nodes, %d edges, %d events. Starting at t=%.4f\n",

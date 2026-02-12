@@ -216,12 +216,14 @@ seed_net <- NULL
 seed_times <- NULL
 if (SEED_EVENTS > 0) {
   all_times <- get_times(net_obs)$times
-  if (length(all_times) >= SEED_EVENTS) {
-    t_seed <- all_times[SEED_EVENTS]
-    seed_net <- filtration_to_net(net_obs, t_seed, equals = TRUE)
-    seed_times <- all_times[1:SEED_EVENTS]
-    cat(sprintf("Seeding with first %d events (up to t=%.4f)\n", SEED_EVENTS, t_seed))
-  }
+    if (length(all_times) >= SEED_EVENTS) {
+      t_seed <- all_times[SEED_EVENTS]
+      seed_net <- filtration_to_net(net_obs, t_seed, equals = TRUE)
+      seed_times <- all_times[1:SEED_EVENTS]
+      cat(sprintf("Seeding with first %d events (up to t=%.4f)\n", SEED_EVENTS, t_seed))
+      cat(sprintf("Seed network size: %d nodes, %d edges\n", 
+                  network::network.size(seed_net), network::network.edgecount(seed_net)))
+    }
 }
 
 t_sim <- proc.time()
