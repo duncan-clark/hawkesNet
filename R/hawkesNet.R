@@ -236,7 +236,7 @@ sim_hawkesNet <- function(params,
   list_index <- 1
   
   if (!is.null(seed_net)) {
-    current_net <- network::copy.network(seed_net)
+    current_net <- network.copy(seed_net)
     t_last_accepted <- if (!is.null(seed_times)) max(seed_times) else time_window[1]
     
     # Initialize kernel_R from seed_times
