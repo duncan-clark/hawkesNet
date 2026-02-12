@@ -32,6 +32,7 @@ time_window      <- c(0, 1)
 # --- 2. Pick which model to inspect ---
 # Change this to inspect a different model
 MODEL <- "structural"  # Options: "structural", "nodematch", "nodemix"
+SEED_EVENTS <- 20      # Set to 0 for cold-start, or e.g. 20 for conditional simulation
 
 if (MODEL == "structural") {
   fit         <- dat$fit_inhom_structural
@@ -169,6 +170,33 @@ if (!is.null(pfit$vertex_categorical)) {
   }
 }
 
+# --- 5b. Diagnostic: edge intercept analysis ---
+if (!is.null(pfit$CS_params) && length(pfit$CS_params) >= 1) {
+  cs1 <- pfit$CS_params[1]
+  p_baseline <- plogis(cs1)
+  cat("\n=== Edges intercept diagnostic ===\n")
+  cat(sprintf("  CS_params[1] (edges intercept) = %.4f\n", cs1))
+  cat(sprintf("  Baseline edge probability (no structure) = plogis(%.4f) = %.2e\n", cs1, p_baseline))
+  
+  # What the observed edge density implies
+  n_v <- network.size(net_obs)
+  n_e <- network.edgecount(net_obs)
+  obs_dens <- if (n_v > 1) 2 * n_e / (n_v * (n_v - 1)) else NA
+  if (!is.na(obs_dens)) {
+    obs_logit <- qlogis(obs_dens)
+    cat(sprintf("  Observed edge density = %.6f  (logit = %.2f)\n", obs_dens, obs_logit))
+    cat(sprintf("  Gap: edges intercept (%.2f) vs logit(obs density) (%.2f) = %.1f\n",
+                cs1, obs_logit, cs1 - obs_logit))
+    if (cs1 < obs_logit - 4) {
+      cat("  *** WARNING: Edges intercept is much more negative than logit(density).\n")
+      cat("  *** The model relies heavily on triangles/gwdegree to explain edges.\n")
+      cat("  *** Cold-start simulation will produce very few edges.\n")
+      cat("  *** Consider re-fitting with cs_intercept_floor = -8 and\n")
+      cat("  *** initializing CS_params[1] at logit(edge_density).\n")
+    }
+  }
+}
+
 # --- 6. Compare with observed network ---
 cat("\n=== Observed network ===\n")
 cat("  Nodes:", network.size(net_obs), "\n")
@@ -178,7 +206,24 @@ cat("  Events:", length(get_times(net_obs)$times), "\n")
 
 # --- 7. Run ONE verbose simulation ---
 cat("\n=== Running 1 verbose simulation ===\n")
+if (SEED_EVENTS > 0) {
+  cat(sprintf("  (Conditional on first %d events)\n", SEED_EVENTS))
+}
 cat("  (This may take a few minutes for large networks)\n\n")
+
+# Extract seed if requested
+seed_net <- NULL
+seed_times <- NULL
+if (SEED_EVENTS > 0) {
+  all_times <- get_times(net_obs)$times
+  if (length(all_times) >= SEED_EVENTS) {
+    t_seed <- all_times[SEED_EVENTS]
+    seed_net <- filtration_to_net(net_obs, t_seed, equals = TRUE)
+    seed_times <- all_times[1:SEED_EVENTS]
+    cat(sprintf("Seeding with first %d events (up to t=%.4f)\n", SEED_EVENTS, t_seed))
+  }
+}
+
 t_sim <- proc.time()
 
 sim_result <- tryCatch({
@@ -195,7 +240,9 @@ sim_result <- tryCatch({
     verbose = TRUE,
     mu_multiplier = 5,
     stop_on_full_network = FALSE,
-    inhom_bg = inhom_bg
+    inhom_bg = inhom_bg,
+    seed_net = seed_net,
+    seed_times = seed_times
   )
 }, error = function(e) {
   cat("\n*** SIMULATION FAILED:", e$message, "***\n")

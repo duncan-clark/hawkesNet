@@ -62,6 +62,7 @@ MAX_ITER <- 10000
 TRUNCATION <- 300L
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
+SEED_EVENTS_GOF <- 20L  # Seed simulations with first 20 events (prevents cold-start degeneracy)
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 RUN_FIT_STRUCTURAL <- TRUE
@@ -206,6 +207,7 @@ if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
   n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 3L
   
   # Initialize parameters for structural-only model (no vertex_categorical)
+  # Use observed edge density for edges-intercept init (avoids -10 bias)
   mu_init <- inhom_bg$integral_bg / (time_window_01[2] - time_window_01[1])
   params_init_structural <- make_default_params(n_cs_structural, mu_init)
   
@@ -652,6 +654,7 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
     degree = 0,
     esp = 0,
     mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
     verbose = TRUE
   )
 } else {
@@ -687,6 +690,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     degree = 0,
     esp = 0,
     mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
     verbose = TRUE
   )
 } else {
@@ -722,6 +726,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
     degree = 0,
     esp = 0,
     mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
     verbose = TRUE
   )
 } else {

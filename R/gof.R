@@ -276,6 +276,10 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @param degree Minimum degree to include in degree distribution (default 0).
 #' @param esp Minimum ESP to include in ESP distribution (default 0).
 #' @param mu_multiplier Multiplier for mu in simulations (default 5).
+#' @param seed_events Optional integer. If \code{> 0}, the first \code{seed_events}
+#'   observed events are used to seed the simulation. The simulation then
+#'   generates subsequent events conditional on this initial history.
+#'   Recommended for sparse networks where cold-start simulation is difficult.
 #' @param verbose Print progress messages (default TRUE).
 #' @return List with observed and simulated statistics and plots:
 #'   \itemize{
@@ -303,7 +307,8 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS,
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
-                max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5, verbose = TRUE) {
+                max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5,
+                seed_events = 0L, verbose = TRUE) {
   
   # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -315,7 +320,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     return(GOF_results)
   }
   
-  if (verbose) cat("  Simulating", n_sim, "networks from fitted model...\n")
+  if (verbose) {
+    cond_str <- if (seed_events > 0) sprintf(" (conditional on first %d events)", seed_events) else ""
+    cat("  Simulating", n_sim, "networks from fitted model", cond_str, "...\n", sep = "")
+  }
   
   # -------------------------------------------------------------------------
   # Reconstruct fitted params from fit$par (name-based, robust).
@@ -425,6 +433,27 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     }
   }
   
+  # -------------------------------------------------------------------------
+  # Handle Seeding (Conditional Simulation)
+  # -------------------------------------------------------------------------
+  seed_net <- NULL
+  seed_times <- NULL
+  if (seed_events > 0) {
+    all_times <- get_times(net_obs)$times
+    if (length(all_times) >= seed_events) {
+      t_seed <- all_times[seed_events]
+      seed_net <- filtration_to_net(net_obs, t_seed, equals = TRUE)
+      seed_times <- all_times[1:seed_events]
+      if (verbose) {
+        cat(sprintf("  Seeding simulation with first %d events (up to t=%.4f)\n", 
+                    seed_events, t_seed))
+      }
+    } else {
+      if (verbose) cat(sprintf("  WARNING: net_obs only has %d events; cannot seed with %d. Starting from scratch.\n",
+                               length(all_times), seed_events))
+    }
+  }
+  
   # Set vertex_categorical if it exists (use defaults if needed)
   if (!is.null(params_init$vertex_categorical)) {
     if (is.null(pfit$vertex_categorical)) {
@@ -487,7 +516,9 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           verbose = FALSE,
           mu_multiplier = mu_multiplier,
           stop_on_full_network = FALSE,
-          inhom_bg = inhom_bg
+          inhom_bg = inhom_bg,
+          seed_net = seed_net,
+          seed_times = seed_times
         ),
         error = function(e) { 
           return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 

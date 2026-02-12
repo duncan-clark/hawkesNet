@@ -1059,9 +1059,11 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
-      diffs <- sapply(seq_along(tails), function(i) {
-        node_times[tails[i]] - node_times[heads[i]]
-      })
+      # Use same diffs formula as the density path: event_time - head_node_time.
+      # (Previously used tail_time - head_time, which diverges for edges between
+      # two existing nodes and makes generation inconsistent with the likelihood.)
+      # Note: node_times is either node entrance or latest activity depending on mark_decay.
+      diffs <- time - node_times[heads]
       # --- Safety: sanitize diffs/factor in generate_mark (suggestion 2 & 9) ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS (generate_mark): non-finite time diffs; replacing with 0.")

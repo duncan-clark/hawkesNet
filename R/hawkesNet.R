@@ -162,6 +162,9 @@ cond_intensity <- function(new_net,
 #' @param stop_on_full_network If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.
 #' @param inhom_bg Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
 #'   If provided, uses \code{cond_intensity_inhom} with time-varying background rate.
+#' @param seed_net Optional initial network state to start simulation from.
+#' @param seed_times Optional numeric vector of event times corresponding to \code{seed_net}.
+#'   Used to initialize the Hawkes kernel state for conditional simulation.
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
@@ -178,6 +181,8 @@ sim_hawkesNet <- function(params,
                                 n_mark_sample = NULL,
                                 stop_on_full_network = TRUE, # if TRUE, stop when no candidate edges (full network); if FALSE, warn and continue with no new edges
                                 inhom_bg = NULL, # optional inhomogeneous background object
+                                seed_net = NULL,
+                                seed_times = NULL,
                                 ... # to be past to PMF_mark
 
 
@@ -211,6 +216,7 @@ sim_hawkesNet <- function(params,
   theta <- params$theta
   beta <- params$beta
   K <- params$K
+  beta_overall <- params$beta_overall
 
   # propose points to be thinned:
   n_bg <- rpois(1, lambda * (time_window[2] - time_window[1]))
@@ -222,23 +228,45 @@ sim_hawkesNet <- function(params,
   n_accepted <- 0L
   n_proposed <- 0L
   n_mark_dens <- 0L
-  event_queue <- data.table(time = sort(runif(n_bg, min=0, max=time_window[2])))
+  event_queue <- data.table(time = sort(runif(n_bg, min=time_window[1], max=time_window[2])))
   # maintain order so no need to sort
   setkey(event_queue, time)
   # Initialize the list to store new events
   new_events_list <- list()
   list_index <- 1
-  current_net <- network::network(matrix(1),directed = FALSE)
-  delete.vertices(current_net,1)
-
-  # --- O(1) kernel recurrence state ---
-  # Instead of recomputing sum(exp(-beta*(t - t_i))) = O(N) each event,
-
-  # maintain: kernel_R such that kernel_sum = K * kernel_R.
-  # Update: kernel_R = (kernel_R + 1) * exp(-beta * dt) when event accepted.
-  kernel_R <- 0       # running sum of exp(-beta * (t_last - t_i)) for accepted events
-  t_last_accepted <- time_window[1]  # time of last accepted event (or start)
-  beta_overall <- params$beta_overall
+  
+  if (!is.null(seed_net)) {
+    current_net <- network::copy.network(seed_net)
+    t_last_accepted <- if (!is.null(seed_times)) max(seed_times) else time_window[1]
+    
+    # Initialize kernel_R from seed_times
+    kernel_R <- 0
+    if (!is.null(seed_times) && length(seed_times) > 0) {
+      s_times <- sort(seed_times)
+      # kernel_R should be the sum IMMEDIATELY AFTER the last seed event.
+      kernel_R <- 1 # sum after first event
+      if (length(s_times) > 1) {
+        for (i in 2:length(s_times)) {
+          dt <- s_times[i] - s_times[i-1]
+          kernel_R <- kernel_R * exp(-beta_overall * dt) + 1
+        }
+      }
+    }
+    
+    # Filter event_queue to only include points after t_last_accepted
+    event_queue <- event_queue[time > t_last_accepted]
+    
+    if (verbose) {
+      cat(sprintf("Conditional simulation: seeded with %d nodes, %d edges, %d events. Starting at t=%.4f\n",
+                  network::network.size(current_net), network::network.edgecount(current_net),
+                  length(seed_times), t_last_accepted))
+    }
+  } else {
+    current_net <- network::network(matrix(1),directed = FALSE)
+    delete.vertices(current_net,1)
+    kernel_R <- 0       # running sum of exp(-beta * (t_last - t_i)) for accepted events
+    t_last_accepted <- time_window[1]  # time of last accepted event (or start)
+  }
 
   # Optimization: pre-calculate mu_fun values if inhomogeneous
   if (use_inhom) {
