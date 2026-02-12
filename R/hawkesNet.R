@@ -311,11 +311,11 @@ sim_hawkesNet <- function(params,
                               stop_on_full_network = stop_on_full_network,
                               ...)
       net <- mark_sample$mark_sample
-      if(hashed_edges && length(net$mel)!=0){
+      if(hashed_edges && network.edgecount(net)!=0){
         # hash the network edge list for fast lookup:
-        edges <- network::as.edgelist(net)
+        edges <- as.edgelist(net)
         keys_vec <- paste(edges[,1], edges[,2], sep = "-")
-        edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
+        edge_hash <- hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
       }else{
         edge_hash <- NULL
       }
@@ -363,13 +363,13 @@ sim_hawkesNet <- function(params,
                                     ...
             )
             net <- mark_sample$mark_sample
-            if(hashed_edges){
-              edges <- network::as.edgelist(net)
-              keys_vec <- paste(edges[,1], edges[,2], sep = "-")
-              edge_hash <- hash::hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
-            }else{
-              edge_hash <- NULL
-            }
+          if(hashed_edges){
+            edges <- as.edgelist(net)
+            keys_vec <- paste(edges[,1], edges[,2], sep = "-")
+            edge_hash <- hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
+          }else{
+            edge_hash <- NULL
+          }
             if (use_inhom) {
               intensity <- cond_intensity_inhom(new_net = net,
                                                t = current_event$time,
@@ -414,7 +414,7 @@ sim_hawkesNet <- function(params,
 
     # if we accept the point add it in
     if(verbose){
-      print(paste0("Number of edges proposed is ", length(net$mel)))
+      print(paste0("Number of edges proposed is ", network.edgecount(net)))
       print(paste0("Number of nodes proposed is ", net %n% "n"))
       print(paste0("accept prob is: ",accept))
       
@@ -436,7 +436,7 @@ sim_hawkesNet <- function(params,
       }
     }
     if(verbose){
-      print(paste0("time is ",current_event$time, " size of net is ",current_net %n% 'n',' number of edges is ',length(current_net$mel)))
+      print(paste0("time is ",current_event$time, " size of net is ",current_net %n% 'n',' number of edges is ',network.edgecount(current_net)))
       print(paste0("time is ",current_event$time, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
     }
     # Concatenate new events to event_queue only if we have only one event left to go
@@ -556,10 +556,10 @@ loglik_hawkesNet = function(params,
     # Reuse one ERNM model when running sequentially (avoids createCppModel per event)
     shared_model <- NULL
     if (!use_parallel && !is.null(formula_rhs)) {
-      g0 <- network::network.initialize(0L, directed = FALSE)
-      if ("na" %in% network::list.vertex.attributes(g0)) network::delete.vertex.attribute(g0, "na")
+      g0 <- network.initialize(0L, directed = FALSE)
+      if ("na" %in% list.vertex.attributes(g0)) delete.vertex.attribute(g0, "na")
       shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
-      shared_model$setNetwork(ernm::as.BinaryNet(g0))
+      shared_model$setNetwork(as.BinaryNet(g0))
     }
     if (use_parallel) message("Intensity cache: using ", cores, " cores")
     else message("Intensity cache: using 1 core")
@@ -1337,7 +1337,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 
     # 2. Vectorized edge probabilities: one matmul + one plogis + one exp
     eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
-    p_all   <- stats::plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
+    p_all   <- plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
     p_all   <- pmin(pmax(p_all, eps), 1 - eps)
 
     # 3. Segment log-sums via cumsum (replaces per-event loop)
@@ -1354,7 +1354,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     node_dens <- rep(0, N)
     needs_node <- !past_max_node_time & !degenerate
     if (any(needs_node)) {
-      node_dens[needs_node] <- stats::dpois(new_minus_old[needs_node],
+      node_dens[needs_node] <- dpois(new_minus_old[needs_node],
                                             params$node_lambda, log = TRUE)
       bad <- !is.finite(node_dens)
       if (any(bad)) node_dens[bad] <- -1e10
