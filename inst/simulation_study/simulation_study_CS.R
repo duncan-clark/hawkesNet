@@ -202,7 +202,7 @@ if(SIMULATE){
         trace = 1,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        fixed_params = c("K"),
+        fixed_params = c("mu", "K"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -313,11 +313,11 @@ if(RUN_CONSISTENCY){
 
       if(is.null(sim_res)) return(NULL)
 
-      # B. Fit - CS options: formula_RHS, fixed_params = c("K")
+      # B. Fit - CS options: formula_RHS, fixed_params = c("mu", "K")
       # Initialize near true params + small noise for better convergence
-      # Ensure all parameters are positive and finite
+      # mu and K are fixed at true values to stabilize structural estimation
       params_init <- list(
-        mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
+        mu = params_true$mu,
         beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
         K = params_true$K,
         beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
@@ -338,7 +338,7 @@ if(RUN_CONSISTENCY){
                             cache_intensity = TRUE,
                             combine_intensity = TRUE,
                             verbose = FALSE,
-                            fixed_params = c("K"),
+                            fixed_params = c("mu", "K"),
                             parscale = p_scale,
                             cores = N_CORES_INNER,
                             method = "Nelder-Mead")
