@@ -419,6 +419,24 @@ sim_hawkesNet <- function(params,
     mark_density = mark_density_buf[seq_len(n_mark_dens)]
   )
   accept_probs <- accept_probs_buf[seq_len(n_proposed)]
+  
+  # Diagnostic: warn if thinning bound was violated (accept > 1)
+  max_accept <- if (length(accept_probs) > 0) max(accept_probs, na.rm = TRUE) else 0
+  n_violations <- sum(accept_probs > 1, na.rm = TRUE)
+  if (n_violations > 0) {
+    warning(sprintf(
+      paste0("Thinning bound violated: %d of %d proposals had accept > 1 ",
+             "(max=%.2f). The dominating Poisson measure (lambda=%.1f) is too low. ",
+             "Increase mu_multiplier (currently %.0f) for valid simulation. ",
+             "Accepted %d events from %d proposals."),
+      n_violations, n_proposed, max_accept, lambda, mu_multiplier,
+      n_accepted, n_proposed))
+  }
+  if (verbose) {
+    cat(sprintf("  Thinning: proposed=%d, accepted=%d, max_accept_ratio=%.3f, lambda=%.1f\n",
+                n_proposed, n_accepted, max_accept, lambda))
+  }
+  
   return(list(events = events,
               net = current_net,
               accept_probs = accept_probs))

@@ -317,64 +317,96 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   if (verbose) cat("  Simulating", n_sim, "networks from fitted model...\n")
   
-  # Reconstruct fitted params from fit$par.
-  # fit_hawkesNet strips fixed_params and vertex_categorical_levels from the
-
-  # skeleton before optim, so fit$par only contains the FREE parameters.
-  # We must strip the same fields from our skeleton before relisting, then
-  # merge the fitted values back into the full params_init structure.
+  # -------------------------------------------------------------------------
+  # Reconstruct fitted params from fit$par (name-based, robust).
+  # fit_hawkesNet strips fixed_params + vertex_categorical_levels from the
+  # skeleton before optim, so fit$par only has the FREE parameters.
+  # Instead of fragile relist() (which breaks if skeleton doesn't match
+  # exactly), we map values back by name.
+  # -------------------------------------------------------------------------
   
   fixed <- fit$fixed_params
-  if (verbose && !is.null(fixed)) cat("  Fixed parameters:", paste(fixed, collapse = ", "), "\n")
-  
-  # Build skeleton matching exactly what optim saw (no fixed params, no levels)
-  skel <- params_init
-  if (!is.null(fixed)) {
-    for (p in fixed) skel[[p]] <- NULL
+  if (verbose) {
+    if (!is.null(fixed)) {
+      cat("  Fixed parameters:", paste(fixed, collapse = ", "), "\n")
+    } else {
+      cat("  WARNING: fit$fixed_params is NULL — was this fit run with the latest code?\n")
+    }
   }
-  skel$vertex_categorical_levels <- NULL
   
-  pfit_vals <- tryCatch({
-    relist(fit$fit$par, skeleton = skel)
-  }, error = function(e) {
-    if (verbose) cat("  ERROR: relist failed:", e$message, "\n")
-    if (verbose) cat("    fit$par length:", length(fit$fit$par), "| skeleton length:", length(unlist(skel)), "\n")
-    if (verbose) cat("    fit$par names:", paste(names(fit$fit$par), collapse = ", "), "\n")
-    if (verbose) cat("    skeleton names:", paste(names(unlist(skel)), collapse = ", "), "\n")
-    if (verbose) cat("  FALLING BACK to params_init — GOF simulations may be wrong!\n")
-    NULL
-  })
-
-  # Merge fitted values back into full parameter structure
+  par_vec <- fit$fit$par
+  par_names <- names(par_vec)
+  
+  if (verbose) {
+    cat("  fit$par (", length(par_vec), " values):", paste(par_names, "=",
+        round(par_vec, 6), collapse = ", "), "\n")
+  }
+  
+  # Start from params_init and overwrite with fitted values by name
   pfit <- params_init
-  if (!is.null(pfit_vals)) {
-    for (n in names(pfit_vals)) pfit[[n]] <- pfit_vals[[n]]
-  } else {
-    if (verbose) cat("  WARNING: Using params_init as fallback (relist failed)\n")
-  }
-
-  # Restore metadata
   pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
+  
+  # Map scalar parameters directly
+  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m")
+  for (nm in scalar_names) {
+    if (nm %in% par_names) {
+      pfit[[nm]] <- par_vec[nm]
+    }
+    # If not in par_vec, keep params_init value (it's fixed or absent)
+  }
+  
+  # Map CS_params: look for CS_params1, CS_params2, ... in par_vec
+  cs_idx <- grep("^CS_params[0-9]+$", par_names)
+  if (length(cs_idx) > 0) {
+    cs_nums <- as.integer(sub("^CS_params", "", par_names[cs_idx]))
+    n_cs <- length(pfit$CS_params)
+    for (j in seq_along(cs_idx)) {
+      k <- cs_nums[j]
+      if (k >= 1L && k <= n_cs) {
+        pfit$CS_params[k] <- par_vec[cs_idx[j]]
+      }
+    }
+    if (verbose) {
+      cat("  Mapped", length(cs_idx), "CS_params from fit$par into",
+          n_cs, "slots\n")
+    }
+  }
+  
+  # Map vertex_categorical: look for vertex_categorical.ATTR.LEVEL names
+  vc_idx <- grep("^vertex_categorical\\.", par_names)
+  if (length(vc_idx) > 0 && !is.null(pfit$vertex_categorical)) {
+    for (j in vc_idx) {
+      parts <- strsplit(par_names[j], "\\.")[[1]]
+      if (length(parts) >= 3) {
+        attr_name <- parts[2]
+        level_name <- paste(parts[3:length(parts)], collapse = ".")
+        if (!is.null(pfit$vertex_categorical[[attr_name]])) {
+          pfit$vertex_categorical[[attr_name]][level_name] <- par_vec[j]
+        }
+      }
+    }
+    if (verbose) {
+      cat("  Mapped", length(vc_idx), "vertex_categorical values from fit$par\n")
+    }
+  }
   
   # Handle inhomogeneous background
   use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
   
   if (use_inhom) {
-    # For inhomogeneous: mu is not used directly, but we set it for compatibility
-    # The actual mu_at_t will be computed from mu_fun during simulation
+    # For inhomogeneous: mu is not used directly during simulation (mu_fun is),
+    # but we set it for thinning bound and compatibility
     Tval <- time_window[2] - time_window[1]
     pfit$mu <- inhom_bg$integral_bg / Tval  # Average mu for compatibility
     if (verbose) {
       cat("  Using inhomogeneous background for simulations (matches fitted model)\n")
     }
   }
-  # If mu is fixed, it stays at params_init$mu (already in pfit from the merge above)
-  # If mu is free, the fitted value is already in pfit from pfit_vals
   
   # Ensure parameters are within valid ranges
-  pfit$K <- min(max(pfit$K, 0.001), 0.999)  # K must be in (0,1) for stability
-  pfit$mu <- max(pfit$mu, 0.001)  # mu must be positive
-  pfit$node_lambda <- max(pfit$node_lambda, 0.1)  # node_lambda must be positive
+  pfit$K <- min(max(pfit$K, 0.001), 0.999)
+  pfit$mu <- max(pfit$mu, 0.001)
+  pfit$node_lambda <- max(pfit$node_lambda, 0.1)
   pfit$beta_overall <- max(pfit$beta_overall, 0.001)
   pfit$beta_edges <- max(pfit$beta_edges, 0.001)
   
@@ -384,7 +416,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     scalar_params <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda")
     for (p in scalar_params) {
       if (!is.null(pfit[[p]])) {
-        src <- if (!is.null(fixed) && p %in% fixed) "(fixed)" else "(fitted)"
+        src <- if (!is.null(fixed) && p %in% fixed) "(FIXED)" else "(fitted)"
         cat(sprintf("    %s = %.6f %s\n", p, pfit[[p]], src))
       }
     }

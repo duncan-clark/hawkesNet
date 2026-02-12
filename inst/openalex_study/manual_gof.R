@@ -65,50 +65,77 @@ if (!is.null(fit$fit_table)) {
 cat("\nConvergence:", fit$fit$convergence, "\n")
 cat("Iterations:", fit$fit$counts[1], "\n")
 
-# --- 4. Reconstruct parameters exactly as gof() does ---
-cat("\n--- Parameter reconstruction ---\n")
+# --- 4. Reconstruct parameters (name-based, matches gof.R logic) ---
+cat("\n--- Parameter reconstruction (name-based) ---\n")
 fixed <- fit$fixed_params
-cat("Fixed params:", if (is.null(fixed)) "NONE (BUG?)" else paste(fixed, collapse = ", "), "\n")
+cat("Fixed params:", if (is.null(fixed)) "NONE (possible old RDS?)" else paste(fixed, collapse = ", "), "\n")
 
-# Build skeleton (strip fixed params + vertex_categorical_levels)
-skel <- params_init
-if (!is.null(fixed)) {
-  for (p in fixed) skel[[p]] <- NULL
+par_vec <- fit$fit$par
+par_names <- names(par_vec)
+cat("\nfit$par (", length(par_vec), "values):\n")
+for (i in seq_along(par_vec)) {
+  cat(sprintf("  [%d] %s = %.8f\n", i, par_names[i], par_vec[i]))
 }
-skel$vertex_categorical_levels <- NULL
 
-cat("\nfit$par length:", length(fit$fit$par), "\n")
-cat("skeleton length:", length(unlist(skel)), "\n")
-cat("fit$par names:", paste(names(fit$fit$par), collapse = ", "), "\n")
-cat("skeleton names:", paste(names(unlist(skel)), collapse = ", "), "\n")
-
-# Relist
-pfit_vals <- tryCatch({
-  relist(fit$fit$par, skeleton = skel)
-}, error = function(e) {
-  cat("\n*** RELIST FAILED:", e$message, "***\n")
-  cat("This means GOF would fall back to params_init!\n")
-  NULL
-})
-
-# Merge into full params
+# Start from params_init and overwrite with fitted values by name
 pfit <- params_init
-if (!is.null(pfit_vals)) {
-  for (n in names(pfit_vals)) pfit[[n]] <- pfit_vals[[n]]
-  cat("\nRelist succeeded. Merged fitted values into params_init.\n")
-} else {
-  cat("\nWARNING: Using params_init as fallback!\n")
+pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
+
+# Map scalar parameters
+scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m")
+for (nm in scalar_names) {
+  if (nm %in% par_names) {
+    cat(sprintf("  Mapping %s: %.8f (from fit$par) -> overwriting params_init %.8f\n",
+                nm, par_vec[nm], if (!is.null(pfit[[nm]])) pfit[[nm]] else NA))
+    pfit[[nm]] <- par_vec[nm]
+  } else {
+    cat(sprintf("  Keeping %s: %.8f (from params_init, %s)\n",
+                nm, if (!is.null(pfit[[nm]])) pfit[[nm]] else NA,
+                if (!is.null(fixed) && nm %in% fixed) "FIXED" else "not in fit$par"))
+  }
 }
 
-# Restore metadata
-pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
+# Map CS_params: look for CS_params1, CS_params2, ... in par_vec
+cs_idx <- grep("^CS_params[0-9]+$", par_names)
+if (length(cs_idx) > 0) {
+  cs_nums <- as.integer(sub("^CS_params", "", par_names[cs_idx]))
+  n_cs <- length(pfit$CS_params)
+  cat(sprintf("\nMapping %d CS_params entries into %d slots:\n", length(cs_idx), n_cs))
+  for (j in seq_along(cs_idx)) {
+    k <- cs_nums[j]
+    if (k >= 1L && k <= n_cs) {
+      cat(sprintf("  CS_params[%d] = %.8f (was %.8f)\n",
+                  k, par_vec[cs_idx[j]], pfit$CS_params[k]))
+      pfit$CS_params[k] <- par_vec[cs_idx[j]]
+    } else {
+      cat(sprintf("  WARNING: CS_params%d out of range (n_cs=%d)\n", k, n_cs))
+    }
+  }
+}
+
+# Map vertex_categorical
+vc_idx <- grep("^vertex_categorical\\.", par_names)
+if (length(vc_idx) > 0 && !is.null(pfit$vertex_categorical)) {
+  cat(sprintf("\nMapping %d vertex_categorical entries:\n", length(vc_idx)))
+  for (j in vc_idx) {
+    parts <- strsplit(par_names[j], "\\.")[[1]]
+    if (length(parts) >= 3) {
+      attr_name <- parts[2]
+      level_name <- paste(parts[3:length(parts)], collapse = ".")
+      cat(sprintf("  %s$%s = %.8f\n", attr_name, level_name, par_vec[j]))
+      if (!is.null(pfit$vertex_categorical[[attr_name]])) {
+        pfit$vertex_categorical[[attr_name]][level_name] <- par_vec[j]
+      }
+    }
+  }
+}
 
 # Handle inhomogeneous background
 use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
 if (use_inhom) {
   Tval <- time_window[2] - time_window[1]
   pfit$mu <- inhom_bg$integral_bg / Tval
-  cat("Using inhomogeneous background (avg mu =", round(pfit$mu, 4), ")\n")
+  cat("\nUsing inhomogeneous background (avg mu =", round(pfit$mu, 4), ")\n")
 } 
 
 # Clamp to valid ranges
