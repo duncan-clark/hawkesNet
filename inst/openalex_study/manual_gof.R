@@ -58,7 +58,7 @@ fit_struct <- fit_hawkesNet(
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_STRUCT, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K"), cores = N_CORES, combine_intensity = TRUE
 )
 print(fit_struct$fit_table)
 
@@ -68,7 +68,7 @@ fit_match <- fit_hawkesNet(
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_MATCH, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K"), cores = N_CORES, combine_intensity = TRUE
 )
 print(fit_match$fit_table)
 

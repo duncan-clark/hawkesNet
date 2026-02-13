@@ -368,25 +368,61 @@ sample_vertex_attrs <- function(params, last_net, mark_sample, old_nodes, new_no
 #' @return The updated network (invisible).
 #' @noRd
 ensure_vertex_attrs <- function(params, net) {
-  vcat <- params$vertex_categorical
-  if (is.null(vcat) || !is.list(vcat)) return(net)
   nv <- network.size(net)
-  for (attr_name in names(vcat)) {
-    levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
-      params$vertex_categorical_levels[[attr_name]]
-    } else { c("unknown") }
-    if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
-    if (!attr_name %in% list.vertex.attributes(net)) {
-      set.vertex.attribute(net, attr_name, rep(levs[1L], nv))
-    } else {
-      attr_vals <- net %v% attr_name
-      if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
-        if (length(attr_vals) < nv) attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
-        attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
-        set.vertex.attribute(net, attr_name, attr_vals)
+  if (nv == 0) return(net)
+  
+  # 1. Handle attributes explicitly defined in params$vertex_categorical
+  vcat <- params$vertex_categorical
+  if (!is.null(vcat) && is.list(vcat)) {
+    for (attr_name in names(vcat)) {
+      levs <- if (!is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels)) {
+        params$vertex_categorical_levels[[attr_name]]
+      } else { c("unknown") }
+      if (is.null(levs) || length(levs) == 0) levs <- c("unknown")
+      
+      if (!attr_name %in% list.vertex.attributes(net)) {
+        set.vertex.attribute(net, attr_name, rep(levs[1L], nv))
+      } else {
+        attr_vals <- net %v% attr_name
+        if (length(attr_vals) < nv || any(is.na(attr_vals)) || any(attr_vals == "")) {
+          if (length(attr_vals) < nv) attr_vals <- c(attr_vals, rep(levs[1L], nv - length(attr_vals)))
+          attr_vals[is.na(attr_vals) | attr_vals == ""] <- levs[1L]
+          set.vertex.attribute(net, attr_name, attr_vals)
+        }
       }
     }
   }
+  
+  # 2. Safety: Sanitize ALL vertex attributes to prevent C++ segfaults in as.BinaryNet.
+  # Rcpp/ERNM expects attributes to be purely numeric or character, and NO NAs.
+  # Factors or NAs in attributes not in vcat can still trigger the segfault.
+  all_attrs <- list.vertex.attributes(net)
+  # Exclude 'na' which is internal to network package
+  all_attrs <- setdiff(all_attrs, "na")
+  
+  for (a in all_attrs) {
+    vals <- get.vertex.attribute(net, a)
+    if (length(vals) < nv) {
+      # Pad missing values
+      default_val <- if (is.numeric(vals)) 0 else "unknown"
+      vals <- c(vals, rep(default_val, nv - length(vals)))
+    }
+    
+    # Convert factors to character (factors cause issues in C++)
+    if (is.factor(vals)) vals <- as.character(vals)
+    
+    # Fill NAs
+    if (any(is.na(vals))) {
+      if (is.numeric(vals)) {
+        vals[is.na(vals)] <- 0
+      } else {
+        vals <- as.character(vals)
+        vals[is.na(vals)] <- "unknown"
+      }
+    }
+    set.vertex.attribute(net, a, vals)
+  }
+  
   net
 }
 
