@@ -942,7 +942,7 @@ PMF_mark_CS <- function(time,
       }
       
       eta <- as.vector(change_stats %*% params$CS_params)
-      probs <- sanitize_probs(plogis(eta), eps, " (density, post-logistic)")
+      probs <- sanitize_probs(stats::plogis(eta), eps, " (density, post-logistic)")
       # use either node times or last node activity:
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
@@ -1036,7 +1036,7 @@ PMF_mark_CS <- function(time,
     }
     
     eta    <- as.vector(change_stats %*% params$CS_params)
-    p_base <- plogis(eta)
+    p_base <- stats::plogis(eta)
     
     # same decay factor as direct
     p <- p_base * exp(-params$beta_edges * diffs)
@@ -1249,7 +1249,7 @@ PMF_mark_CS <- function(time,
       model$calculate()
       change_stats <- model$computeChangeStats(tails, heads)
       eta <- as.vector(change_stats %*% params$CS_params)
-      probs <- sanitize_probs(plogis(eta), eps, " (generate_mark, post-logistic)")
+      probs <- sanitize_probs(stats::plogis(eta), eps, " (generate_mark, post-logistic)")
 
       # reset to when we did not add more edges
       # logistic regression on change stats:

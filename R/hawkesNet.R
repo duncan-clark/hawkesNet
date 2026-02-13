@@ -1535,7 +1535,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 
     # 2. Vectorized edge probabilities: one matmul + one plogis + one exp
     eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
-    p_all   <- plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
+    p_all   <- stats::plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
     p_all   <- pmin(pmax(p_all, eps), 1 - eps)
 
     # 3. Segment log-sums via cumsum (replaces per-event loop)
@@ -1552,7 +1552,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     node_dens <- rep(0, N)
     needs_node <- !past_max_node_time & !degenerate
     if (any(needs_node)) {
-      node_dens[needs_node] <- dpois(new_minus_old[needs_node],
+      node_dens[needs_node] <- stats::dpois(new_minus_old[needs_node],
                                             params$node_lambda, log = TRUE)
       bad <- !is.finite(node_dens)
       if (any(bad)) node_dens[bad] <- -1e10
