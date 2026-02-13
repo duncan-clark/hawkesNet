@@ -43,8 +43,8 @@ cat(sprintf("Network: %d events, %d nodes\n",
 # --- 2. Fit Models ---
 TRUNCATION <- 300
 GROWTH_ONLY <- TRUE
-FORMULA_STRUCT <- "edges + gwdegree(0.5)"
-FORMULA_MATCH  <- "edges + gwdegree(0.5) + nodeMatch('gender')"
+FORMULA_STRUCT <- "edges + gwdegree(0.1)"
+FORMULA_MATCH  <- "edges + gwdegree(0.1) + nodeMatch('gender')"
 
 cat("\n--- Preparing Background ---\n")
 inhom_bg <- prepare_inhomogeneous_background(net_raw, time_attr = "time")

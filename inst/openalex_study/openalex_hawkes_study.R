@@ -73,7 +73,9 @@ RUN_FIT_BA <- TRUE
 RUN_GOF_NODEMIX <- FALSE
 
 # FLOW CONTROL:
-#   LOAD_PREVIOUS_RESULTS: if TRUE, try to load results from disk and skip fitting/GOF.
+#   LOAD_PREVIOUS_RESULTS: if TRUE, load results from cluster_output/results_openalex_full.RDS
+#     and skip fitting/GOF. Use for paper output after a full run has saved. Example:
+#     LOAD_PREVIOUS_RESULTS=TRUE Rscript inst/openalex_study/openalex_hawkes_study.R
 #   STOP_AFTER_FETCH: if TRUE, stop after fetching and preparing the network.
 LOAD_PREVIOUS_RESULTS <- isTRUE(as.logical(Sys.getenv("LOAD_PREVIOUS_RESULTS", "FALSE")))
 STOP_AFTER_FETCH <- isTRUE(as.logical(Sys.getenv("STOP_AFTER_FETCH", "FALSE")))
@@ -213,10 +215,9 @@ if (LOAD_PREVIOUS_RESULTS && file.exists(rds_path_primary)) {
   cat("  LOAD_PREVIOUS_RESULTS = TRUE: Loading existing results from", rds_path_primary, "\n")
   dat_prev <- tryCatch(readRDS(rds_path_primary), error = function(e) NULL)
   if (!is.null(dat_prev)) {
-    # Load into global env so Step 6 can find them
     list2env(dat_prev, envir = .GlobalEnv)
+    dat <- dat_prev
     cat("  Successfully rehydrated all results. Skipping Steps 2-5.\n")
-    # Set flags to skip
     RUN_FIT_STRUCTURAL <- FALSE
     RUN_FIT_NODEMATCH <- FALSE
     RUN_FIT_BA <- FALSE
@@ -240,9 +241,9 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 # 2a. Structural-only fit (first, independent)
 # =============================================================================
 fit_inhom_structural <- NULL
-# gwdegree(0.5) captures the full degree distribution with one parameter
-# (geometrically weighted), replacing star(c(2,3,4,5)) which needed 4 params.
-FORMULA_RHS_STRUCTURAL <- "edges + gwdegree(0.5)"
+# gwdegree(0.1) captures degree distribution with stronger preferential-attachment-like
+# weighting (smaller decay favors high-degree nodes more than gwdegree(0.5)).
+FORMULA_RHS_STRUCTURAL <- "edges + gwdegree(0.1)"
 if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
@@ -315,7 +316,7 @@ if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
 # 2b. nodeMatch fit (initialized from structural fit)
 # =============================================================================
 fit_inhom_nodematch <- NULL
-FORMULA_RHS_NODEMATCH <- "edges + gwdegree(0.5) + nodeMatch('gender')"
+FORMULA_RHS_NODEMATCH <- "edges + gwdegree(0.1) + nodeMatch('gender')"
 if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
@@ -475,7 +476,7 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
 # male-male, etc.) instead of a single homophily indicator like nodeMatch.
 # =============================================================================
 fit_inhom_nodemix <- NULL
-FORMULA_RHS_NODEMIX <- "edges + gwdegree(0.5) + nodeMix('gender')"
+FORMULA_RHS_NODEMIX <- "edges + gwdegree(0.1) + nodeMix('gender')"
 if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
   cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
@@ -958,6 +959,7 @@ save_list <- list(
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
 )
+dat <- save_list
 
 OPENALEX_RDS_PATH <- NULL  # set after save so Step 6 can find file
 
@@ -1011,6 +1013,8 @@ if (PAPER_OUTPUT) {
     
     if (file.exists(rds_file)) {
       cat("  Loading results from:", rds_file, "\n")
+      fi <- file.info(rds_file)
+      if (!is.null(fi$mtime)) cat("  File modified:", format(fi$mtime), "\n")
       dat <- readRDS(rds_file)
       # Ensure GOF alias exists for older RDS that may not have it, and plots is never NULL
       if (is.null(dat$GOF) && !is.null(dat$GOF_results)) dat$GOF <- dat$GOF_results
