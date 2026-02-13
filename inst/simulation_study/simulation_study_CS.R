@@ -204,7 +204,7 @@ if(SIMULATE){
         trace = 1,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        fixed_params = c("K"),
+        fixed_params = c("mu", "K"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -340,7 +340,7 @@ if(RUN_CONSISTENCY){
                             cache_intensity = TRUE,
                             combine_intensity = TRUE,
                             verbose = FALSE,
-                            fixed_params = c("K"),
+                            fixed_params = c("mu", "K"),
                             parscale = p_scale,
                             cores = N_CORES_INNER,
                             method = "Nelder-Mead")
