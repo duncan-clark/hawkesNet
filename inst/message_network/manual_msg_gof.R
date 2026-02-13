@@ -12,7 +12,7 @@ library(dplyr)
 library(parallel)
 
 # --- 1. Configuration ---
-N_CORES <- 1 # Local run
+N_CORES <- 16 # Use 16 cores as requested
 TRUNCATION <- 100
 GROWTH_ONLY <- FALSE # As requested
 FORMULA_RHS <- "edges + triangles + star(2) + star(3)"
@@ -61,8 +61,8 @@ set.edge.attribute(net, "time", edges$time)
 set.vertex.attribute(net, "time", node_times$time)
 
 # Use a subset for a quicker "manual" run if needed, or full
-# Let's take the first 14 days as in the old script
-T_LIMIT <- 14
+# Let's take the first 50 days as requested
+T_LIMIT <- 50
 net_sub <- filtration_to_net(net, T_LIMIT)
 delete.vertices(net_sub, isolates(net_sub))
 

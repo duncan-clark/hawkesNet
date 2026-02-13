@@ -122,7 +122,14 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
       })
     })
     # Export internal functions that might be needed in PSOCK workers
+    # Also export the namespace itself to be safe
     clusterExport(cl, c("get_truncated_candidates"), envir = asNamespace("hawkesNet"))
+    clusterEvalQ(cl, {
+      # Re-verify function existence in worker
+      if (!exists("get_truncated_candidates", envir = .GlobalEnv)) {
+        assign("get_truncated_candidates", hawkesNet:::get_truncated_candidates, envir = .GlobalEnv)
+      }
+    })
     result <- parLapply(cl, X, FUN)
     return(result)
   }

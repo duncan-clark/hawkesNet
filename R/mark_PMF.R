@@ -634,6 +634,8 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
 #' @return List with \code{tails} and \code{heads} integer vectors.
 #' @export
 get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay, growth_only = FALSE) {
+  # Add a tiny wait to ensure it's not a race condition in PSOCK
+  # (though export should handle it)
   n <- max(new_nodes, old_nodes)
   if (n == 0) return(list(tails = integer(0), heads = integer(0)))
 
