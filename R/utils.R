@@ -132,37 +132,66 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
       })
     })
     
-    # Export helper functions used by closures.
+    # Bootstrap worker .GlobalEnv with internal helpers.
     #
-    # IMPORTANT: In dev / analysis scripts we sometimes `source(R/*.R)` or use `devtools::load_all()`,
-    # which defines functions in the global environment that can mask the installed package namespace.
-    # If we export from asNamespace("hawkesNet"), PSOCK workers can end up with a *different* function
-    # signature (e.g. old get_truncated_candidates without `growth_only`) than the one the master
-    # closure expects. Exporting the functions as they exist in the master's search path avoids this.
-    gtc_master <- get("get_truncated_candidates", mode = "function")
-    sve_master <- if (exists("strip_vertex_attrs_for_ernm", mode = "function")) get("strip_vertex_attrs_for_ernm", mode = "function") else NULL
-    fva_master <- if (exists("formula_vertex_attrs_PMF", mode = "function")) get("formula_vertex_attrs_PMF", mode = "function") else NULL
-    snb_master <- if (exists("sanitize_net_for_binarynet", mode = "function")) get("sanitize_net_for_binarynet", mode = "function") else NULL
-    
-    parallel::clusterExport(
-      cl,
-      c("gtc_master", "sve_master", "fva_master", "snb_master"),
-      envir = environment()
+    # Why: In development workflows (e.g. devtools::load_all(), source("R/*.R")),
+    # the user may pass functions/closures whose environment is NOT the hawkesNet namespace.
+    # Those functions can refer to internal helpers like strip_vertex_attrs_for_ernm() by name,
+    # which PSOCK workers won't have in their global env by default.
+    #
+    # We therefore copy a small set of internal helpers from the *master* hawkesNet namespace
+    # into each worker's global environment.
+    bootstrap_names <- c(
+      "get_times",
+      "get_latest_times",
+      "get_truncated_candidates",
+      "sanitize_net_for_binarynet",
+      "formula_vertex_attrs_PMF",
+      "strip_vertex_attrs_for_ernm"
     )
+    bootstrap_fns <- setNames(vector("list", length(bootstrap_names)), bootstrap_names)
+    for (nm in bootstrap_names) {
+      # Prefer the currently loaded hawkesNet namespace (master process).
+      if (exists(nm, envir = asNamespace("hawkesNet"), inherits = FALSE)) {
+        bootstrap_fns[[nm]] <- get(nm, envir = asNamespace("hawkesNet"))
+      } else if (exists(nm, mode = "function")) {
+        # Fallback: whatever is on the master's search path.
+        bootstrap_fns[[nm]] <- get(nm, mode = "function")
+      } else {
+        bootstrap_fns[[nm]] <- NULL
+      }
+    }
+    parallel::clusterExport(cl, "bootstrap_fns", envir = environment())
     parallel::clusterEvalQ(cl, {
-      if (!exists("get_truncated_candidates", envir = .GlobalEnv)) {
-        assign("get_truncated_candidates", gtc_master, envir = .GlobalEnv)
-      }
-      if (!is.null(sve_master) && !exists("strip_vertex_attrs_for_ernm", envir = .GlobalEnv)) {
-        assign("strip_vertex_attrs_for_ernm", sve_master, envir = .GlobalEnv)
-      }
-      if (!is.null(fva_master) && !exists("formula_vertex_attrs_PMF", envir = .GlobalEnv)) {
-        assign("formula_vertex_attrs_PMF", fva_master, envir = .GlobalEnv)
-      }
-      if (!is.null(snb_master) && !exists("sanitize_net_for_binarynet", envir = .GlobalEnv)) {
-        assign("sanitize_net_for_binarynet", snb_master, envir = .GlobalEnv)
+      for (nm in names(bootstrap_fns)) {
+        fn <- bootstrap_fns[[nm]]
+        if (!is.null(fn) && !exists(nm, envir = .GlobalEnv, inherits = FALSE)) {
+          assign(nm, fn, envir = .GlobalEnv)
+        }
       }
     })
+    # Fail early with a readable error if a critical helper is missing in any worker.
+    chk <- parallel::clusterEvalQ(cl, {
+      ok_strip <- exists("strip_vertex_attrs_for_ernm", envir = .GlobalEnv, inherits = FALSE) ||
+                  exists("strip_vertex_attrs_for_ernm", envir = asNamespace("hawkesNet"), inherits = FALSE)
+      list(
+        pid = Sys.getpid(),
+        hawkesNet_version = as.character(utils::packageVersion("hawkesNet")),
+        ok_strip = ok_strip,
+        libpaths = .libPaths()
+      )
+    })
+    if (!all(vapply(chk, function(x) isTRUE(x$ok_strip), logical(1)))) {
+      msg <- paste0(
+        "PSOCK worker bootstrap failed: at least one worker cannot see strip_vertex_attrs_for_ernm().\n",
+        "Worker states:\n",
+        paste(vapply(chk, function(x) {
+          paste0("  pid=", x$pid, " hawkesNet=", x$hawkesNet_version, " ok_strip=", x$ok_strip)
+        }, character(1)), collapse = "\n"),
+        "\nThis usually means workers are loading a different hawkesNet installation than the master."
+      )
+      stop(msg, call. = FALSE)
+    }
     result <- parallel::parLapply(cl, X, FUN)
     return(result)
   }
