@@ -16,6 +16,8 @@ sim_hawkesNet(
   n_mark_sample = NULL,
   stop_on_full_network = TRUE,
   inhom_bg = NULL,
+  seed_net = NULL,
+  seed_times = NULL,
   ...
 )
 }
@@ -44,6 +46,11 @@ If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automat
 
 \item{inhom_bg}{Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
 If provided, uses \code{cond_intensity_inhom} with time-varying background rate.}
+
+\item{seed_net}{Optional initial network state to start simulation from.}
+
+\item{seed_times}{Optional numeric vector of event times corresponding to \code{seed_net}.
+Used to initialize the Hawkes kernel state for conditional simulation.}
 
 \item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }

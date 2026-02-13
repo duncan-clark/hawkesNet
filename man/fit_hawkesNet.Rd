@@ -9,7 +9,7 @@ fit_hawkesNet(
   time_window,
   mark_filtration,
   PMF_mark,
-  maxit,
+  maxit = 500,
   trace = 0,
   REPORT = 10,
   reltol = 1e-08,

@@ -127,7 +127,7 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     clusterEvalQ(cl, {
       # Re-verify function existence in worker
       if (!exists("get_truncated_candidates", envir = .GlobalEnv)) {
-        assign("get_truncated_candidates", hawkesNet:::get_truncated_candidates, envir = .GlobalEnv)
+        assign("get_truncated_candidates", hawkesNet::get_truncated_candidates, envir = .GlobalEnv)
       }
     })
     result <- parLapply(cl, X, FUN)

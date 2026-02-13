@@ -14,6 +14,7 @@ gof(
   time_window = c(0, 0.05),
   truncation = 100L,
   mark_decay = "activity",
+  growth_only = FALSE,
   max_node_time = 1,
   inhom_bg = NULL,
   n_sim = 50L,
@@ -23,6 +24,7 @@ gof(
   degree = 0L,
   esp = 0L,
   mu_multiplier = 5,
+  seed_events = 0L,
   verbose = TRUE
 )
 }
@@ -46,6 +48,9 @@ If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automat
 
 \item{mark_decay}{Mark decay type: "node_entrance" or "activity" (default "activity").}
 
+\item{growth_only}{Logical; if \code{TRUE}, edges only form when a node enters the network.
+Default \code{FALSE}.}
+
 \item{max_node_time}{Maximum node time (default 1).}
 
 \item{inhom_bg}{Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
@@ -64,6 +69,11 @@ If provided, simulations use \code{cond_intensity_inhom} with time-varying backg
 \item{esp}{Minimum ESP to include in ESP distribution (default 0).}
 
 \item{mu_multiplier}{Multiplier for mu in simulations (default 5).}
+
+\item{seed_events}{Optional integer. If \code{> 0}, the first \code{seed_events}
+observed events are used to seed the simulation. The simulation then
+generates subsequent events conditional on this initial history.
+Recommended for sparse networks where cold-start simulation is difficult.}
 
 \item{verbose}{Print progress messages (default TRUE).}
 }

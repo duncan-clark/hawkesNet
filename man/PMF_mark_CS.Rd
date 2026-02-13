@@ -18,6 +18,7 @@ PMF_mark_CS(
   formula_RHS,
   truncation = 1,
   mark_decay = "node_entrance",
+  growth_only = FALSE,
   model = NULL,
   max_node_time = NULL,
   ...
@@ -49,6 +50,9 @@ and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
 \item{mark_decay}{Character string controlling how temporal weights decay.
 One of \code{"node_entrance"} (default) or \code{"activity"}.}
+
+\item{growth_only}{Logical; if \code{TRUE}, edges only form when a node enters the network.
+(At least one node in the pair must be a new entrant). Default \code{FALSE}.}
 
 \item{model}{Optional pre-built ERNM model object to reuse.}
 

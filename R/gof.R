@@ -812,8 +812,7 @@ create_gof_plots <- function(GOF_results) {
       ggplot2::labs(
         title = paste(stat_name, "Distribution"),
         x = x_lab,
-        y = "Count",
-        fill = "Type"
+        y = "Count"
       ) +
       ggplot2::theme_minimal() +
       ggplot2::theme(
@@ -893,8 +892,7 @@ create_gof_plots <- function(GOF_results) {
       ggplot2::labs(
         title = "Geodesic Distance Distribution (Relative Proportions)",
         x = "Geodesic Distance",
-        y = "Proportion of Pairs",
-        fill = "Type"
+        y = "Proportion of Pairs"
       ) +
       ggplot2::theme_minimal() +
       ggplot2::theme(

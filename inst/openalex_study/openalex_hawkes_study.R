@@ -535,70 +535,71 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
   cat("  No inhomogeneous background; skipping nodeMix fit\n")
 }
 
-# =============================================================================
-# 2d. BA (Barabási–Albert) model fit
-# =============================================================================
-fit_inhom_ba <- NULL
-if (!is.null(inhom_bg) && RUN_FIT_BA) {
-  cat("\n--- Step 2d: BA (Barabási–Albert) model fit ---\n")
-  t_step_ba <- proc.time()
-  
-  # Initialize BA parameters
-  # m is the expected number of edges per event
-  params_init_ba <- list(
-    mu = mu_init,
-    beta_overall = 1.0,
-    K = 0.5,
-    beta_edges = 1.0,
-    m = 1.0
-  )
-  
-  # parscale for BA
-  p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 0.1)
-  
-  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
-  t_fit_ba <- proc.time()
-  
-  fit_inhom_ba <- safe_run(
-    fit_hawkesNet(
-      params_init = params_init_ba,
-      time_window = time_window_01,
-      mark_filtration = net_raw,
-      PMF_mark = PMF_mark_BA,
-      mu_vec = inhom_bg$mu_vec,
-      integral_bg = inhom_bg$integral_bg,
-      truncation = TRUNCATION,
-      mark_decay = "activity",
-      growth_only = GROWTH_ONLY,
-      max_node_time = 1,
-      method = "Nelder-Mead",
-      maxit = MAX_ITER,
-      trace = 0,
-      reltol = 1e-8,
-      verbose = FALSE,
-      fixed_params = c("K", "mu"),
-      parscale = p_scale_ba,
-      cache_intensity = TRUE,
-      combine_intensity = TRUE,
-      cores = N_CORES
-    ),
-    "BA fit"
-  )
-  
-  elapsed_fit_ba <- (proc.time() - t_fit_ba)[3]
-  if (!is.null(fit_inhom_ba)) {
-    cat("  Fit completed:", round(elapsed_fit_ba, 1), "s (", round(elapsed_fit_ba / 60, 1), "min)\n")
-    cat("  Convergence:", fit_inhom_ba$fit$convergence, "\n")
-    cat("  Iterations:", fit_inhom_ba$fit$counts[1], "\n")
-    if (!is.null(fit_inhom_ba$fit_table)) {
-      cat("\n  BA fit results:\n")
-      print(fit_inhom_ba$fit_table, max = NULL)
+  # BA (Barabási–Albert) model fit
+  # =============================================================================
+  fit_inhom_ba <- NULL
+  if (!is.null(inhom_bg) && RUN_FIT_BA) {
+    cat("\n--- Step 2d: BA (Barabási–Albert) model fit ---\n")
+    t_step_ba <- proc.time()
+    
+    # Initialize BA parameters
+    # m is the expected number of edges per event
+    params_init_ba <- list(
+      mu = mu_init,
+      beta_overall = 1.0,
+      K = 0.5,
+      beta_edges = 1.0,
+      m = 1.0
+    )
+    
+    # parscale for BA
+    p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 0.1)
+    
+    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+    t_fit_ba <- proc.time()
+    
+    fit_inhom_ba <- safe_run(
+      fit_hawkesNet(
+        params_init = params_init_ba,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_BA,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        growth_only = GROWTH_ONLY,
+        max_node_time = 1,
+        method = "Nelder-Mead",
+        maxit = MAX_ITER,
+        trace = 0,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_ba,
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        cores = N_CORES
+      ),
+      "BA fit"
+    )
+    
+    elapsed_fit_ba <- (proc.time() - t_fit_ba)[3]
+    if (!is.null(fit_inhom_ba)) {
+      cat("  Fit completed:", round(elapsed_fit_ba, 1), "s (", round(elapsed_fit_ba / 60, 1), "min)\n")
+      cat("  Convergence:", fit_inhom_ba$fit$convergence, "\n")
+      cat("  Iterations:", fit_inhom_ba$fit$counts[1], "\n")
+      if (!is.null(fit_inhom_ba$fit_table)) {
+        cat("\n  BA fit results:\n")
+        print(fit_inhom_ba$fit_table, max = NULL)
+      }
+    } else {
+      cat("  BA fit FAILED after", round(elapsed_fit_ba, 1), "s\n")
     }
+    cat("  Step 2d total:", round((proc.time() - t_step_ba)[3], 1), "s\n")
   } else {
-    cat("  BA fit FAILED after", round(elapsed_fit_ba, 1), "s\n")
+    cat("  Skipping BA fit (RUN_FIT_BA=FALSE or no inhom_bg)\n")
   }
-  cat("  Step 2d total:", round((proc.time() - t_step_ba)[3], 1), "s\n")
-}
 
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
@@ -963,9 +964,9 @@ if (PAPER_OUTPUT) {
       if (!is.null(pfit_nodematch)) {
         pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
         # Restore names and repair parameters before expanding
-        pfit_nodematch <- hawkesNet::reconstruct_vertex_categorical_names(
+        pfit_nodematch <- hawkesNet:::reconstruct_vertex_categorical_names(
           pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
-        pfit_nodematch <- hawkesNet::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
+        pfit_nodematch <- hawkesNet:::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
         if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
           levs <- params_init_nodematch$vertex_categorical_levels$gender
           pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)
