@@ -66,6 +66,9 @@ TRUNCATION <- as.integer(Sys.getenv("TRUNCATION", NA_integer_))  # if NA, choose
 # GOF
 RUN_GOF <- isTRUE(as.logical(Sys.getenv("RUN_GOF", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 25L))
+# Optional quick simulation test from fitted values (before GOF) to check model produces reasonable networks
+RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "TRUE")))
+N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
 N_GOF <- max(1L, N_GOF)
 N_CORES_GOF <- as.integer(Sys.getenv("GOF_CORES", N_CORES))
 N_CORES_GOF <- max(1L, min(N_CORES_GOF, N_GOF))
@@ -79,15 +82,18 @@ MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", if (LOCAL_QUICK) 400L else 0L)) 
 GRID_N <- as.integer(Sys.getenv("KDE_GRID_N", if (LOCAL_QUICK) 1024L else 4096L))
 BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_))) # NA => default
 
-# Model specification (transitivity + degree)
-FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "edges + gwdegree(0.1) + gwesp(0.1)")
+# Model specification (transitivity + degree).
+# Note: "edges" is omitted — in growth models we add exactly one edge per event, so the edges
+# change statistic is +1 for every candidate; it cancels in the softmax and is redundant.
+# Dropping it may improve identifiability of beta_overall and K.
+FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "gwdegree(0.1) + gwesp(0.1)")
 MARK_DECAY <- Sys.getenv("MARK_DECAY", "activity")
 GROWTH_ONLY <- FALSE
 
 cat("=== Hypertext conference (modern) ===\n")
 cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
 cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "\n")
-cat("  MAX_ITER:", MAX_ITER, "| RUN_GOF:", RUN_GOF, "| N_GOF:", N_GOF, "\n")
+cat("  MAX_ITER:", MAX_ITER, "| RUN_GOF:", RUN_GOF, "| N_GOF:", N_GOF, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
 cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "\n\n")
 
@@ -369,6 +375,79 @@ if (!is.null(fit$fit_table)) {
 }
 
 # -----------------------------------------------------------------------------
+# Optional: quick simulation test from fitted values (before GOF)
+# -----------------------------------------------------------------------------
+sim_test_res <- NULL
+if (RUN_SIM_TEST && !is.null(fit$params)) {
+  cat("\n--- Simulation test (fitted model sanity check) ---\n")
+  pfit <- fit$params
+  seed_net_test <- NULL
+  seed_times_test <- NULL
+  if (SEED_EVENTS_GOF > 0) {
+    all_times <- get_times(net)$times
+    if (length(all_times) >= SEED_EVENTS_GOF) {
+      t_seed <- all_times[SEED_EVENTS_GOF]
+      seed_net_test <- filtration_to_net(net, t_seed, equals = TRUE)
+      seed_times_test <- all_times[1:SEED_EVENTS_GOF]
+      cat("  Seeding with first", SEED_EVENTS_GOF, "events (up to t =", round(t_seed, 4), ")\n")
+    }
+  }
+  sims_test <- vector("list", N_SIM_TEST)
+  for (i in seq_len(N_SIM_TEST)) {
+    sims_test[[i]] <- tryCatch({
+      sim_hawkesNet(
+        params = pfit,
+        time_window = time_window,
+        PMF_mark = PMF_mark_CS,
+        cond_intensity = cond_intensity,
+        formula_RHS = FORMULA_RHS,
+        truncation = TRUNCATION,
+        mark_decay = MARK_DECAY,
+        growth_only = GROWTH_ONLY,
+        max_node_time = max(get_times(net)$node_times),
+        hashed_edges = TRUE,
+        verbose = FALSE,
+        mu_multiplier = 5,
+        stop_on_full_network = FALSE,
+        inhom_bg = inhom_bg,
+        seed_net = seed_net_test,
+        seed_times = seed_times_test
+      )
+    }, error = function(e) {
+      list(net = NULL, events = list(t = numeric(0)), error = e$message)
+    })
+  }
+  n_obs <- network::network.size(net)
+  e_obs <- network::network.edgecount(net)
+  deg_obs <- sna::degree(net, gmode = "graph")
+  mean_deg_obs <- mean(deg_obs[deg_obs > 0], na.rm = TRUE)
+  if (is.na(mean_deg_obs) || !is.finite(mean_deg_obs)) mean_deg_obs <- 0
+  n_sim_ok <- sum(!sapply(sims_test, function(s) is.null(s$net)))
+  n_edges_sim <- vapply(sims_test, function(s) {
+    if (is.null(s$net)) NA_integer_ else network::network.edgecount(s$net)
+  }, integer(1))
+  n_nodes_sim <- vapply(sims_test, function(s) {
+    if (is.null(s$net)) NA_integer_ else network::network.size(s$net)
+  }, integer(1))
+  mean_deg_sim <- vapply(sims_test, function(s) {
+    if (is.null(s$net)) NA_real_
+    else {
+      d <- sna::degree(s$net, gmode = "graph")
+      m <- mean(d[d > 0], na.rm = TRUE)
+      if (is.na(m) || !is.finite(m)) 0 else m
+    }
+  }, numeric(1))
+  cat("  Observed:  n_edges =", e_obs, "| n_nodes =", n_obs, "| mean_deg(>0) =", round(mean_deg_obs, 2), "\n")
+  cat("  Simulated:", n_sim_ok, "/", N_SIM_TEST, "succeeded\n")
+  if (n_sim_ok > 0) {
+    cat("    n_edges:  ", paste(na.omit(n_edges_sim), collapse = ", "), "\n")
+    cat("    n_nodes:  ", paste(na.omit(n_nodes_sim), collapse = ", "), "\n")
+    cat("    mean_deg: ", paste(round(na.omit(mean_deg_sim), 2), collapse = ", "), "\n")
+  }
+  sim_test_res <- list(sims = sims_test, n_obs = n_obs, e_obs = e_obs, mean_deg_obs = mean_deg_obs)
+}
+
+# -----------------------------------------------------------------------------
 # GOF (fast checks only)
 # -----------------------------------------------------------------------------
 gof_res <- NULL
@@ -420,6 +499,7 @@ saveRDS(
   list(
     fit = fit,
     gof = gof_res,
+    sim_test = sim_test_res,
     net = net,
     edges = obj$edges,
     inhom_bg = inhom_bg,
