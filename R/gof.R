@@ -597,24 +597,14 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     })
     
     GOF_results$wait_obs <- tryCatch({
-      # For BA model, use a default formula for waiting times if none provided
-      wait_formula_obs <- if (identical(PMF_mark, PMF_mark_BA) && (is.null(formula_RHS) || formula_RHS == "")) {
-        "edges + triangles + star(c(2,3))"
-      } else {
-        formula_RHS
-      }
-      wait_obs_raw <- waiting_times_between_formations(net_obs, formula_RHS = wait_formula_obs)
-      # Get ERNM statistic names from formula
-      exp_cs <- tryCatch({
-        if (identical(PMF_mark, PMF_mark_BA)) {
-          list(CS_params_names = c("edges", "triangles", "star2", "star3"))
-        } else {
-          expected_params_PMF_mark_CS(net_obs, formula_RHS)
-        }
-      }, error = function(e) NULL)
-      if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names) && 
-          length(exp_cs$CS_params_names) == length(wait_obs_raw)) {
-        names(wait_obs_raw) <- exp_cs$CS_params_names
+      # Use a standard set of statistics for waiting times in ALL cases
+      wait_formula_standard <- "edges + triangles + star(c(2,3))"
+      wait_obs_raw <- waiting_times_between_formations(net_obs, formula_RHS = wait_formula_standard)
+      
+      # Standard statistic names for these waiting times
+      stat_names_standard <- c("edges", "triangles", "star2", "star3")
+      if (length(stat_names_standard) == length(wait_obs_raw)) {
+        names(wait_obs_raw) <- stat_names_standard
       }
       wait_obs_raw
     }, error = function(e) {
@@ -732,33 +722,16 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     cat(sprintf("  [GOF] Starting waiting times (%d nets, %d cores) at %s\n",
                 length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
     GOF_results$wait_sim <- tryCatch({
-      # Get ERNM statistic names from formula (use first simulated network or observed)
-      exp_cs <- tryCatch({
-        net_for_names <- if (!is.null(net_obs)) net_obs else if (length(sim_nets) > 0 && !is.null(sim_nets[[1]])) sim_nets[[1]] else NULL
-        if (!is.null(net_for_names)) {
-          if (identical(PMF_mark, PMF_mark_BA)) {
-            # BA model has no CS params, but we can still compute waiting times for standard stats
-            list(CS_params_names = c("edges", "triangles", "star2", "star3"))
-          } else {
-            expected_params_PMF_mark_CS(net_for_names, formula_RHS)
-          }
-        } else NULL
-      }, error = function(e) NULL)
-      stat_names <- if (!is.null(exp_cs) && !is.null(exp_cs$CS_params_names)) exp_cs$CS_params_names else NULL
-      
-      # For BA model, use a default formula for waiting times if none provided
-      wait_formula <- if (identical(PMF_mark, PMF_mark_BA) && (is.null(formula_RHS) || formula_RHS == "")) {
-        "edges + triangles + star(c(2,3))"
-      } else {
-        formula_RHS
-      }
+      # Use a standard set of statistics for waiting times in ALL cases
+      wait_formula_standard <- "edges + triangles + star(c(2,3))"
+      stat_names_standard <- c("edges", "triangles", "star2", "star3")
       
       # Use safe_parallel_lapply for stability
       safe_parallel_lapply(sim_nets, function(n) {
         tryCatch({
-          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = wait_formula)
-          if (!is.null(stat_names) && length(stat_names) == length(wait_sim_raw)) {
-            names(wait_sim_raw) <- stat_names
+          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = wait_formula_standard)
+          if (length(stat_names_standard) == length(wait_sim_raw)) {
+            names(wait_sim_raw) <- stat_names_standard
           }
           wait_sim_raw
         }, error = function(e) list())
