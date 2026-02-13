@@ -109,6 +109,8 @@ make_cluster <- function(n_workers) {
     library(sna)
     library(hash)
     library(hawkesNet)
+    # Ensure plogis is available (needed by PMF_mark_CS closures when serialized to inner workers)
+    plogis <- stats::plogis
     # CRITICAL: Pre-set BLAS/OpenMP threads to 1 in each PSOCK worker.
     # When fit_hawkesNet uses inner parallelism (mclapply fork), forked
     # grandchildren inherit the worker's thread state. If BLAS is multi-threaded,

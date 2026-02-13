@@ -147,12 +147,15 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
       "get_truncated_candidates",
       "sanitize_net_for_binarynet",
       "formula_vertex_attrs_PMF",
-      "strip_vertex_attrs_for_ernm"
+      "strip_vertex_attrs_for_ernm",
+      "plogis"
     )
     bootstrap_fns <- setNames(vector("list", length(bootstrap_names)), bootstrap_names)
     for (nm in bootstrap_names) {
       # Prefer the currently loaded hawkesNet namespace (master process).
-      if (exists(nm, envir = asNamespace("hawkesNet"), inherits = FALSE)) {
+      if (nm == "plogis") {
+        bootstrap_fns[[nm]] <- stats::plogis
+      } else if (exists(nm, envir = asNamespace("hawkesNet"), inherits = FALSE)) {
         bootstrap_fns[[nm]] <- get(nm, envir = asNamespace("hawkesNet"))
       } else if (exists(nm, mode = "function")) {
         # Fallback: whatever is on the master's search path.

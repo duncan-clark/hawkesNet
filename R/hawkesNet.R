@@ -1515,6 +1515,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
   rm(combined_inputs_list, diffs_kernel_list)
 
   eps <- 1e-10
+  plogis <- stats::plogis  # Capture for closure; ensures availability when serialized to parallel workers
 
   # ====================================================================
   # Fully vectorized closure: O(N) kernel + O(total_rows) mark density
@@ -1535,7 +1536,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 
     # 2. Vectorized edge probabilities: one matmul + one plogis + one exp
     eta_all <- as.vector(change_stats_stacked %*% params$CS_params)
-    p_all   <- stats::plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
+    p_all   <- plogis(eta_all) * exp(-params$beta_edges * diffs_stacked)
     p_all   <- pmin(pmax(p_all, eps), 1 - eps)
 
     # 3. Segment log-sums via cumsum (replaces per-event loop)

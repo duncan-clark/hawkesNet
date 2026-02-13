@@ -1027,6 +1027,7 @@ PMF_mark_CS <- function(time,
   
   # log_density_func_light: full version with decay, vertex_categorical, safety clamping.
   # (Environment is rebound to a minimal env after definition.)
+  # Use plogis from env (not stats::) so closure is self-contained when serialized to parallel workers.
   log_density_func_light <- function(params) {
     # Everything it needs will come from its environment:
     # change_stats, in_mark, diffs, new_nodes, old_nodes, time, max_node_time, degenerate_edges
@@ -1036,7 +1037,7 @@ PMF_mark_CS <- function(time,
     }
     
     eta    <- as.vector(change_stats %*% params$CS_params)
-    p_base <- stats::plogis(eta)
+    p_base <- plogis(eta)
     
     # same decay factor as direct
     p <- p_base * exp(-params$beta_edges * diffs)
@@ -1113,7 +1114,8 @@ PMF_mark_CS <- function(time,
       observed_categorical            = obs_cat,
       level_names_by_attr             = level_names_by_attr,
       expand_vertex_categorical_probs = expand_vertex_categorical_probs,
-      dpois                           = stats::dpois
+      dpois                           = stats::dpois,
+      plogis                          = stats::plogis
     ),
     parent = baseenv()
   )
