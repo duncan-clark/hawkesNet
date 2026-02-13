@@ -110,10 +110,20 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     } else {
       message("  [parallel] PSOCK cluster (", n_workers, " workers)")
     }
-    cl <- makeCluster(n_workers)
-    on.exit(stopCluster(cl), add = TRUE)
+    cl <- parallel::makeCluster(n_workers)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    
+    # Ensure workers see the same library paths as the master.
+    # PSOCK starts a fresh R session; if `.libPaths()` differs (common on clusters / multiple installs),
+    # workers may load an older hawkesNet missing internal helpers (e.g. strip_vertex_attrs_for_ernm).
+    libpaths_master <- .libPaths()
+    parallel::clusterExport(cl, "libpaths_master", envir = environment())
+    parallel::clusterEvalQ(cl, {
+      .libPaths(libpaths_master)
+    })
+    
     # Load packages that intens_func's captured closures depend on
-    clusterEvalQ(cl, {
+    parallel::clusterEvalQ(cl, {
       suppressPackageStartupMessages({
         library(hawkesNet)
         library(ernm)
@@ -121,16 +131,39 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
         library(sna)
       })
     })
-    # Export internal functions that might be needed in PSOCK workers
-    # Also export the namespace itself to be safe
-    clusterExport(cl, c("get_truncated_candidates"), envir = asNamespace("hawkesNet"))
-    clusterEvalQ(cl, {
-      # Re-verify function existence in worker
+    
+    # Export helper functions used by closures.
+    #
+    # IMPORTANT: In dev / analysis scripts we sometimes `source(R/*.R)` or use `devtools::load_all()`,
+    # which defines functions in the global environment that can mask the installed package namespace.
+    # If we export from asNamespace("hawkesNet"), PSOCK workers can end up with a *different* function
+    # signature (e.g. old get_truncated_candidates without `growth_only`) than the one the master
+    # closure expects. Exporting the functions as they exist in the master's search path avoids this.
+    gtc_master <- get("get_truncated_candidates", mode = "function")
+    sve_master <- if (exists("strip_vertex_attrs_for_ernm", mode = "function")) get("strip_vertex_attrs_for_ernm", mode = "function") else NULL
+    fva_master <- if (exists("formula_vertex_attrs_PMF", mode = "function")) get("formula_vertex_attrs_PMF", mode = "function") else NULL
+    snb_master <- if (exists("sanitize_net_for_binarynet", mode = "function")) get("sanitize_net_for_binarynet", mode = "function") else NULL
+    
+    parallel::clusterExport(
+      cl,
+      c("gtc_master", "sve_master", "fva_master", "snb_master"),
+      envir = environment()
+    )
+    parallel::clusterEvalQ(cl, {
       if (!exists("get_truncated_candidates", envir = .GlobalEnv)) {
-        assign("get_truncated_candidates", hawkesNet::get_truncated_candidates, envir = .GlobalEnv)
+        assign("get_truncated_candidates", gtc_master, envir = .GlobalEnv)
+      }
+      if (!is.null(sve_master) && !exists("strip_vertex_attrs_for_ernm", envir = .GlobalEnv)) {
+        assign("strip_vertex_attrs_for_ernm", sve_master, envir = .GlobalEnv)
+      }
+      if (!is.null(fva_master) && !exists("formula_vertex_attrs_PMF", envir = .GlobalEnv)) {
+        assign("formula_vertex_attrs_PMF", fva_master, envir = .GlobalEnv)
+      }
+      if (!is.null(snb_master) && !exists("sanitize_net_for_binarynet", envir = .GlobalEnv)) {
+        assign("sanitize_net_for_binarynet", snb_master, envir = .GlobalEnv)
       }
     })
-    result <- parLapply(cl, X, FUN)
+    result <- parallel::parLapply(cl, X, FUN)
     return(result)
   }
 
@@ -269,7 +302,7 @@ events_to_net <- function(events_list,
                           directed = FALSE){
 
   for(k in seq_along(events_list$i)){
-    if(k==1 & is.null(net)){
+    if (k == 1L && is.null(net)) {
       net <- network(matrix(c(events_list$i[k],events_list$j[k]),nrow = 1),directed = directed)
       set.vertex.attribute(net,"time",events_list$t[k],v=events_list$i[k])
       set.vertex.attribute(net,"time",events_list$t[k],v=events_list$j[k])

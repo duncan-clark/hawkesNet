@@ -25,8 +25,10 @@ library(sna)
 PKG_ROOT <- getwd()
 
 # Use the repo (most up-to-date) implementation even if the installed package is older.
-# This keeps GOF + truncation behavior consistent with your current hawkesNet code.
-USE_REPO_CODE <- isTRUE(as.logical(Sys.getenv("USE_REPO_CODE", "TRUE")))
+# This is helpful during development, but note: on macOS/Windows we use PSOCK workers for parallelism,
+# and PSOCK workers do NOT automatically see functions you sourced into the master session.
+# For robust parallel runs, prefer installing the package and leave USE_REPO_CODE=FALSE.
+USE_REPO_CODE <- isTRUE(as.logical(Sys.getenv("USE_REPO_CODE", "FALSE")))
 if (USE_REPO_CODE) {
   source(file.path(PKG_ROOT, "R", "utils.R"))
   source(file.path(PKG_ROOT, "R", "kde_background.R"))
@@ -42,8 +44,21 @@ if (USE_REPO_CODE) {
 default_local_quick <- if (nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))) "FALSE" else "TRUE"
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", default_local_quick)))
 
-N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", if (LOCAL_QUICK) 1L else 7L))
+# Default to 7 cores even locally (override with SLURM_CPUS_PER_TASK / env var if desired).
+N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L))
 N_CORES <- max(1L, N_CORES)
+
+# If we're sourcing repo code in a PSOCK-only context (macOS/Windows/interactive), force serial
+# to avoid "could not find function ..." errors inside workers.
+if (USE_REPO_CODE) {
+  os <- Sys.info()[["sysname"]]
+  psock_only <- (os %in% c("Darwin", "Windows")) || interactive() || isTRUE(getOption("hawkesNet.force_psock", FALSE))
+  if (psock_only && N_CORES > 1L) {
+    message("NOTE: USE_REPO_CODE=TRUE under PSOCK; forcing N_CORES=1 for worker consistency. ",
+            "Install hawkesNet and set USE_REPO_CODE=FALSE to use multiple cores.")
+    N_CORES <- 1L
+  }
+}
 
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 TRUNCATION <- as.integer(Sys.getenv("TRUNCATION", NA_integer_))  # if NA, choose below
