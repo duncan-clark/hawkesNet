@@ -198,7 +198,7 @@ cat("  KDE background:", round((proc.time() - t_kde)[3], 1), "s\n")
 fit_inhom_structural <- NULL
 # gwdegree(0.5) captures the full degree distribution with one parameter
 # (geometrically weighted), replacing star(c(2,3,4,5)) which needed 4 params.
-FORMULA_RHS_STRUCTURAL <- "edges + triangles + gwdegree(0.5)"
+FORMULA_RHS_STRUCTURAL <- "edges + gwdegree(0.5)"
 if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
   cat("\n--- Step 2a: Structural-only fit (no gender) ---\n")
   cat("  Formula:", FORMULA_RHS_STRUCTURAL, "\n")
@@ -206,7 +206,7 @@ if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
   
   # Get expected parameters for structural formula
   exp_cs_structural <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL)
-  n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 3L
+  n_cs_structural <- if (!is.na(exp_cs_structural$CS_params_length)) exp_cs_structural$CS_params_length else 2L
   
   # Initialize parameters for structural-only model (no vertex_categorical)
   # Use observed edge density for edges-intercept init (avoids -10 bias)
@@ -271,7 +271,7 @@ if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
 # 2b. nodeMatch fit (initialized from structural fit)
 # =============================================================================
 fit_inhom_nodematch <- NULL
-FORMULA_RHS_NODEMATCH <- "edges + triangles + gwdegree(0.5) + nodeMatch('gender')"
+FORMULA_RHS_NODEMATCH <- "edges + gwdegree(0.5) + nodeMatch('gender')"
 if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   cat("\n--- Step 2b: nodeMatch fit (initialized from structural) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMATCH, "\n")
@@ -282,7 +282,7 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   n_cs_nodematch <- if (!is.na(exp_cs_nodematch$CS_params_length)) {
     exp_cs_nodematch$CS_params_length
   } else {
-    max(4L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 1L)
+    max(3L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 2L) + 1L)
   }
   
   # Initialize nodeMatch fit from structural fit results
@@ -431,19 +431,19 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
 # male-male, etc.) instead of a single homophily indicator like nodeMatch.
 # =============================================================================
 fit_inhom_nodemix <- NULL
-FORMULA_RHS_NODEMIX <- "edges + triangles + gwdegree(0.5) + nodeMix('gender')"
+FORMULA_RHS_NODEMIX <- "edges + gwdegree(0.5) + nodeMix('gender')"
 if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
   cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
   cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
   t_step_nodemix <- proc.time()
-
+  
   # Determine CS_params length from ERNM model
   exp_cs_nodemix <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMIX)
   n_cs_nodemix <- if (!is.na(exp_cs_nodemix$CS_params_length)) {
     exp_cs_nodemix$CS_params_length
   } else {
-    # edges + triangles + gwdegree + nodeMix levels: guess conservatively
-    max(6L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 3L) + 3L)
+    # edges + gwdegree + nodeMix levels: guess conservatively
+    max(5L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 2L) + 3L)
   }
   cat("  CS_params length:", n_cs_nodemix, "\n")
 

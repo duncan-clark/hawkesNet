@@ -732,6 +732,26 @@ PMF_mark_CS <- function(time,
                         max_node_time = NULL,
                         ...
 ){
+  if (growth_only && !is.null(formula_RHS)) {
+    zero_terms <- c("triangles", "triangle", "gwesp", "gwdsp", "esp", "dsp",
+                     "ttriple", "ctriple", "kstar")
+    found <- zero_terms[sapply(zero_terms, function(t) grepl(t, formula_RHS, ignore.case = TRUE))]
+    if (length(found) > 0) {
+      warn_key <- paste0("PMF_mark_CS_growth_only_zero_terms_", paste(found, collapse = "_"))
+      if (is.null(getOption(warn_key))) {
+        warning(
+          "growth_only = TRUE: formula contains terms that will be structurally zero ",
+          "when edges are evaluated independently from a degree-0 new node: ",
+          paste(found, collapse = ", "), ". ",
+          "These change statistics will always be 0 and their parameters unidentified. ",
+          "Consider using only degree-based terms (e.g. edges, gwdegree) and ",
+          "node-level covariates (e.g. nodeMatch, nodeMix, nodeCov).",
+          call. = FALSE
+        )
+        options(setNames(list(TRUE), warn_key))
+      }
+    }
+  }
   eps <- 1e-10  # used for probability clamping and safe log (CS safety)
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
