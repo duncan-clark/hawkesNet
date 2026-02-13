@@ -476,6 +476,52 @@ ensure_vertex_attrs <- function(params, net) {
   net
 }
 
+#' Vertex attributes required by an ERNM formula (nodeMatch/nodeMix).
+#' @param formula_RHS Character RHS of formula.
+#' @return Character vector of attribute names, or character(0) if none.
+#' @noRd
+formula_vertex_attrs_PMF <- function(formula_RHS) {
+  if (is.null(formula_RHS) || !nzchar(trimws(formula_RHS))) return(character(0))
+  m <- gregexpr("node(?:Match|Mix)\\s*\\(\\s*['\"]([^'\"]+)['\"]", formula_RHS, perl = TRUE)[[1]]
+  if (m[1] == -1) return(character(0))
+  s <- attr(m, "capture.start")
+  l <- attr(m, "capture.length")
+  unique(substring(formula_RHS, s[, 1], s[, 1] + l[, 1] - 1))
+}
+
+#' Drop unneeded vertex attributes before ERNM as.BinaryNet.
+#'
+#' ERNM's BinaryNet may attempt to register *all* character vertex attributes
+#' as discrete variables (addDiscreteVar). High-cardinality attributes such as
+#' publication dates, titles, author names, etc. can cause crashes/segfaults.
+#' Keep only attributes required by the ERNM formula (nodeMatch/nodeMix) and
+#' those explicitly modeled via params$vertex_categorical.
+#'
+#' @param net Network to modify.
+#' @param formula_RHS ERNM formula RHS (character).
+#' @param params Parameter list (optional; used for vertex_categorical names).
+#' @return Modified net.
+#' @noRd
+strip_vertex_attrs_for_ernm <- function(net, formula_RHS, params = NULL) {
+  if (is.null(net) || network.size(net) == 0L) return(net)
+  keep <- formula_vertex_attrs_PMF(formula_RHS)
+  if (!is.null(params) && !is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
+    keep <- unique(c(keep, names(params$vertex_categorical)))
+  }
+  # Always drop the problematic placeholder attr if present.
+  all_attrs <- setdiff(list.vertex.attributes(net), "na")
+  drop <- setdiff(all_attrs, keep)
+  if (length(drop) > 0) {
+    for (a in drop) {
+      tryCatch(delete.vertex.attribute(net, a), error = function(e) NULL)
+    }
+  }
+  if ("na" %in% list.vertex.attributes(net)) {
+    tryCatch(delete.vertex.attribute(net, "na"), error = function(e) NULL)
+  }
+  net
+}
+
 #' @rdname PMF_mark_CS
 #' @export
 normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
@@ -589,6 +635,7 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   CS_params_names <- NULL
   tryCatch({
     net_safe <- sanitize_net_for_binarynet(network::network.copy(net))
+    net_safe <- strip_vertex_attrs_for_ernm(net_safe, formula_RHS, params = NULL)
     model <- createCppModel(as.formula(paste("net_safe ~ ", formula_RHS)))
     model$setNetwork(as.BinaryNet(net_safe))
     model$calculate()
@@ -880,6 +927,8 @@ PMF_mark_CS <- function(time,
       if(is.null(model)){
         model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
       }else{
+        # CRITICAL: Strip high-cardinality metadata vertex attrs before BinaryNet conversion.
+        new_net <- strip_vertex_attrs_for_ernm(new_net, formula_RHS, params = params)
         sanitize_net_for_binarynet(new_net)
         model$setNetwork(as.BinaryNet(new_net))
       }
@@ -1154,6 +1203,10 @@ PMF_mark_CS <- function(time,
       if ("na" %in% list.vertex.attributes(mark_sample)) {
         delete.vertex.attribute(mark_sample, "na")
       }
+      # CRITICAL: Drop unneeded high-cardinality metadata vertex attributes (e.g. publication_date, title)
+      # before any ERNM BinaryNet conversion. ERNM may register *all* character vertex attrs as discrete
+      # vars (addDiscreteVar), which can segfault for very high-cardinality attributes.
+      mark_sample <- strip_vertex_attrs_for_ernm(mark_sample, formula_RHS, params = params)
       
       # Reuse ERNM model per formula (avoids createCppModel every event; big speedup for nodeMatch)
       cache <- get0(".ernm_model_cache", envir = asNamespace("hawkesNet"), inherits = FALSE)
