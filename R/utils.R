@@ -102,7 +102,7 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
     n_workers <- mc.cores
     # Cap PSOCK workers to avoid OOM. Each worker loads packages + a copy of the network.
     # Default: 16 for interactive sessions (laptops), higher for SLURM batch jobs.
-    default_cap <- if (!interactive() && nzchar(Sys.getenv("SLURM_JOB_ID"))) 64L else 16L
+    default_cap <- if (!interactive() && nzchar(Sys.getenv("SLURM_JOB_ID"))) 128L else 16L
     max_psock <- getOption("hawkesNet.max_psock_workers", default_cap)
     if (n_workers > max_psock) {
       message("  [parallel] Capping PSOCK workers to ", max_psock, " (avoid OOM; set options(hawkesNet.max_psock_workers = N) to override)")
@@ -121,6 +121,8 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
         library(sna)
       })
     })
+    # Export internal functions that might be needed in PSOCK workers
+    clusterExport(cl, c("get_truncated_candidates"), envir = asNamespace("hawkesNet"))
     result <- parLapply(cl, X, FUN)
     return(result)
   }
