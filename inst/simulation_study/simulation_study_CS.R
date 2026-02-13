@@ -134,8 +134,11 @@ if(SIMULATE){
   t <- proc.time()
   # R < 4.4.0 has a limit of 128 total connections. PSOCK workers use 1 each.
   # We cap at 120 to leave room for files/stdout/etc.
-  N_SIM_WORKERS <- min(N_CORES, 120L)
-  cat("Commencing simulation using", N_SIM_WORKERS, "parallel workers (capped at 120 for socket limits)...\n")
+  # NeSI scheduling/memory: too many PSOCK workers can bloat memory.
+  # Default to a smaller simulation worker pool; override with SIM_WORKERS.
+  N_SIM_WORKERS <- as.numeric(Sys.getenv("SIM_WORKERS", min(N_CORES, 16L)))
+  N_SIM_WORKERS <- max(1L, min(N_SIM_WORKERS, N_CORES))
+  cat("Commencing simulation using", N_SIM_WORKERS, "parallel workers...\n")
   cl_sim <- makeCluster(N_SIM_WORKERS)
   registerDoParallel(cl_sim)
   clusterEvalQ(cl_sim, {

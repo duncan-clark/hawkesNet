@@ -806,6 +806,27 @@ dist_stats_sim <- tryCatch({
       }
       rm(dist_stats_sim); gc()
     }
+
+    # --- Fallback: ensure core stats exist for plotting ---
+    # In rare cases (e.g. parallel worker failure), dist_stats_sim can be NULL/empty even when
+    # simulations succeeded. Ensure degree/ESP/geodesic summaries are populated so plots aren't empty.
+    if (length(sim_nets) > 0) {
+      if (is.null(GOF_results$degree_sim)) {
+        GOF_results$degree_sim <- tryCatch({
+          do.call(rbind, lapply(sim_nets, function(n) degree_dist(n, max_deg, min_deg = degree)))
+        }, error = function(e) NULL)
+      }
+      if (is.null(GOF_results$esp_sim)) {
+        GOF_results$esp_sim <- tryCatch({
+          do.call(rbind, lapply(sim_nets, function(n) esp_dist(n, k_esp, min_esp = esp)))
+        }, error = function(e) NULL)
+      }
+      if (is.null(GOF_results$geodist_sim)) {
+        GOF_results$geodist_sim <- tryCatch({
+          lapply(sim_nets, function(n) geodist_dist(n))
+        }, error = function(e) NULL)
+      }
+    }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
     cat(sprintf("  [GOF] Starting waiting times (%d nets, %d cores) at %s\n",
