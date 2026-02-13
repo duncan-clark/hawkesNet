@@ -70,6 +70,7 @@ RUN_FIT_STRUCTURAL <- TRUE
 RUN_FIT_NODEMATCH <- TRUE
 RUN_FIT_NODEMIX <- FALSE
 RUN_FIT_BA <- TRUE
+RUN_GOF_NODEMIX <- FALSE
 TOPIC <- "Point processes and geometric inequalities"
 
 # Reproducibility
@@ -781,7 +782,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
 cat(sprintf("  [GOF] Memory after nodeMatch GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
 # GOF for nodeMix model (third)
-if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
+if (RUN_GOF && RUN_GOF_NODEMIX && !is.null(fit_inhom_nodemix)) {
   cat("\n  GOF for nodeMix model...\n")
   
   # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
@@ -857,7 +858,7 @@ if (RUN_GOF) {
   if (!is.null(GOF_results_nodematch) && !is.null(GOF_results_nodematch$degree_obs)) {
     cat("  [nodeMatch Model]  Degree obs mean:", round(mean(GOF_results_nodematch$degree_obs), 2), "\n")
   }
-  if (!is.null(GOF_results_nodemix) && !is.null(GOF_results_nodemix$degree_obs)) {
+  if (!is.null(GOF_results_nodemix) && !is.null(GOF_results_nodemix$degree_obs) && RUN_GOF_NODEMIX) {
     cat("  [nodeMix Model]    Degree obs mean:", round(mean(GOF_results_nodemix$degree_obs), 2), "\n")
   }
   if (!is.null(GOF_results_ba) && !is.null(GOF_results_ba$degree_obs)) {
