@@ -1215,6 +1215,10 @@ PMF_mark_CS <- function(time,
         cache[[".cache_pid"]] <- Sys.getpid()
         assign(".ernm_model_cache", cache, envir = asNamespace("hawkesNet"))
       }
+      # If cache exists but lacks pid marker (older installs / sourced code), initialize it.
+      if (is.null(cache[[".cache_pid"]]) || length(cache[[".cache_pid"]]) != 1L || !is.finite(cache[[".cache_pid"]])) {
+        cache[[".cache_pid"]] <- Sys.getpid()
+      }
       # Invalidate cache in forked children: C++ pointers become invalid after fork.
       if (Sys.getpid() != cache[[".cache_pid"]]) {
         rm(list = setdiff(names(cache), ".cache_pid"), envir = cache)
