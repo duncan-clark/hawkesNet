@@ -68,9 +68,7 @@ PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 RUN_FIT_STRUCTURAL <- TRUE
 RUN_FIT_NODEMATCH <- TRUE
-RUN_FIT_NODEMIX <- FALSE
 RUN_FIT_BA <- TRUE
-RUN_GOF_NODEMIX <- FALSE
 
 # FLOW CONTROL:
 #   LOAD_PREVIOUS_RESULTS: if TRUE, load results from cluster_output/results_openalex_full.RDS
@@ -469,82 +467,34 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   cat("  No inhomogeneous background; skipping nodeMatch fit\n")
 }
 
-# =============================================================================
-# 2c. nodeMix('gender') fit (initialized from nodeMatch fit)
-# =============================================================================
-# nodeMix captures the full gender mixing matrix (female-female, female-male,
-# male-male, etc.) instead of a single homophily indicator like nodeMatch.
-# =============================================================================
-fit_inhom_nodemix <- NULL
-FORMULA_RHS_NODEMIX <- "edges + gwdegree(0.1) + nodeMix('gender')"
-if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
-  cat("\n--- Step 2c: nodeMix fit (initialized from nodeMatch) ---\n")
-  cat("  Formula:", FORMULA_RHS_NODEMIX, "\n")
-  t_step_nodemix <- proc.time()
-  
-  # Determine CS_params length from ERNM model
-  exp_cs_nodemix <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMIX)
-  n_cs_nodemix <- if (!is.na(exp_cs_nodemix$CS_params_length)) {
-    exp_cs_nodemix$CS_params_length
-  } else {
-    # edges + gwdegree + nodeMix levels: guess conservatively
-    max(5L, (if (exists("n_cs_structural", inherits = FALSE)) n_cs_structural else 2L) + 3L)
-  }
-  cat("  CS_params length:", n_cs_nodemix, "\n")
-
-  # Initialize from nodeMatch fit if available, else from structural, else independent
-    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$fit) &&
-        fit_inhom_nodematch$fit$convergence == 0) {
-      # Use nodeMatch fit parameters as starting point
-      skel_nm <- params_init_nodematch
-      skel_nm$mu <- NULL
-      skel_nm$K <- NULL
-      skel_nm$vertex_categorical_levels <- NULL
-      pfit_nm <- tryCatch(relist(fit_inhom_nodematch$fit$par, skeleton = skel_nm), error = function(e) NULL)
-
-      if (!is.null(pfit_nm) && all(is.finite(unlist(pfit_nm)))) {
-        # Pad CS_params to the nodeMix length (nodeMix usually has more terms than nodeMatch)
-        cs_from_nm <- pfit_nm$CS_params
-        cs_padded <- c(cs_from_nm, rep(0, max(0L, n_cs_nodemix - length(cs_from_nm))))[seq_len(n_cs_nodemix)]
-        params_init_nodemix <- list(
-          mu = params_init_nodematch$mu,
-          beta_overall = pfit_nm$beta_overall,
-          K = params_init_nodematch$K,
-          beta_edges = pfit_nm$beta_edges,
-          node_lambda = pfit_nm$node_lambda,
-          CS_params = cs_padded,
-          vertex_categorical = list(gender = c(female = 0.1, male = 0.5)),
-          vertex_categorical_levels = list(gender = c("female", "male", "unknown"))
-        )
-        cat("  Initialized from nodeMatch fit\n")
-      } else {
-        params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-        cat("  nodeMatch params invalid; using independent initialization\n")
-      }
-    } else {
-      params_init_nodemix <- make_default_params(n_cs_nodemix, mu_init, include_gender = TRUE)
-      cat("  No converged nodeMatch fit; using independent initialization\n")
-    }
-
-    # parscale
-    p_scale_nodemix <- c(
+  # =============================================================================
+  # 2c. Additional structural model: gwdegree(0.01)
+  # =============================================================================
+  fit_inhom_structural_gw001 <- NULL
+  FORMULA_RHS_STRUCTURAL_GW001 <- "edges + gwdegree(0.01)"
+  if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
+    cat("\n--- Step 2c: Structural-only fit (gwdegree(0.01)) ---\n")
+    cat("  Formula:", FORMULA_RHS_STRUCTURAL_GW001, "\n")
+    t_step_structural_gw001 <- proc.time()
+    
+    exp_cs_structural_gw001 <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL_GW001)
+    n_cs_structural_gw001 <- if (!is.na(exp_cs_structural_gw001$CS_params_length)) exp_cs_structural_gw001$CS_params_length else 2L
+    
+    params_init_structural_gw001 <- make_default_params(n_cs_structural_gw001, mu_init)
+    p_scale_structural_gw001 <- c(
       beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-      setNames(rep(0.1, n_cs_nodemix), paste0("CS_params", seq_len(n_cs_nodemix))),
-      vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
+      setNames(rep(0.1, n_cs_structural_gw001), paste0("CS_params", seq_len(n_cs_structural_gw001)))
     )
-
-    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
-    t_fit_nodemix <- proc.time()
-
-    fit_inhom_nodemix <- safe_run(
+    
+    fit_inhom_structural_gw001 <- safe_run(
       fit_hawkesNet(
-        params_init = params_init_nodemix,
+        params_init = params_init_structural_gw001,
         time_window = time_window_01,
         mark_filtration = net_raw,
         PMF_mark = PMF_mark_CS,
         mu_vec = inhom_bg$mu_vec,
         integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS_NODEMIX,
+        formula_RHS = FORMULA_RHS_STRUCTURAL_GW001,
         truncation = TRUNCATION,
         mark_decay = "activity",
         growth_only = GROWTH_ONLY,
@@ -555,36 +505,79 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
         reltol = 1e-8,
         verbose = FALSE,
         fixed_params = c("K", "mu"),
-        parscale = p_scale_nodemix,
+        parscale = p_scale_structural_gw001,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
         cores = N_CORES
       ),
-      "nodeMix fit"
+      "Structural gwdegree(0.01) fit"
     )
-
-  elapsed_fit_nodemix <- (proc.time() - t_fit_nodemix)[3]
-  if (!is.null(fit_inhom_nodemix)) {
-    cat("  Fit completed:", round(elapsed_fit_nodemix, 1), "s (", round(elapsed_fit_nodemix / 60, 1), "min)\n")
-    cat("  Convergence:", fit_inhom_nodemix$fit$convergence, "\n")
-    cat("  Iterations:", fit_inhom_nodemix$fit$counts[1], "\n")
-    if (!is.null(fit_inhom_nodemix$fit_table)) {
-      cat("\n  nodeMix fit results:\n")
-      print(fit_inhom_nodemix$fit_table, max = NULL)
+    
+    if (!is.null(fit_inhom_structural_gw001) && !is.null(fit_inhom_structural_gw001$intens_funcs)) {
+      fit_inhom_structural_gw001$intens_funcs <- NULL
     }
-  } else {
-    cat("  nodeMix fit returned NULL after", round(elapsed_fit_nodemix, 1), "s\n")
+    
+    cat("  Step 2c total:", round((proc.time() - t_step_structural_gw001)[3], 1), "s\n")
   }
-  cat("  Step 2c total:", round((proc.time() - t_step_nodemix)[3], 1), "s\n")
-} else {
-  cat("  No inhomogeneous background; skipping nodeMix fit\n")
-}
-
+  
+  # =============================================================================
+  # 2d. Additional structural model: degree(0) + star(c(2,3,4,5))
+  # =============================================================================
+  fit_inhom_structural_degstars <- NULL
+  FORMULA_RHS_STRUCTURAL_DEGSTARS <- "degree(0) + star(c(2,3,4,5))"
+  if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
+    cat("\n--- Step 2d: Structural-only fit (degree(0) + star(2:5)) ---\n")
+    cat("  Formula:", FORMULA_RHS_STRUCTURAL_DEGSTARS, "\n")
+    t_step_structural_degstars <- proc.time()
+    
+    exp_cs_structural_degstars <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL_DEGSTARS)
+    n_cs_structural_degstars <- if (!is.na(exp_cs_structural_degstars$CS_params_length)) exp_cs_structural_degstars$CS_params_length else 5L
+    
+    params_init_structural_degstars <- make_default_params(n_cs_structural_degstars, mu_init)
+    p_scale_structural_degstars <- c(
+      beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
+      setNames(rep(0.1, n_cs_structural_degstars), paste0("CS_params", seq_len(n_cs_structural_degstars)))
+    )
+    
+    fit_inhom_structural_degstars <- safe_run(
+      fit_hawkesNet(
+        params_init = params_init_structural_degstars,
+        time_window = time_window_01,
+        mark_filtration = net_raw,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = inhom_bg$mu_vec,
+        integral_bg = inhom_bg$integral_bg,
+        formula_RHS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
+        truncation = TRUNCATION,
+        mark_decay = "activity",
+        growth_only = GROWTH_ONLY,
+        max_node_time = 1,
+        method = "Nelder-Mead",
+        maxit = MAX_ITER,
+        trace = 0,
+        reltol = 1e-8,
+        verbose = FALSE,
+        fixed_params = c("K", "mu"),
+        parscale = p_scale_structural_degstars,
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        cores = N_CORES
+      ),
+      "Structural degree+stars fit"
+    )
+    
+    if (!is.null(fit_inhom_structural_degstars) && !is.null(fit_inhom_structural_degstars$intens_funcs)) {
+      fit_inhom_structural_degstars$intens_funcs <- NULL
+    }
+    
+    cat("  Step 2d total:", round((proc.time() - t_step_structural_degstars)[3], 1), "s\n")
+  }
+  
   # BA (Barabási–Albert) model fit
   # =============================================================================
   fit_inhom_ba <- NULL
   if (!is.null(inhom_bg) && RUN_FIT_BA) {
-    cat("\n--- Step 2d: BA (Barabási–Albert) model fit ---\n")
+    cat("\n--- Step 2e: BA (Barabási–Albert) model fit ---\n")
     t_step_ba <- proc.time()
     
     # Initialize BA parameters
@@ -597,8 +590,8 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
       m = 1.0
     )
     
-    # parscale for BA: m is a rate, beta_edges is a decay
-    p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 1.0)
+    # parscale for BA: K and m are rates/probability-like; beta_edges/beta_overall are decays
+    p_scale_ba <- c(beta_overall = 0.1, K = 0.1, beta_edges = 0.1, m = 1.0)
     
     cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
     t_fit_ba <- proc.time()
@@ -620,7 +613,9 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
         trace = 0,
         reltol = 1e-8,
         verbose = FALSE,
-        fixed_params = c("K", "mu"),
+        # Align with BA simulation study: estimate K (do not fix it).
+        # Keep mu fixed because OpenAlex BA fit uses inhomogeneous background (mu_vec/integral_bg).
+        fixed_params = c("mu"),
         parscale = p_scale_ba,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
@@ -653,9 +648,6 @@ cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$intens_funcs)) {
   fit_inhom_nodematch$intens_funcs <- NULL
 }
-if (!is.null(fit_inhom_nodemix) && !is.null(fit_inhom_nodemix$intens_funcs)) {
-  fit_inhom_nodemix$intens_funcs <- NULL
-}
 if (!is.null(fit_inhom_ba) && !is.null(fit_inhom_ba$intens_funcs)) {
   fit_inhom_ba$intens_funcs <- NULL
 }
@@ -664,10 +656,6 @@ if (exists("t_step_nodematch", inherits = FALSE)) rm(t_step_nodematch)
 if (exists("t_fit_nodematch", inherits = FALSE)) rm(t_fit_nodematch)
 if (exists("elapsed_fit_nodematch", inherits = FALSE)) rm(elapsed_fit_nodematch)
 if (exists("exp_cs_nodematch", inherits = FALSE)) rm(exp_cs_nodematch)
-if (exists("t_step_nodemix", inherits = FALSE)) rm(t_step_nodemix)
-if (exists("t_fit_nodemix", inherits = FALSE)) rm(t_fit_nodemix)
-if (exists("elapsed_fit_nodemix", inherits = FALSE)) rm(elapsed_fit_nodemix)
-if (exists("exp_cs_nodemix", inherits = FALSE)) rm(exp_cs_nodemix)
 gc()
 
 # =============================================================================
@@ -731,10 +719,13 @@ t_step <- proc.time()
 GOF_results_structural <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
-GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+GOF_results_structural_gw001 <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
-GOF_results_nodemix <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+GOF_results_structural_degstars <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL)
+GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results_ba <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -788,6 +779,70 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
 # --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
 cat(sprintf("  [GOF] Memory after structural GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
+# GOF for gwdegree(0.01) structural model
+if (RUN_GOF && !is.null(fit_inhom_structural_gw001)) {
+  cat("\n  GOF for structural gwdegree(0.01) model...\n")
+  GOF_results_structural_gw001 <- gof(
+    fit = fit_inhom_structural_gw001,
+    net_obs = net_raw,
+    params_init = params_init_structural_gw001,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS_STRUCTURAL_GW001,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    degree = 0,
+    esp = 0,
+    mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
+    verbose = TRUE
+  )
+} else {
+  if (RUN_GOF && is.null(fit_inhom_structural_gw001)) cat("  No gwdegree(0.01) structural fit available; skipping GOF\n")
+}
+
+cat(sprintf("  [GOF] Memory after structural gwdegree(0.01) GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
+
+# GOF for degree(0)+star(2:5) structural model
+if (RUN_GOF && !is.null(fit_inhom_structural_degstars)) {
+  cat("\n  GOF for structural degree(0)+star(2:5) model...\n")
+  GOF_results_structural_degstars <- gof(
+    fit = fit_inhom_structural_degstars,
+    net_obs = net_raw,
+    params_init = params_init_structural_degstars,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    degree = 0,
+    esp = 0,
+    mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
+    verbose = TRUE
+  )
+} else {
+  if (RUN_GOF && is.null(fit_inhom_structural_degstars)) cat("  No degree+stars structural fit available; skipping GOF\n")
+}
+
+cat(sprintf("  [GOF] Memory after structural degree+stars GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
+
 # GOF for nodeMatch model (second)
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
   cat("\n  GOF for nodeMatch model...\n")
@@ -825,43 +880,6 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
 # --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
 cat(sprintf("  [GOF] Memory after nodeMatch GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
-# GOF for nodeMix model (third)
-if (RUN_GOF && RUN_GOF_NODEMIX && !is.null(fit_inhom_nodemix)) {
-  cat("\n  GOF for nodeMix model...\n")
-  
-  # For GOF simulations, use cond_intensity_inhom to match the fitted inhomogeneous model
-  # The gof() function will automatically use cond_intensity_inhom when inhom_bg is provided
-  GOF_results_nodemix <- gof(
-    fit = fit_inhom_nodemix,
-    net_obs = net_raw,
-    params_init = params_init_nodemix,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,  # Will be overridden to cond_intensity_inhom by gof() when inhom_bg is provided
-    formula_RHS = FORMULA_RHS_NODEMIX,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    growth_only = GROWTH_ONLY,
-    max_node_time = 1,
-    inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    degree = 0,
-    esp = 0,
-    mu_multiplier = 5,
-    seed_events = SEED_EVENTS_GOF,
-    verbose = TRUE
-  )
-} else {
-  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMix GOF\n")
-  if (is.null(fit_inhom_nodemix)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
-}
-
-# --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
-cat(sprintf("  [GOF] Memory after nodeMix GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
-
 # GOF for BA model (fourth)
 if (RUN_GOF && !is.null(fit_inhom_ba)) {
   cat("\n  GOF for BA model...\n")
@@ -894,7 +912,7 @@ if (RUN_GOF && !is.null(fit_inhom_ba)) {
   if (is.null(fit_inhom_ba)) cat("  No BA fit available; skipping BA GOF\n")
 }
 
-# Use nodeMix GOF as primary for display (fallback to nodeMatch then structural)
+# GOF summary across fitted models
 if (RUN_GOF) {
   cat("\n--- GOF Summary Results ---\n")
   if (!is.null(GOF_results_structural) && !is.null(GOF_results_structural$degree_obs)) {
@@ -903,8 +921,11 @@ if (RUN_GOF) {
   if (!is.null(GOF_results_nodematch) && !is.null(GOF_results_nodematch$degree_obs)) {
     cat("  [nodeMatch Model]  Degree obs mean:", round(mean(GOF_results_nodematch$degree_obs), 2), "\n")
   }
-  if (!is.null(GOF_results_nodemix) && !is.null(GOF_results_nodemix$degree_obs) && RUN_GOF_NODEMIX) {
-    cat("  [nodeMix Model]    Degree obs mean:", round(mean(GOF_results_nodemix$degree_obs), 2), "\n")
+  if (!is.null(GOF_results_structural_gw001) && !is.null(GOF_results_structural_gw001$degree_obs)) {
+    cat("  [gwdegree(0.01)]   Degree obs mean:", round(mean(GOF_results_structural_gw001$degree_obs), 2), "\n")
+  }
+  if (!is.null(GOF_results_structural_degstars) && !is.null(GOF_results_structural_degstars$degree_obs)) {
+    cat("  [degree+stars]     Degree obs mean:", round(mean(GOF_results_structural_degstars$degree_obs), 2), "\n")
   }
   if (!is.null(GOF_results_ba) && !is.null(GOF_results_ba$degree_obs)) {
     cat("  [BA Model]         Degree obs mean:", round(mean(GOF_results_ba$degree_obs), 2), "\n")
@@ -925,36 +946,42 @@ if (is.null(fit_inhom_structural) && file.exists(file.path(PKG_ROOT, "cluster_ou
 # Strip intensity caches from fits so RDS stays small (low cost to re-run intensity if needed)
 fit_structural_for_save <- fit_inhom_structural
 if (!is.null(fit_structural_for_save)) fit_structural_for_save$intens_funcs <- NULL
+fit_structural_gw001_for_save <- fit_inhom_structural_gw001
+if (!is.null(fit_structural_gw001_for_save)) fit_structural_gw001_for_save$intens_funcs <- NULL
+fit_structural_degstars_for_save <- fit_inhom_structural_degstars
+if (!is.null(fit_structural_degstars_for_save)) fit_structural_degstars_for_save$intens_funcs <- NULL
 fit_nodematch_for_save <- fit_inhom_nodematch
 if (!is.null(fit_nodematch_for_save)) fit_nodematch_for_save$intens_funcs <- NULL
-fit_nodemix_for_save <- fit_inhom_nodemix
-if (!is.null(fit_nodemix_for_save)) fit_nodemix_for_save$intens_funcs <- NULL
 
 save_list <- list(
   net_raw = net_raw,
   edges = edges,
   inhom_bg = inhom_bg,
-  fit_inhom_nodemix = fit_nodemix_for_save,
   fit_inhom_ba = fit_inhom_ba,
   fit_inhom_nodematch = fit_nodematch_for_save,
   fit_inhom_structural = fit_structural_for_save,
-  params_init_nodemix = if (exists("params_init_nodemix")) params_init_nodemix else NULL,
+  fit_inhom_structural_gw001 = fit_structural_gw001_for_save,
+  fit_inhom_structural_degstars = fit_structural_degstars_for_save,
   params_init_ba = if (exists("params_init_ba")) params_init_ba else NULL,
   params_init_nodematch = if (exists("params_init_nodematch")) params_init_nodematch else NULL,
   params_init_structural = if (exists("params_init_structural")) params_init_structural else NULL,
-  FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX,
+  params_init_structural_gw001 = if (exists("params_init_structural_gw001")) params_init_structural_gw001 else NULL,
+  params_init_structural_degstars = if (exists("params_init_structural_degstars")) params_init_structural_degstars else NULL,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
   FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
+  FORMULA_RHS_STRUCTURAL_GW001 = FORMULA_RHS_STRUCTURAL_GW001,
+  FORMULA_RHS_STRUCTURAL_DEGSTARS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
   fit_temporal = fit_temporal,
   ks_temporal_pval = ks_temporal_pval,
   realiz = realiz,
   windowT = windowT,
   GOF_results = GOF_results,
   GOF = GOF_results,  # alias so dat$GOF$plots works
-  GOF_results_nodemix = GOF_results_nodemix,
   GOF_results_ba = GOF_results_ba,
   GOF_results_nodematch = GOF_results_nodematch,
   GOF_results_structural = GOF_results_structural,
+  GOF_results_structural_gw001 = GOF_results_structural_gw001,
+  GOF_results_structural_degstars = GOF_results_structural_degstars,
   N_GOF = N_GOF,
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
@@ -1103,17 +1130,42 @@ if (PAPER_OUTPUT) {
       print(fit_inhom_structural$fit$par)
     }
   }
+
+  # Print gwdegree(0.01) structural fit results
+  if (!is.null(dat$fit_inhom_structural_gw001)) {
+    cat("\n--- Structural-Only Fit Results (gwdegree(0.01)) ---\n")
+    if (!is.null(dat$fit_inhom_structural_gw001$fit_table)) {
+      cat("  Inhomogeneous fit (gwdegree(0.01)): parameter estimates and standard errors\n")
+      print(dat$fit_inhom_structural_gw001$fit_table, max = NULL)
+    } else {
+      cat("  Inhomogeneous fit (gwdegree(0.01)): raw parameters\n")
+      print(dat$fit_inhom_structural_gw001$fit$par)
+    }
+  }
+
+  # Print degree(0)+star(2:5) structural fit results
+  if (!is.null(dat$fit_inhom_structural_degstars)) {
+    cat("\n--- Structural-Only Fit Results (degree(0) + star(2:5)) ---\n")
+    if (!is.null(dat$fit_inhom_structural_degstars$fit_table)) {
+      cat("  Inhomogeneous fit (degree+stars): parameter estimates and standard errors\n")
+      print(dat$fit_inhom_structural_degstars$fit_table, max = NULL)
+    } else {
+      cat("  Inhomogeneous fit (degree+stars): raw parameters\n")
+      print(dat$fit_inhom_structural_degstars$fit$par)
+    }
+  }
   
   if (!is.null(dat$fit_temporal)) {
     cat("  Temporal Hawkes par:\n"); print(fit_temporal$par)
     cat("  Temporal KS p-value:", ks_temporal_pval, "\n")
   }
 
-  # GOF plots: process all models (Structural, nodeMatch, nodeMix)
+  # GOF plots: process all models
   gof_models <- list(
     Structural = dat$GOF_results_structural,
+    gwdegree_0_01 = dat$GOF_results_structural_gw001,
+    degree_stars = dat$GOF_results_structural_degstars,
     nodeMatch  = dat$GOF_results_nodematch,
-    nodeMix    = dat$GOF_results_nodemix,
     BA         = dat$GOF_results_ba
   )
 
@@ -1144,6 +1196,7 @@ if (PAPER_OUTPUT) {
   }
 
   cat("  Step 6 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
+}
 }
 
 # =============================================================================

@@ -810,7 +810,9 @@ loglik_hawkesNet = function(params,
 #'     \item{intens_funcs}{Cached intensity closures (can be large; NULL out and \code{gc()} when done).}
 #'     \item{params_init_old}{Original \code{params_init} (for relist / GOF).}
 #'     \item{fit_table}{Data frame of parameter estimates and standard errors.}
-#'     \item{hessian}{Numerical Hessian of negative log-likelihood at MLE.}
+#'     \item{hessian}{Numerical Hessian of the log-likelihood at the MLE. Since we maximize
+#'       log-likelihood (\code{optim(..., control = list(fnscale = -1))}), this Hessian is typically
+#'       negative definite at a well-behaved maximum; the observed information is \code{-hessian}.}
 #'   }
 #' @seealso \code{\link{loglik_hawkesNet}}, \code{\link{sim_hawkesNet}},
 #'   \code{\link{prepare_inhomogeneous_background}}, \code{\link{gof}}

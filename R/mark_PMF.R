@@ -1159,7 +1159,13 @@ PMF_mark_CS <- function(time,
       cache <- get0(".ernm_model_cache", envir = asNamespace("hawkesNet"), inherits = FALSE)
       if (is.null(cache)) {
         cache <- new.env()
+        cache[[".cache_pid"]] <- Sys.getpid()
         assign(".ernm_model_cache", cache, envir = asNamespace("hawkesNet"))
+      }
+      # Invalidate cache in forked children: C++ pointers become invalid after fork.
+      if (Sys.getpid() != cache[[".cache_pid"]]) {
+        rm(list = setdiff(names(cache), ".cache_pid"), envir = cache)
+        cache[[".cache_pid"]] <- Sys.getpid()
       }
       key <- formula_RHS
       # Create or re-create the model.  Use mark_sample (not an empty g0) so

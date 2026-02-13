@@ -3,5 +3,7 @@
 .onLoad <- function(libname, pkgname) {
   ns <- asNamespace(pkgname)
   # Reserve the name before the environment is locked
-  assign(".ernm_model_cache", new.env(), envir = ns)
+  cache <- new.env()
+  cache[[".cache_pid"]] <- Sys.getpid()
+  assign(".ernm_model_cache", cache, envir = ns)
 }
