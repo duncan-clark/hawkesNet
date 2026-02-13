@@ -112,6 +112,7 @@ cat("\n--- Running GOF (BA) ---\n")
 gof_ba <- gof(fit = fit_ba, net_obs = net_raw, 
               params_init = list(mu = mu_init, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1),
               PMF_mark = PMF_mark_BA, cond_intensity = cond_intensity,
+              formula_RHS = "",
               time_window = c(0, 1), inhom_bg = inhom_bg, n_sim = 2, 
               cores = N_CORES, seed_events = 20)
 

@@ -1024,15 +1024,27 @@ fit_hawkesNet <- function(params_init,
   }
   vcat("[fit] Fitting total: ", round(proc.time()[3] - t_fit_start, 1), " s\n")
 
-  # Results table: estimate and standard error (from numerical Hessian)
-  par_names <- names(fit$par)
-  fit_table <- data.frame(
-    parameter = par_names,
-    estimate  = fit$par,
-    std.error = NA_real_,
-    row.names = NULL,
-    stringsAsFactors = FALSE
-  )
+    # Results table: estimate and standard error (from numerical Hessian)
+    par_names <- names(fit$par)
+    fit_table <- data.frame(
+      parameter = par_names,
+      estimate  = fit$par,
+      std.error = NA_real_,
+      row.names = NULL,
+      stringsAsFactors = FALSE
+    )
+    
+    # Check if any parameters are at their bounds
+    if (method == "L-BFGS-B") {
+      at_lower <- fit$par <= (bounds$lower + 2 * eps)
+      at_upper <- fit$par >= (bounds$upper - 2 * eps)
+      if (any(at_lower | at_upper)) {
+        vcat("[fit] WARNING: ", sum(at_lower | at_upper), " parameter(s) at or near bounds.\n")
+        for (i in which(at_lower)) vcat(sprintf("[fit]     %-30s at LOWER bound (%.6f)\n", par_names[i], bounds$lower[i]))
+        for (i in which(at_upper)) vcat(sprintf("[fit]     %-30s at UPPER bound (%.6f)\n", par_names[i], bounds$upper[i]))
+        vcat("[fit]     Standard errors for these parameters may be unreliable or zero.\n")
+      }
+    }
   
   # ---------------------------------------------------------------------------
   # Hessian & Standard Errors

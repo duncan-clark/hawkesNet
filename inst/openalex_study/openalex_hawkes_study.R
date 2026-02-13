@@ -71,6 +71,13 @@ RUN_FIT_NODEMATCH <- TRUE
 RUN_FIT_NODEMIX <- FALSE
 RUN_FIT_BA <- TRUE
 RUN_GOF_NODEMIX <- FALSE
+
+# FLOW CONTROL:
+#   LOAD_PREVIOUS_RESULTS: if TRUE, try to load results from disk and skip fitting/GOF.
+#   STOP_AFTER_FETCH: if TRUE, stop after fetching and preparing the network.
+LOAD_PREVIOUS_RESULTS <- isTRUE(as.logical(Sys.getenv("LOAD_PREVIOUS_RESULTS", "FALSE")))
+STOP_AFTER_FETCH <- isTRUE(as.logical(Sys.getenv("STOP_AFTER_FETCH", "FALSE")))
+
 TOPIC <- "Point processes and geometric inequalities"
 
 # Reproducibility
@@ -114,6 +121,11 @@ make_default_params <- function(n_cs, mu_init, include_gender = FALSE) {
 # =============================================================================
 t_total <- proc.time()
 cat("=== OpenAlex Hawkes Study ===\n")
+
+# Standard results path
+cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
+
 cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "\n")
 cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n")
 cat("  Package root:", PKG_ROOT, "\n")
@@ -171,6 +183,16 @@ if ("gender" %in% list.vertex.attributes(net_raw)) {
 }
 cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
+if (STOP_AFTER_FETCH) {
+  cat("=== STOP_AFTER_FETCH = TRUE: Stopping study after network preparation ===\n")
+  # Save the raw network so it can be reloaded later if needed
+  raw_net_path <- file.path(PKG_ROOT, "cluster_output", "raw_network.RDS")
+  saveRDS(list(net_raw = net_raw, edges = edges), raw_net_path)
+  cat("  Raw network saved to:", raw_net_path, "\n")
+  # Exit script gracefully
+  if (!interactive()) q(save = "no", status = 0) else stop("STOP_AFTER_FETCH triggered")
+}
+
 # --- Cleanup: remove Step 1 temporaries before fitting ---
 rm(out, test_dir, test_file)
 if (exists("test_write"))  rm(test_write)
@@ -183,6 +205,27 @@ gc()
 # 2. Inhomogeneous (KDE) + CS fits: structural -> nodeMatch
 # =============================================================================
 cat("--- Step 2: Inhomogeneous (KDE) + CS fits ---\n")
+
+# Check if we should load previous results instead of re-fitting
+cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
+if (LOAD_PREVIOUS_RESULTS && file.exists(rds_path_primary)) {
+  cat("  LOAD_PREVIOUS_RESULTS = TRUE: Loading existing results from", rds_path_primary, "\n")
+  dat_prev <- tryCatch(readRDS(rds_path_primary), error = function(e) NULL)
+  if (!is.null(dat_prev)) {
+    # Load into global env so Step 6 can find them
+    list2env(dat_prev, envir = .GlobalEnv)
+    cat("  Successfully rehydrated all results. Skipping Steps 2-5.\n")
+    # Set flags to skip
+    RUN_FIT_STRUCTURAL <- FALSE
+    RUN_FIT_NODEMATCH <- FALSE
+    RUN_FIT_BA <- FALSE
+    RUN_GOF <- FALSE
+  } else {
+    cat("  Failed to load previous results; proceeding with fitting.\n")
+  }
+}
+
 t_step <- proc.time()
 time_window_01 <- c(0, 1)
 cat("  Preparing inhomogeneous background (KDE)...\n")
@@ -553,8 +596,8 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
       m = 1.0
     )
     
-    # parscale for BA
-    p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 0.1)
+    # parscale for BA: m is a rate, beta_edges is a decay
+    p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 1.0)
     
     cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
     t_fit_ba <- proc.time()
@@ -828,6 +871,7 @@ if (RUN_GOF && !is.null(fit_inhom_ba)) {
     params_init = params_init_ba,
     PMF_mark = PMF_mark_BA,
     cond_intensity = cond_intensity,
+    formula_RHS = "",
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
@@ -873,9 +917,10 @@ cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 # =============================================================================
 cat("--- Step 5: Save full state ---\n")
 # Rehydrate structural fit from cache if needed (e.g. still null after Step 4)
-if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
-  fit_inhom_structural <- tryCatch(readRDS(structural_fit_cache), error = function(e) NULL)
+if (is.null(fit_inhom_structural) && file.exists(file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS"))) {
+  fit_inhom_structural <- tryCatch(readRDS(file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")), error = function(e) NULL)
 }
+
 # Strip intensity caches from fits so RDS stays small (low cost to re-run intensity if needed)
 fit_structural_for_save <- fit_inhom_structural
 if (!is.null(fit_structural_for_save)) fit_structural_for_save$intens_funcs <- NULL
@@ -913,9 +958,7 @@ save_list <- list(
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
 )
-# Ensure output dir exists (getwd() can become invalid on some clusters)
-cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
-rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
+
 OPENALEX_RDS_PATH <- NULL  # set after save so Step 6 can find file
 
 cat("  Saving to:", rds_path_primary, "\n")
@@ -958,15 +1001,33 @@ cat("\n")
 if (PAPER_OUTPUT) {
   cat("--- Step 6: Paper output (figures & tables) ---\n")
   t_step <- proc.time()
-  rds_file <- if (!is.null(OPENALEX_RDS_PATH)) OPENALEX_RDS_PATH else file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
-  if (!file.exists(rds_file)) rds_file <- "results_openalex_full.RDS"
-  dat <- readRDS(rds_file)
-  # Ensure GOF alias exists for older RDS that may not have it, and plots is never NULL
-  if (is.null(dat$GOF) && !is.null(dat$GOF_results)) dat$GOF <- dat$GOF_results
-  if (!is.null(dat$GOF_results) && is.null(dat$GOF_results$plots)) dat$GOF_results$plots <- list()
-  if (!is.null(dat$GOF) && is.null(dat$GOF$plots)) dat$GOF$plots <- list()
-  list2env(dat, envir = .GlobalEnv)
-  cat("  Rehydrated; producing figures and tables.\n")
+  
+  # If we just computed results, they are already in memory.
+  # If not, try to load them from the results file.
+  if (!exists("net_raw") || !exists("GOF_results_structural")) {
+    # Use the path where we just saved it, or the default path
+    rds_file <- if (exists("rds_path_primary") && !is.null(rds_path_primary)) rds_path_primary else file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
+    if (!file.exists(rds_file)) rds_file <- "results_openalex_full.RDS"
+    
+    if (file.exists(rds_file)) {
+      cat("  Loading results from:", rds_file, "\n")
+      dat <- readRDS(rds_file)
+      # Ensure GOF alias exists for older RDS that may not have it, and plots is never NULL
+      if (is.null(dat$GOF) && !is.null(dat$GOF_results)) dat$GOF <- dat$GOF_results
+      if (!is.null(dat$GOF_results) && is.null(dat$GOF_results$plots)) dat$GOF_results$plots <- list()
+      if (!is.null(dat$GOF) && is.null(dat$GOF$plots)) dat$GOF$plots <- list()
+      list2env(dat, envir = .GlobalEnv)
+      cat("  Rehydrated successfully.\n")
+    } else {
+      cat("  WARNING: No results found in memory or on disk. skipping Step 6.\n")
+      PAPER_OUTPUT <- FALSE
+    }
+  } else {
+    cat("  Results already in memory; proceeding to output.\n")
+  }
+  
+  if (PAPER_OUTPUT) {
+    cat("  Producing figures and tables.\n")
 
   # Print nodeMatch fit results
   if (!is.null(dat$fit_inhom_nodematch)) {

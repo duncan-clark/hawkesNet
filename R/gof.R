@@ -307,7 +307,7 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #'       }
 #'   }
 #' @export
-gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS,
+gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS = NULL,
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",
                 growth_only = FALSE,
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
@@ -601,87 +601,83 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       wait_formula_standard <- "edges + triangles + star(c(2,3))"
       wait_obs_raw <- waiting_times_between_formations(net_obs, formula_RHS = wait_formula_standard)
       
-      # Standard statistic names for these waiting times
-      stat_names_standard <- c("edges", "triangles", "star2", "star3")
-      if (length(stat_names_standard) == length(wait_obs_raw)) {
-        names(wait_obs_raw) <- stat_names_standard
-      }
-      wait_obs_raw
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
-      NULL
-    })
-    
-    # Observed nodeMix statistics (if gender attribute exists)
-    if (verbose) cat("    Computing observed nodeMix statistics...\n")
+  # Standard statistic names for these waiting times
+  stat_names_standard <- c("edges", "triangles", "star2", "star3")
+  if (length(stat_names_standard) == length(wait_obs_raw)) {
+    names(wait_obs_raw) <- stat_names_standard
+  }
+  wait_obs_raw
+}, error = function(e) {
+  if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
+  NULL
+})
+
+# Observed nodeMix statistics (if gender attribute exists)
+if (verbose) cat("    Computing observed nodeMix statistics...\n")
+tryCatch({
+  if ("gender" %in% list.vertex.attributes(net_obs) || 
+      any(grepl("nodeMix|nodeMatch", formula_RHS))) {
+    # Ensure gender attribute is properly set for all nodes before ERNM operations
+    net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
+    GOF_results$nodemix_obs <- as.vector(calculateStatistics(net_obs_clean ~ nodeMix('gender')))
+  }
+}, error = function(e) {
+  if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
+})
+
+# --- Optimization: Clean up net_obs before parallel stats if possible ---
+# (Actually we need it for names, but we can clear some memory)
+gc()
+
+# Simulated statistics (parallelized) - each wrapped in tryCatch
+n_deg_bins <- max_deg - degree + 1L
+n_esp_bins <- k_esp - esp + 1L
+
+# Pre-calculate common objects for parallel workers to reduce overhead
+# We can't easily export the ERNM model object itself, but we can ensure
+# the workers are as lean as possible.
+
+if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
+cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
+            length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
+
+# Combined distributional statistics: Degree, ESP, Geodist, nodeMix
+# Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
+has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
+needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
+
+dist_stats_sim <- tryCatch({
+  safe_parallel_lapply(sim_nets, function(n) {
     tryCatch({
-      if ("gender" %in% list.vertex.attributes(net_obs) || 
-          any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-        # Ensure gender attribute is properly set for all nodes before ERNM operations
-        net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
-        GOF_results$nodemix_obs <- as.vector(calculateStatistics(net_obs_clean ~ nodeMix('gender')))
+      if (is.null(n)) return(NULL)
+      # Ensure vertex attributes for nodeMix if needed
+      n_clean <- n
+      if (needs_gender) {
+        n_clean <- tryCatch({
+          ensure_vertex_attribute(n, "gender", default_value = "unknown")
+        }, error = function(e) n)
       }
+      
+      list(
+        degree = degree_dist(n, max_deg, min_deg = degree),
+        esp = esp_dist(n, k_esp, min_esp = esp),
+        geodist = geodist_dist(n),
+        nodemix = if (has_nodemix_obs) {
+          as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
+        } else NULL
+      )
     }, error = function(e) {
-      if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
+      # Return a structure with NAs so rbind doesn't fail on atomic vectors
+      list(degree = rep(NA_real_, n_deg_bins), 
+           esp = rep(NA_real_, n_esp_bins), 
+           geodist = numeric(0), 
+           nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL)
     })
-    
-    # --- Optimization: Clean up net_obs before parallel stats if possible ---
-    # (Actually we need it for names, but we can clear some memory)
-    gc()
-
-    # Simulated statistics (parallelized) - each wrapped in tryCatch
-    n_deg_bins <- max_deg - degree + 1L
-    n_esp_bins <- k_esp - esp + 1L
-    
-    # Pre-calculate common objects for parallel workers to reduce overhead
-    # We can't easily export the ERNM model object itself, but we can ensure
-    # the workers are as lean as possible.
-    
-    if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-    cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
-                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
-    
-    # Combined distributional statistics: Degree, ESP, Geodist, nodeMix
-    if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-    cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
-                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
-    
-    # Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
-    has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
-    needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
-
-    dist_stats_sim <- tryCatch({
-      safe_parallel_lapply(sim_nets, function(n) {
-        tryCatch({
-          if (is.null(n)) return(NULL)
-          # Ensure vertex attributes for nodeMix if needed
-          n_clean <- n
-    if (needs_gender) {
-      n_clean <- tryCatch({
-        ensure_vertex_attribute(n, "gender", default_value = "unknown")
-      }, error = function(e) n)
-    }
-          
-          list(
-            degree = degree_dist(n, max_deg, min_deg = degree),
-            esp = esp_dist(n, k_esp, min_esp = esp),
-            geodist = geodist_dist(n),
-            nodemix = if (has_nodemix_obs) {
-              as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
-            } else NULL
-          )
-        }, error = function(e) {
-          # Return a structure with NAs so rbind doesn't fail on atomic vectors
-          list(degree = rep(NA_real_, n_deg_bins), 
-               esp = rep(NA_real_, n_esp_bins), 
-               geodist = numeric(0), 
-               nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL)
-        })
-      }, mc.cores = cores, parallel_type = "auto")
-    }, error = function(e) {
-      if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
-      NULL
-    })
+  }, mc.cores = cores, parallel_type = "auto")
+}, error = function(e) {
+  if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
+  NULL
+})
     
     if (!is.null(dist_stats_sim)) {
       # Filter out NULLs and atomic vectors (error messages) if any task failed
