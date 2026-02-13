@@ -276,6 +276,8 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @param degree Minimum degree to include in degree distribution (default 0).
 #' @param esp Minimum ESP to include in ESP distribution (default 0).
 #' @param mu_multiplier Multiplier for mu in simulations (default 5).
+#' @param growth_only Logical; if \code{TRUE}, edges only form when a node enters the network.
+#'   Default \code{FALSE}.
 #' @param seed_events Optional integer. If \code{> 0}, the first \code{seed_events}
 #'   observed events are used to seed the simulation. The simulation then
 #'   generates subsequent events conditional on this initial history.
@@ -306,6 +308,7 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @export
 gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS,
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",
+                growth_only = FALSE,
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
                 max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5,
                 seed_events = 0L, verbose = TRUE) {
@@ -511,6 +514,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           formula_RHS = formula_RHS,
           truncation = truncation,
           mark_decay = mark_decay,
+          growth_only = growth_only,
           max_node_time = max_node_time,
           hashed_edges = TRUE,
           verbose = FALSE,

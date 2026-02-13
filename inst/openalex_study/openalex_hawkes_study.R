@@ -60,6 +60,7 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
 }
 MAX_ITER <- 10000
 TRUNCATION <- 300L
+GROWTH_ONLY <- TRUE  # Edges only form when a node enters the network (citation logic)
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
 SEED_EVENTS_GOF <- 20L  # Seed simulations with first 20 events (prevents cold-start degeneracy)
@@ -231,6 +232,7 @@ if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
       formula_RHS = FORMULA_RHS_STRUCTURAL,
       truncation = TRUNCATION,
       mark_decay = "activity",
+      growth_only = GROWTH_ONLY,
       max_node_time = 1,
       method = "Nelder-Mead",
       maxit = MAX_ITER,
@@ -387,6 +389,7 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
       formula_RHS = FORMULA_RHS_NODEMATCH,
       truncation = TRUNCATION,
       mark_decay = "activity",
+      growth_only = GROWTH_ONLY,
       max_node_time = 1,
       method = "Nelder-Mead",
       maxit = MAX_ITER,
@@ -498,6 +501,7 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
         formula_RHS = FORMULA_RHS_NODEMIX,
         truncation = TRUNCATION,
         mark_decay = "activity",
+        growth_only = GROWTH_ONLY,
         max_node_time = 1,
         method = "Nelder-Mead",
         maxit = MAX_ITER,
@@ -645,6 +649,7 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
     max_node_time = 1,
     inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
@@ -681,6 +686,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
     max_node_time = 1,
     inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
@@ -717,6 +723,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
     time_window = GOF_TIME_WINDOW,
     truncation = TRUNCATION,
     mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
     max_node_time = 1,
     inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,

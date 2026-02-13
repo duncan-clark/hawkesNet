@@ -27,6 +27,7 @@ dat <- readRDS(rds_path)
 net_obs          <- dat$net_raw
 inhom_bg         <- dat$inhom_bg
 TRUNCATION       <- 300L
+GROWTH_ONLY      <- TRUE
 time_window      <- c(0, 1)
 
 # --- 2. Pick which model to inspect ---
@@ -237,6 +238,7 @@ sim_result <- tryCatch({
     formula_RHS = formula_RHS,
     truncation = TRUNCATION,
     mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
     max_node_time = 1,
     hashed_edges = TRUE,
     verbose = TRUE,

@@ -596,7 +596,7 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
 #' @param mark_decay Either \code{"node_entrance"} or \code{"activity"}.
 #' @return List with \code{tails} and \code{heads} integer vectors.
 #' @noRd
-get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay) {
+get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay, growth_only = FALSE) {
   n <- max(new_nodes, old_nodes)
   if (n == 0) return(list(tails = integer(0), heads = integer(0)))
 
@@ -634,6 +634,18 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
     tails <- poss_edges[, 1]
     heads <- poss_edges[, 2]
   }
+  
+  # Growth-only constraint: at least one node in the pair must be "new" (index > old_nodes)
+  if (growth_only) {
+    if (new_nodes <= old_nodes) {
+      # No new nodes added; no new edges allowed
+      return(list(tails = integer(0), heads = integer(0)))
+    }
+    is_new_edge <- (tails > old_nodes) | (heads > old_nodes)
+    tails <- tails[is_new_edge]
+    heads <- heads[is_new_edge]
+  }
+  
   list(tails = tails, heads = heads)
 }
 
@@ -655,6 +667,8 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' @param truncation Maximum number of nodes to consider for edge candidates (default 1).
 #' @param mark_decay Character string controlling how temporal weights decay.
 #'   One of \code{"node_entrance"} (default) or \code{"activity"}.
+#' @param growth_only Logical; if \code{TRUE}, edges only form when a node enters the network.
+#'   (At least one node in the pair must be a new entrant). Default \code{FALSE}.
 #' @param model Optional pre-built ERNM model object to reuse.
 #' @param max_node_time Optional maximum node time for temporal truncation.
 #' @param ... Additional arguments; pass \code{return_combined_inputs = TRUE} to
@@ -674,6 +688,7 @@ PMF_mark_CS <- function(time,
                         formula_RHS,
                         truncation = 1,
                         mark_decay = 'node_entrance',
+                        growth_only = FALSE,
                         model = NULL,
                         max_node_time = NULL,
                         ...
@@ -702,7 +717,7 @@ PMF_mark_CS <- function(time,
     new_nodes <- 1
   }
   # get the possible edges for the given truncation:
-  cands <- get_truncated_candidates(new_net, new_nodes, old_nodes, truncation, mark_decay)
+  cands <- get_truncated_candidates(new_net, new_nodes, old_nodes, truncation, mark_decay, growth_only = growth_only)
   tails <- cands$tails
   heads <- cands$heads
 
@@ -1004,7 +1019,7 @@ PMF_mark_CS <- function(time,
       new_size <- mark_sample %n% 'n'
       
       # get new poss edges (truncation based on mark_decay)
-      cands <- get_truncated_candidates(mark_sample, new_size, old_nodes, truncation, mark_decay)
+      cands <- get_truncated_candidates(mark_sample, new_size, old_nodes, truncation, mark_decay, growth_only = growth_only)
       tails <- cands$tails
       heads <- cands$heads
 
