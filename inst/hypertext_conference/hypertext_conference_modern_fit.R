@@ -374,7 +374,12 @@ if (!is.null(fit$fit_table)) {
 gof_res <- NULL
 if (RUN_GOF) {
   cat("\n--- GOF ---\n")
-  gof_res <- gof(
+  # Version-tolerant GOF call: older hawkesNet installs may not accept newer args
+  # (e.g., seed_events, growth_only). Also force-evaluate script-level symbols
+  # so PSOCK workers don't see unevaluated promises like `GROWTH_ONLY`.
+  gof_fun <- if (exists("gof", mode = "function")) get("gof", mode = "function") else hawkesNet::gof
+  gof_formals <- names(formals(gof_fun))
+  gof_args <- list(
     fit = fit,
     net_obs = net,
     params_init = params_init,
@@ -382,21 +387,23 @@ if (RUN_GOF) {
     cond_intensity = cond_intensity,
     formula_RHS = FORMULA_RHS,
     time_window = time_window,
-    truncation = TRUNCATION,
-    mark_decay = MARK_DECAY,
-    growth_only = GROWTH_ONLY,
+    truncation = as.integer(TRUNCATION),
+    mark_decay = as.character(MARK_DECAY),
+    growth_only = isTRUE(GROWTH_ONLY),
     max_node_time = max(get_times(net)$node_times),
     inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES_GOF,
-    max_deg = 15,
-    k_esp = 15,
-    degree = 0,
-    esp = 0,
+    n_sim = as.integer(N_GOF),
+    cores = as.integer(N_CORES_GOF),
+    max_deg = 15L,
+    k_esp = 15L,
+    degree = 0L,
+    esp = 0L,
     mu_multiplier = 5,
-    seed_events = SEED_EVENTS_GOF,
+    seed_events = as.integer(SEED_EVENTS_GOF),
     verbose = TRUE
   )
+  gof_args <- gof_args[names(gof_args) %in% gof_formals]
+  gof_res <- do.call(gof_fun, gof_args)
   if (!is.null(gof_res$plots) && requireNamespace("ggplot2", quietly = TRUE)) {
     if (!is.null(gof_res$plots$degree_plot)) print(gof_res$plots$degree_plot)
     if (!is.null(gof_res$plots$esp_plot)) print(gof_res$plots$esp_plot)

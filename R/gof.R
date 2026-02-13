@@ -391,6 +391,29 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
                 max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5,
                 seed_events = 0L, verbose = TRUE) {
   
+  # -------------------------------------------------------------------------
+  # Force evaluation of user-provided arguments that may be promises.
+  #
+  # In scripts it's common to call e.g. growth_only = GROWTH_ONLY, mark_decay = MARK_DECAY.
+  # Under PSOCK parallelism, those promises can get serialized and evaluated later inside
+  # workers that do not have the originating symbols, producing errors like:
+  #   "object 'GROWTH_ONLY' not found"
+  # Coerce here so the values are concrete scalars captured in the closure.
+  # -------------------------------------------------------------------------
+  growth_only <- isTRUE(growth_only)
+  mark_decay  <- as.character(mark_decay)
+  truncation  <- as.integer(truncation)
+  max_node_time <- as.numeric(max_node_time)
+  n_sim <- as.integer(n_sim)
+  cores <- as.integer(cores)
+  max_deg <- as.integer(max_deg)
+  k_esp <- as.integer(k_esp)
+  degree <- as.integer(degree)
+  esp <- as.integer(esp)
+  mu_multiplier <- as.numeric(mu_multiplier)
+  seed_events <- as.integer(seed_events)
+  if (!is.null(formula_RHS)) formula_RHS <- as.character(formula_RHS)
+  
   # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                       geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
