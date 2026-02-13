@@ -124,7 +124,7 @@ test_that("waiting_times_between_formations works on OpenAlex network", {
   if (network.edgecount(net_raw) > 0) {
     formula_RHS <- "edges + triangles + star(c(2,3))"
     wait_results <- tryCatch({
-      :waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
+      waiting_times_between_formations(net_raw, formula_RHS = formula_RHS)
     }, error = function(e) {
       skip(paste("waiting_times_between_formations failed:", e$message))
     })

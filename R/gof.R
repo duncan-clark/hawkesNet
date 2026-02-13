@@ -461,18 +461,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   if (!is.null(params_init$vertex_categorical)) {
     if (is.null(pfit$vertex_categorical)) {
       pfit$vertex_categorical <- params_init$vertex_categorical
-    } else {
-      # Repair vertex_categorical parameters (may be invalid from optimization)
-      pfit <- tryCatch({
-        repair_vertex_categorical_params(pfit, eps = 1e-6)
-      }, error = function(e) {
-        if (verbose) cat("  WARNING: Failed to repair vertex_categorical:", e$message, "\n")
-        pfit
-      })
     }
   }
   
-  # Validate parameters before simulation
+  # Validate and repair parameters before simulation
   if (!point_process_params_valid(pfit)) {
     if (verbose) cat("  WARNING: Parameters invalid after reconstruction; attempting repair...\n")
     pfit <- tryCatch({

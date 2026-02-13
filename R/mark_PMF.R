@@ -157,7 +157,8 @@ PMF_mark_BA <- function(time,
       times = times,
       node_degrees = node_degrees,
       in_mark = in_mark,
-      K_obs = K_obs
+      K_obs = K_obs,
+      dpois = stats::dpois
     ),
     parent = baseenv()
   )
@@ -768,7 +769,7 @@ PMF_mark_CS <- function(time,
 
   if(!is.null(last_net) & generate_density){
     if(last_net %n% 'n' > 0){
-      # if new net has less than 4 nodes add some:
+      # If new net has less than 4 nodes add some (ERNM C++ safety)
       if(new_net %n% 'n' < 4){
         old_new_net <- new_net
         new_net <- add.vertices(new_net,4 - (new_net %n% 'n'))
@@ -824,7 +825,7 @@ PMF_mark_CS <- function(time,
         node_times <- new_net %v% 'time'
       }
       diffs <- time - node_times[heads]
-      # --- Safety: sanitize diffs/factor before multiplying probs (suggestion 2 & 9) ---
+      # --- Safety: sanitize diffs/factor before multiplying probs ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS: non-finite time diffs in density path; replacing with 0.")
         diffs[!is.finite(diffs)] <- 0
@@ -881,7 +882,7 @@ PMF_mark_CS <- function(time,
       cat_result <- log_categorical_density(params, mark, old_nodes, new_nodes, eps)
       node_dens <- node_dens + cat_result$log_dens
       observed_categorical <- cat_result$observed
-      # --- Safety: safe log with clamped probs (suggestion 4) ---
+      # --- Safety: safe log with clamped probs ---
       p_in <- pmax(probs[in_mark], eps, na.rm = TRUE)
       p_out <- pmax(1 - probs[!in_mark], eps, na.rm = TRUE)
       if (any(!is.finite(p_in)) || any(!is.finite(p_out))) {
@@ -985,7 +986,8 @@ PMF_mark_CS <- function(time,
       degenerate_edges                = degenerate_edges,
       observed_categorical            = obs_cat,
       level_names_by_attr             = level_names_by_attr,
-      expand_vertex_categorical_probs = expand_vertex_categorical_probs
+      expand_vertex_categorical_probs = expand_vertex_categorical_probs,
+      dpois                           = stats::dpois
     ),
     parent = baseenv()
   )

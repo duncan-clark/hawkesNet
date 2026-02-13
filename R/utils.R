@@ -325,34 +325,6 @@ filtration_to_net <- function(net,
   return(net)
 }
 
-filtration_to_net_both <- function(net,t){
-  e_times <- get.edge.attribute(net,"time")
-  n_times <- get.vertex.attribute(net,"time")
-  
-  times <- c(e_times,n_times)
-  t_to_delete <- max(times[times <= t])
-  net_less <- net
-  
-  del_e_less <- which(e_times>t)
-  del_n_less <- which(n_times>t)
-  
-  del_e_eq <- setdiff(which(e_times>=t_to_delete),del_e_less) 
-  del_n_eq <- setdiff(which(n_times>=t_to_delete),del_n_less)
-  
-  
-  # make sure to leave one less edge or vertex that if equals
-  delete.edges(net_less, which(e_times>t))
-  delete.vertices(net_less,which(n_times>t))
-  
-  net_eq <- net_less
-  delete.edges(net_eq, del_e_eq)
-  delete.vertices(net_eq, del_n_eq)
-  # no need for vertex names
-  delete.vertex.attribute(net,'vertex.names')
-  return(list(eq = net_eq,
-              less = net_less))
-}
-
 #' Get event times from a network
 #'
 #' Extracts vertex and edge \code{time} attributes and returns a sorted unique vector of all event times.
@@ -369,14 +341,6 @@ get_times <- function(net, time_name = 'time'){
               edge_times = edge_times,
               times = sort(unique(c(node_times,edge_times)))
   ))
-}
-
-# function to plot pp on line:
-pp_line_plot <- function(t,title=NULL){
-  plot(c(min(t),max(t)), c(-1, 1), type = "n", yaxt = "n",
-     xlab = "Value", ylab = "", main = paste0("Vector on a Number Line: ",title))
-abline(h = 0, col = "gray", lwd = 2)
-points(t, rep(0, length(t)), pch = 19, col = "blue", cex = 1.5)
 }
 
 plot_kde_intensity <- function(event_times,

@@ -100,37 +100,23 @@ cond_intensity <- function(new_net,
   log_mark_density0 <- tmp$log_mark_density
   log_density_func  <- tmp$log_density_func
   
-  # Initial value at current params (optional but you do it)
   decays0 <- exp(-params$beta_overall * diffs)
   log_result0 <- log_mark_density0 + log(params$mu + params$K * sum(decays0))
   result0 <- exp(log_result0)
   
-  # ========================
-  # 1. Create the 'tiny' environment first
-  # Using emptyenv() as parent is safest for "tiny", but baseenv() is needed 
-  # for functions like exp() and log() to work inside the closure.
+  # Create a minimal environment for the closure to save memory
   e_tiny <- new.env(parent = baseenv()) 
-  
-  # 2. Manually assign ONLY what you need
   e_tiny$diffs_local <- diffs
   e_tiny$ldf_local   <- log_density_func
+  e_tiny$dpois       <- stats::dpois
   
-  # 3. Define the function
-  # Note: We define it normally, then swap the environment.
   func_template <- function(params) {
     decays <- exp(-params$beta_overall * diffs_local)
-    
-    # Note: logic checks out, baseenv contains exp/log/sum
     exp(ldf_local(params) + log(params$mu + params$K * sum(decays)))
   }
   
-  # 4. Attach the tiny environment
   func <- func_template
   environment(func) <- e_tiny
-  # ==============================
-  
-  # Optional: sanity check what it captured (comment out in production)
-  # stopifnot(identical(ls(environment(func)), c("diffs_local","ldf_local")))
   
   list(
     result = result0,
@@ -139,7 +125,6 @@ cond_intensity <- function(new_net,
     kernel_sum = params$K * sum(decays0),
     decays = decays0,
     diffs  = diffs
-    # (keep other outputs if you truly need them; they increase memory)
   )
 }
 
@@ -1288,6 +1273,7 @@ cond_intensity_inhom <- function(new_net,
   e_tiny$diffs_local <- diffs
   e_tiny$ldf_local   <- log_density_func
   e_tiny$mu_at_t     <- mu_at_t
+  e_tiny$dpois       <- stats::dpois
 
   func_template <- function(params) {
     decays <- exp(-params$beta_overall * diffs_local)
