@@ -204,7 +204,7 @@ if(SIMULATE){
         trace = 1,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        fixed_params = c("mu", "K"),
+        fixed_params = c("K"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -269,196 +269,197 @@ if(RUN_CONSISTENCY){
                       node_lambda = 1,
                       CS_params = c(-6.7, 2, 0.1, -0.1))
 
-  # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
-  # BLAS threads pre-set to 1 in make_cluster() so forked grandchildren are safe.
-  t_consistency_total <- proc.time()
-  cat("=== Consistency Study (CS) ===\n")
-  cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
-  cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
-  cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
-      N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
-  cat("Setting up cluster...\n")
-  t_cluster <- proc.time()
-  cl <- make_cluster(N_CORES_OUTER)
-  clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER", "p_scale"))
-  cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
-
-  # Storage for results
-  consistency_results <- data.frame()
-
-  for(curr_time in time_windows){
-    t_window <- proc.time()
-    cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
-        length(time_windows), ") ---\n")
-
-    # Export current time to cluster
-    clusterExport(cl, "curr_time", envir = environment())
-
-    # Parallel Simulation & Fitting Loop
-    cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
-        N_CORES_INNER, "inner cores...\n")
-    t_simfit <- proc.time()
-    res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
-
-      # A. Simulate
-      sim_res <- tryCatch({
-        sim_hawkesNet(params = params_true,
-                            time_window = c(0, curr_time),
-                            PMF_mark = PMF_mark_CS,
-                            cond_intensity = cond_intensity,
-                            hashed_edges = TRUE,
-                            mu_multiplier = 3,
-                            verbose = FALSE,
-                            truncation = TRUNCATION,
-                            formula_RHS = "edges + triangles + star(c(2,3))")
-      }, error = function(e) return(NULL))
-
-      if(is.null(sim_res)) return(NULL)
-
-      # B. Fit - CS options: formula_RHS, fixed_params = c("mu", "K")
-      # Initialize near true params + small noise for better convergence
-      # mu and K are fixed at true values to stabilize structural estimation
-      params_init <- list(
-        mu = params_true$mu,
-        beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
-        K = params_true$K,
-        beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
-        node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
-        CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
-      )
-      # Ensure CS_params are finite
-      params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
-
-      fit_res <- tryCatch({
-        fit_hawkesNet(params_init = params_init,
-                            time_window = c(0, curr_time),
-                            mark_filtration = sim_res$net,
-                            PMF_mark = PMF_mark_CS,
-                            formula_RHS = "edges + triangles + star(c(2,3))",
-                            maxit = MAX_ITER,
-                            truncation = TRUNCATION,
+    # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
+    # BLAS threads pre-set to 1 in make_cluster() so forked grandchildren are safe.
+    t_consistency_total <- proc.time()
+    cat("=== Consistency Study (CS) ===\n")
+    cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
+    cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
+    cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
+        N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+    cat("Setting up cluster...\n")
+    t_cluster <- proc.time()
+    cl <- make_cluster(N_CORES_OUTER)
+    clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER", "p_scale"))
+    cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
+    
+    # Storage for results
+    consistency_results <- data.frame()
+    
+    for(curr_time in time_windows){
+      t_window <- proc.time()
+      cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
+          length(time_windows), ") ---\n")
+      
+      # Export current time to cluster
+      clusterExport(cl, "curr_time", envir = environment())
+      
+      # Parallel Simulation & Fitting Loop
+      cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
+          N_CORES_INNER, "inner cores...\n")
+      t_simfit <- proc.time()
+      res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
+        
+        # A. Simulate
+        sim_res <- tryCatch({
+          sim_hawkesNet(params = params_true,
+                              time_window = c(0, curr_time),
+                              PMF_mark = PMF_mark_CS,
+                              cond_intensity = cond_intensity,
+                              hashed_edges = TRUE,
+                              mu_multiplier = 3,
+                              verbose = FALSE,
+                              truncation = TRUNCATION,
+                              formula_RHS = "edges + triangles + star(c(2,3))")
+        }, error = function(e) return(NULL))
+        
+        if(is.null(sim_res)) return(NULL)
+        
+        # B. Fit - CS options: formula_RHS, fixed_params = c("mu", "K")
+        # Initialize near true params + small noise for better convergence
+        # mu and K are fixed at true values to stabilize structural estimation
+        params_init <- list(
+          mu = params_true$mu,
+          beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
+          K = params_true$K,
+          beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
+          node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+          CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
+        )
+        # Ensure CS_params are finite
+        params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
+        
+        fit_res <- tryCatch({
+          fit_hawkesNet(params_init = params_init,
+                              time_window = c(0, curr_time),
+                              mark_filtration = sim_res$net,
+                              PMF_mark = PMF_mark_CS,
+                              formula_RHS = "edges + triangles + star(c(2,3))",
+                              maxit = MAX_ITER,
+                              truncation = TRUNCATION,
                             cache_intensity = TRUE,
                             combine_intensity = TRUE,
                             verbose = FALSE,
-                            fixed_params = c("mu", "K"),
+                            fixed_params = c("K"),
                             parscale = p_scale,
                             cores = N_CORES_INNER,
                             method = "Nelder-Mead")
       }, error = function(e) return(NULL))
-
-      if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
+        
+        if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
+        
+        # Check if fit succeeded
+        keep <- (!is.null(fit_res$fit) && 
+                 length(fit_res$fit) > 0 && 
+                 fit_res$fit$convergence == 0 &&
+                 all(is.finite(fit_res$fit$par)) &&
+                 !any(fit_res$fit$par > 100) && 
+                 length(fit_res$fit$par) >= 2 &&
+                 fit_res$fit$par[2] <= 10)
+        
+        # Return row
+        return(data.frame(
+          keep = keep,
+          sim_id = i,
+          time_window = curr_time,
+          param = names(fit_res$fit$par),
+          estimate = as.numeric(fit_res$fit$par),
+          true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
+        ))
+      })
+      elapsed_simfit <- (proc.time() - t_simfit)[3]
       
-      # Check if fit succeeded
-      keep <- (!is.null(fit_res$fit) && 
-               length(fit_res$fit) > 0 && 
-               fit_res$fit$convergence == 0 &&
-               all(is.finite(fit_res$fit$par)) &&
-               !any(fit_res$fit$par > 100) && 
-               length(fit_res$fit$par) >= 2 &&
-               fit_res$fit$par[2] <= 10)
-
-      # Return row
-      return(data.frame(
-        keep = keep,
-        sim_id = i,
-        time_window = curr_time,
-        param = names(fit_res$fit$par),
-        estimate = as.numeric(fit_res$fit$par),
-        true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
-      ))
-    })
-    elapsed_simfit <- (proc.time() - t_simfit)[3]
-
-    # Bind results
-    res_df <- do.call(rbind, res_list)
-    if (is.null(res_df) || nrow(res_df) == 0) {
-      cat("  WARNING: No successful fits in this window!\n")
-      next
+      # Bind results
+      res_df <- do.call(rbind, res_list)
+      if (is.null(res_df) || nrow(res_df) == 0) {
+        cat("  WARNING: No successful fits in this window!\n")
+        next
+      }
+      n_success <- length(unique(res_df$sim_id))
+      n_fail <- N_SIMS_CONSISTENCY - n_success
+      consistency_results <- rbind(consistency_results, res_df)
+      
+      elapsed_window <- (proc.time() - t_window)[3]
+      cat("  Sim+fit:", round(elapsed_simfit, 1), "s |",
+          "Success:", n_success, "/", N_SIMS_CONSISTENCY,
+          "(", n_fail, "failed)\n")
+      cat("  Window total:", round(elapsed_window, 1), "s (",
+          round(elapsed_window / 60, 1), "min)\n")
+      elapsed_so_far <- (proc.time() - t_consistency_total)[3]
+      remaining_windows <- length(time_windows) - which(time_windows == curr_time)
+      cat("  Elapsed so far:", round(elapsed_so_far / 60, 1), "min |",
+          "Windows remaining:", remaining_windows, "\n")
     }
-    n_success <- length(unique(res_df$sim_id))
-    n_fail <- N_SIMS_CONSISTENCY - n_success
-    consistency_results <- rbind(consistency_results, res_df)
-
-    elapsed_window <- (proc.time() - t_window)[3]
-    cat("  Sim+fit:", round(elapsed_simfit, 1), "s |",
-        "Success:", n_success, "/", N_SIMS_CONSISTENCY,
-        "(", n_fail, "failed)\n")
-    cat("  Window total:", round(elapsed_window, 1), "s (",
-        round(elapsed_window / 60, 1), "min)\n")
-    elapsed_so_far <- (proc.time() - t_consistency_total)[3]
-    remaining_windows <- length(time_windows) - which(time_windows == curr_time)
-    cat("  Elapsed so far:", round(elapsed_so_far / 60, 1), "min |",
-        "Windows remaining:", remaining_windows, "\n")
+    
+    stopCluster(cl)
+    cl <- NULL
+    elapsed_consistency <- (proc.time() - t_consistency_total)[3]
+    cat("\n=== Consistency Study (CS) complete ===\n")
+    cat("  Total time:", round(elapsed_consistency / 60, 1), "min (",
+        round(elapsed_consistency / 3600, 2), "h)\n")
+    
+    # --- Cleanup: remove consistency temporaries ---
+    cleanup_vars <- c("t_consistency_total", "t_cluster", "t_window", "t_simfit",
+                       "elapsed_simfit", "elapsed_window", "res_list", "res_df",
+                       "n_success", "n_fail", "remaining_windows", "elapsed_so_far")
+    rm(list = intersect(cleanup_vars, ls()), envir = environment())
+    gc()
+    
+    # ==========================
+    # Visualization
+    # ==========================
+    if (nrow(consistency_results) > 0) {
+      prop_keep <- consistency_results %>%
+        group_by(time_window, param) %>%
+        summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+      print(prop_keep)
+      
+      # Calculate Bias and RMSE (use all runs; keep filter commented)
+      summary_stats <- consistency_results %>%
+        # filter(keep == TRUE) %>%
+        group_by(time_window, param) %>%
+        summarise(
+          mean_est = mean(estimate),
+          sd_est = sd(estimate),
+          rmse = sqrt(mean((estimate - true_value)^2)),
+          true_val = mean(true_value),
+        )
+      
+      print(summary_stats,n=100)
+      
+      # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
+      p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep == TRUE) 
+        geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
+        geom_jitter(width = 0.2, alpha = 0.3) +
+        geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
+        facet_wrap(~param, scales = "free_y") +
+        labs(title = "Parameter Consistency vs Time Window (T) - CS model",
+             subtitle = "Red dashed line indicates true parameter value",
+             x = "Time Window Length (T)",
+             y = "Parameter Estimate") +
+        theme_minimal()
+      
+      print(p_cons)
+      
+      # Plot 2: RMSE decay (The "Getting Better" plot)
+      p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
+        geom_line(size = 1) +
+        geom_point(size = 3) +
+        facet_wrap(~param, scales = "free_y") +
+        labs(title = "RMSE Decay as Data Increases (CS model)",
+             x = "Time Window Length (T)",
+             y = "Root Mean Squared Error") +
+        theme_bw()
+      
+      print(p_rmse)
+    } else {
+      cat("  WARNING: consistency_results is empty. Skipping consistency plots.\n")
+      summary_stats <- NULL
+      p_cons <- NULL
+      p_rmse <- NULL
+      p_base <- NULL
+    }
   }
-
-  stopCluster(cl)
-  cl <- NULL
-  elapsed_consistency <- (proc.time() - t_consistency_total)[3]
-  cat("\n=== Consistency Study (CS) complete ===\n")
-  cat("  Total time:", round(elapsed_consistency / 60, 1), "min (",
-      round(elapsed_consistency / 3600, 2), "h)\n")
-
-  # --- Cleanup: remove consistency temporaries ---
-  cleanup_vars <- c("t_consistency_total", "t_cluster", "t_window", "t_simfit",
-                     "elapsed_simfit", "elapsed_window", "res_list", "res_df",
-                     "n_success", "n_fail", "remaining_windows", "elapsed_so_far")
-  rm(list = intersect(cleanup_vars, ls()), envir = environment())
-  gc()
-
-  # ==========================
-  # Visualization
-  # ==========================
-  if (nrow(consistency_results) > 0) {
-    prop_keep <- consistency_results %>%
-      group_by(time_window, param) %>%
-      summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
-    print(prop_keep)
-
-    # Calculate Bias and RMSE (use all runs; keep filter commented)
-    summary_stats <- consistency_results %>%
-      # filter(keep == TRUE) %>%
-      group_by(time_window, param) %>%
-      summarise(
-        mean_est = mean(estimate),
-        sd_est = sd(estimate),
-        rmse = sqrt(mean((estimate - true_value)^2)),
-        true_val = mean(true_value),
-      )
-
-    print(summary_stats,n=100)
-
-    # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
-    p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep == TRUE) 
-      geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
-      geom_jitter(width = 0.2, alpha = 0.3) +
-      geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
-      facet_wrap(~param, scales = "free_y") +
-      labs(title = "Parameter Consistency vs Time Window (T) - CS model",
-           subtitle = "Red dashed line indicates true parameter value",
-           x = "Time Window Length (T)",
-           y = "Parameter Estimate") +
-      theme_minimal()
-
-    print(p_cons)
-
-    # Plot 2: RMSE decay (The "Getting Better" plot)
-    p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
-      geom_line(size = 1) +
-      geom_point(size = 3) +
-      facet_wrap(~param, scales = "free_y") +
-      labs(title = "RMSE Decay as Data Increases (CS model)",
-           x = "Time Window Length (T)",
-           y = "Root Mean Squared Error") +
-      theme_bw()
-
-    print(p_rmse)
-  } else {
-    cat("  WARNING: consistency_results is empty. Skipping consistency plots.\n")
-    summary_stats <- NULL
-    p_cons <- NULL
-    p_rmse <- NULL
-  }
-}
 
 # ==============================================================================
 # STUDY 2: Explosive Regime Analysis - CS model
