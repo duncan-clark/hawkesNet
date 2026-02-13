@@ -69,6 +69,7 @@ RUN_GOF <- TRUE
 RUN_FIT_STRUCTURAL <- TRUE
 RUN_FIT_NODEMATCH <- TRUE
 RUN_FIT_NODEMIX <- FALSE
+RUN_FIT_BA <- TRUE
 TOPIC <- "Point processes and geometric inequalities"
 
 # Reproducibility
@@ -534,6 +535,71 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMIX) {
   cat("  No inhomogeneous background; skipping nodeMix fit\n")
 }
 
+# =============================================================================
+# 2d. BA (Barabási–Albert) model fit
+# =============================================================================
+fit_inhom_ba <- NULL
+if (!is.null(inhom_bg) && RUN_FIT_BA) {
+  cat("\n--- Step 2d: BA (Barabási–Albert) model fit ---\n")
+  t_step_ba <- proc.time()
+  
+  # Initialize BA parameters
+  # m is the expected number of edges per event
+  params_init_ba <- list(
+    mu = mu_init,
+    beta_overall = 1.0,
+    K = 0.5,
+    beta_edges = 1.0,
+    m = 1.0
+  )
+  
+  # parscale for BA
+  p_scale_ba <- c(beta_overall = 0.1, beta_edges = 0.1, m = 0.1)
+  
+  cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+  t_fit_ba <- proc.time()
+  
+  fit_inhom_ba <- safe_run(
+    fit_hawkesNet(
+      params_init = params_init_ba,
+      time_window = time_window_01,
+      mark_filtration = net_raw,
+      PMF_mark = PMF_mark_BA,
+      mu_vec = inhom_bg$mu_vec,
+      integral_bg = inhom_bg$integral_bg,
+      truncation = TRUNCATION,
+      mark_decay = "activity",
+      growth_only = GROWTH_ONLY,
+      max_node_time = 1,
+      method = "Nelder-Mead",
+      maxit = MAX_ITER,
+      trace = 0,
+      reltol = 1e-8,
+      verbose = FALSE,
+      fixed_params = c("K", "mu"),
+      parscale = p_scale_ba,
+      cache_intensity = TRUE,
+      combine_intensity = TRUE,
+      cores = N_CORES
+    ),
+    "BA fit"
+  )
+  
+  elapsed_fit_ba <- (proc.time() - t_fit_ba)[3]
+  if (!is.null(fit_inhom_ba)) {
+    cat("  Fit completed:", round(elapsed_fit_ba, 1), "s (", round(elapsed_fit_ba / 60, 1), "min)\n")
+    cat("  Convergence:", fit_inhom_ba$fit$convergence, "\n")
+    cat("  Iterations:", fit_inhom_ba$fit$counts[1], "\n")
+    if (!is.null(fit_inhom_ba$fit_table)) {
+      cat("\n  BA fit results:\n")
+      print(fit_inhom_ba$fit_table, max = NULL)
+    }
+  } else {
+    cat("  BA fit FAILED after", round(elapsed_fit_ba, 1), "s\n")
+  }
+  cat("  Step 2d total:", round((proc.time() - t_step_ba)[3], 1), "s\n")
+}
+
 cat("\n  Step 2 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 
 # --- Cleanup: remove Step 2 temporaries and strip heavy closures ---
@@ -543,6 +609,9 @@ if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$intens_funcs))
 }
 if (!is.null(fit_inhom_nodemix) && !is.null(fit_inhom_nodemix$intens_funcs)) {
   fit_inhom_nodemix$intens_funcs <- NULL
+}
+if (!is.null(fit_inhom_ba) && !is.null(fit_inhom_ba$intens_funcs)) {
+  fit_inhom_ba$intens_funcs <- NULL
 }
 rm(t_step, t_kde)
 if (exists("t_step_nodematch", inherits = FALSE)) rm(t_step_nodematch)
@@ -620,6 +689,9 @@ GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NU
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results_nodemix <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL)
+GOF_results_ba <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -744,14 +816,17 @@ if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
 # Use nodeMix GOF as primary for display (fallback to nodeMatch then structural)
 if (RUN_GOF) {
   cat("\n--- GOF Summary Results ---\n")
-  if (!is.null(fit_inhom_structural)) {
+  if (!is.null(GOF_results_structural) && !is.null(GOF_results_structural$degree_obs)) {
     cat("  [Structural Model] Degree obs mean:", round(mean(GOF_results_structural$degree_obs), 2), "\n")
   }
-  if (!is.null(fit_inhom_nodematch)) {
+  if (!is.null(GOF_results_nodematch) && !is.null(GOF_results_nodematch$degree_obs)) {
     cat("  [nodeMatch Model]  Degree obs mean:", round(mean(GOF_results_nodematch$degree_obs), 2), "\n")
   }
-  if (!is.null(fit_inhom_nodemix)) {
+  if (!is.null(GOF_results_nodemix) && !is.null(GOF_results_nodemix$degree_obs)) {
     cat("  [nodeMix Model]    Degree obs mean:", round(mean(GOF_results_nodemix$degree_obs), 2), "\n")
+  }
+  if (!is.null(GOF_results_ba) && !is.null(GOF_results_ba$degree_obs)) {
+    cat("  [BA Model]         Degree obs mean:", round(mean(GOF_results_ba$degree_obs), 2), "\n")
   }
 }
 
@@ -778,9 +853,11 @@ save_list <- list(
   edges = edges,
   inhom_bg = inhom_bg,
   fit_inhom_nodemix = fit_nodemix_for_save,
+  fit_inhom_ba = fit_inhom_ba,
   fit_inhom_nodematch = fit_nodematch_for_save,
   fit_inhom_structural = fit_structural_for_save,
   params_init_nodemix = if (exists("params_init_nodemix")) params_init_nodemix else NULL,
+  params_init_ba = if (exists("params_init_ba")) params_init_ba else NULL,
   params_init_nodematch = if (exists("params_init_nodematch")) params_init_nodematch else NULL,
   params_init_structural = if (exists("params_init_structural")) params_init_structural else NULL,
   FORMULA_RHS_NODEMIX = FORMULA_RHS_NODEMIX,
@@ -793,6 +870,7 @@ save_list <- list(
   GOF_results = GOF_results,
   GOF = GOF_results,  # alias so dat$GOF$plots works
   GOF_results_nodemix = GOF_results_nodemix,
+  GOF_results_ba = GOF_results_ba,
   GOF_results_nodematch = GOF_results_nodematch,
   GOF_results_structural = GOF_results_structural,
   N_GOF = N_GOF,
@@ -922,7 +1000,8 @@ if (PAPER_OUTPUT) {
   gof_models <- list(
     Structural = dat$GOF_results_structural,
     nodeMatch  = dat$GOF_results_nodematch,
-    nodeMix    = dat$GOF_results_nodemix
+    nodeMix    = dat$GOF_results_nodemix,
+    BA         = dat$GOF_results_ba
   )
 
   for (model_name in names(gof_models)) {

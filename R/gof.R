@@ -53,6 +53,7 @@ geodist_dist <- function(net) {
 #' @return Network object with attribute properly set.
 #' @noRd
 ensure_vertex_attribute <- function(net, attr_name, default_value = "unknown") {
+  if (is.null(net)) return(net)
   nv <- network.size(net)
   if (nv == 0) return(net)
   

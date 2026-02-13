@@ -632,7 +632,7 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
 #' @param truncation Maximum number of nodes to consider.
 #' @param mark_decay Either \code{"node_entrance"} or \code{"activity"}.
 #' @return List with \code{tails} and \code{heads} integer vectors.
-#' @noRd
+#' @export
 get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay, growth_only = FALSE) {
   n <- max(new_nodes, old_nodes)
   if (n == 0) return(list(tails = integer(0), heads = integer(0)))
@@ -781,23 +781,26 @@ PMF_mark_CS <- function(time,
         stop("accidently adding a edge into the network that doesn't have that node yet")
       }
       
-      # Copy discrete vertex attributes from mark so change stats (e.g. nodeMix) are correct
-      if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
-        nv <- network.size(new_net)
-        for (attr_name in names(params$vertex_categorical)) {
-          if (attr_name %in% list.vertex.attributes(mark)) {
-            g <- mark %v% attr_name
-            nm <- length(g)
-            if (nv <= nm) {
-              set.vertex.attribute(new_net, attr_name, g[seq_len(nv)])
-            } else {
-              levs <- vertex_categorical_level_names(params, attr_name, mark)
-              if (is.null(levs) || length(levs) == 0) levs <- "unknown"
-              set.vertex.attribute(new_net, attr_name, c(g, rep(levs[1L], nv - nm)))
-            }
+    # Copy discrete vertex attributes from mark so change stats (e.g. nodeMix) are correct
+    if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
+      nv <- network.size(new_net)
+      for (attr_name in names(params$vertex_categorical)) {
+        if (attr_name %in% list.vertex.attributes(mark)) {
+          g <- mark %v% attr_name
+          nm <- length(g)
+          if (nv <= nm) {
+            set.vertex.attribute(new_net, attr_name, g[seq_len(nv)])
+          } else {
+            levs <- vertex_categorical_level_names(params, attr_name, mark)
+            if (is.null(levs) || length(levs) == 0) levs <- "unknown"
+            # Sanitize: ensure no NAs in the attribute vector
+            g_padded <- c(g, rep(levs[1L], nv - nm))
+            g_padded[is.na(g_padded)] <- levs[1L]
+            set.vertex.attribute(new_net, attr_name, g_padded)
           }
         }
       }
+    }
       
       # delete NAs to prevent C++ using them
       delete.vertex.attribute(new_net,'na')

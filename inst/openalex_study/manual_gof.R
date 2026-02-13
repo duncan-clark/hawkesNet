@@ -98,4 +98,21 @@ gof_match <- gof(fit = fit_match, net_obs = net_raw, params_init = make_p(3, mu_
                  inhom_bg = inhom_bg, n_sim = 2, cores = N_CORES, 
                  seed_events = 20, growth_only = GROWTH_ONLY)
 
-cat("\nDone. Objects 'fit_struct', 'fit_match', 'gof_struct', 'gof_match', 'net_raw' available.\n")
+cat("\n--- Fitting BA Model ---\n")
+fit_ba <- fit_hawkesNet(
+  params_init = list(mu = mu_init, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1),
+  time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_BA,
+  mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
+  truncation = TRUNCATION, fixed_params = c("K", "mu"), cores = N_CORES,
+  maxit = 1000
+)
+print(fit_ba$fit_table)
+
+cat("\n--- Running GOF (BA) ---\n")
+gof_ba <- gof(fit = fit_ba, net_obs = net_raw, 
+              params_init = list(mu = mu_init, beta_overall = 1, K = 0.5, beta_edges = 1, m = 1),
+              PMF_mark = PMF_mark_BA, cond_intensity = cond_intensity,
+              time_window = c(0, 1), inhom_bg = inhom_bg, n_sim = 2, 
+              cores = N_CORES, seed_events = 20)
+
+cat("\nDone. Objects 'fit_struct', 'fit_match', 'fit_ba', 'gof_struct', 'gof_match', 'gof_ba', 'net_raw' available.\n")

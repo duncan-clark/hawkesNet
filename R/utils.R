@@ -335,6 +335,7 @@ filtration_to_net <- function(net,
 #' @rdname get_times
 #' @export
 get_times <- function(net, time_name = 'time'){
+  if (is.null(net)) return(list(node_times = numeric(0), edge_times = numeric(0), times = numeric(0)))
   node_times <- get.vertex.attribute(net,time_name)
   edge_times <- get.edge.attribute(net,time_name)
   return(list(node_times = node_times,
