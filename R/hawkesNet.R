@@ -413,9 +413,13 @@ sim_hawkesNet <- function(params,
     accept_probs_buf[n_proposed] <- accept
 
     # if we accept the point add it in
+    n_new_nodes <- (net %n% "n") - (if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n')
+    n_new_edges <- edgecount(net) - (if(is.null(current_net %v% 'n')) 0 else edgecount(current_net))
+    n_cands <- if(!is.null(mark_sample$edge_probs)) length(mark_sample$edge_probs) else 0
+    
     if(verbose && (n_proposed %% 10 == 0)){
-      cat(sprintf("[Sim] Prop %d: nodes=%d, edges=%d, accept_prob=%.4f\n", 
-                  n_proposed, net %n% "n", edgecount(net), accept))
+      cat(sprintf("[Sim] Prop %d: nodes=%d (+%d), new_edges=%d/%d cands, accept_prob=%.4f\n", 
+                  n_proposed, net %n% "n", n_new_nodes, n_new_edges, n_cands, accept))
     }
     if(runif(1) < accept){
       if(verbose){
