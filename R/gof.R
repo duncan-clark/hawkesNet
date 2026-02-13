@@ -810,20 +810,20 @@ create_gof_plots <- function(GOF_results) {
     
     x_lab <- if (is.null(x_label)) "Index" else x_label
     x_levels <- sort(unique(x_vals))
-    p <- ggplot(df_sim, aes(x = factor(x, levels = x_levels), y = value)) +
-      geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
-      geom_point(data = df_obs, aes(x = factor(x, levels = x_levels), y = value),
+    p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x, levels = x_levels), y = value)) +
+      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x, levels = x_levels), y = value),
                           color = "#E69F00", size = 2, shape = 19) +
-      labs(
+      ggplot2::labs(
         title = paste(stat_name, "Distribution"),
         x = x_lab,
         y = "Count",
         fill = "Type"
       ) +
-      theme_minimal() +
-      theme(
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
         legend.position = "bottom",
-        plot.title = element_text(hjust = 0.5, face = "bold")
+        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold")
       )
     
     p
@@ -891,20 +891,20 @@ create_gof_plots <- function(GOF_results) {
     )
     df_obs_dot <- df_geod[df_geod$type == "Observed", ]
     
-    plots$geodist_plot <- ggplot(df_sim_box, aes(x = factor(distance), y = proportion)) +
-      geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
-      geom_point(data = df_obs_dot, aes(x = factor(distance), y = proportion),
+    plots$geodist_plot <- ggplot2::ggplot(df_sim_box, ggplot2::aes(x = factor(distance), y = proportion)) +
+      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+      ggplot2::geom_point(data = df_obs_dot, ggplot2::aes(x = factor(distance), y = proportion),
                          color = "#E69F00", size = 2, shape = 19) +
-      labs(
+      ggplot2::labs(
         title = "Geodesic Distance Distribution (Relative Proportions)",
         x = "Geodesic Distance",
         y = "Proportion of Pairs",
         fill = "Type"
       ) +
-      theme_minimal() +
-      theme(
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
         legend.position = "bottom",
-        plot.title = element_text(hjust = 0.5, face = "bold")
+        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold")
       )
   }
   
@@ -974,22 +974,22 @@ create_gof_plots <- function(GOF_results) {
       if (diff(x_range) < .Machine$double.eps) x_range <- x_range + c(-0.5, 0.5)
       # facet_wrap so each panel (statistic x type) has its own y-scale; otherwise Observed
       # density spike compresses Simulated in the same row when using facet_grid.
-      plots$waiting_times_plot <- ggplot(df_wait, aes(x = waiting_time, fill = type)) +
-        geom_histogram(aes(y = after_stat(density)),
+      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
+        ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density)),
                                 alpha = 0.7, bins = 30, position = "identity") +
-        scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
-        facet_wrap(vars(statistic, type), scales = "free_y", ncol = 2L) +
-        coord_cartesian(xlim = x_range) +
-        labs(
+        ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+        ggplot2::facet_wrap(ggplot2::vars(statistic, type), scales = "free_y", ncol = 2L) +
+        ggplot2::coord_cartesian(xlim = x_range) +
+        ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
           x = "Waiting Time",
           y = "Density"
         ) +
-        theme_minimal() +
-        theme(
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
           legend.position = "none",
-          plot.title = element_text(hjust = 0.5, face = "bold"),
-          strip.text = element_text(face = "bold")
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+          strip.text = ggplot2::element_text(face = "bold")
         )
     }
   }

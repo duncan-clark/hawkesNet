@@ -121,4 +121,10 @@ gof_msg <- gof(
   growth_only = GROWTH_ONLY
 )
 
+# Display plots if ggplot2 is available
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+  if (!is.null(gof_msg$plots$degree_plot)) print(gof_msg$plots$degree_plot + labs(subtitle = "Message Network"))
+}
+
 cat("\nDone. Results in 'fit_msg' and 'gof_msg'.\n")

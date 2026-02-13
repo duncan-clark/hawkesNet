@@ -115,4 +115,12 @@ gof_ba <- gof(fit = fit_ba, net_obs = net_raw,
               time_window = c(0, 1), inhom_bg = inhom_bg, n_sim = 2, 
               cores = N_CORES, seed_events = 20)
 
+# Display plots if ggplot2 is available
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+  if (!is.null(gof_struct$plots$degree_plot)) print(gof_struct$plots$degree_plot + labs(subtitle = "Structural"))
+  if (!is.null(gof_match$plots$degree_plot))  print(gof_match$plots$degree_plot + labs(subtitle = "NodeMatch"))
+  if (!is.null(gof_ba$plots$degree_plot))     print(gof_ba$plots$degree_plot + labs(subtitle = "BA"))
+}
+
 cat("\nDone. Objects 'fit_struct', 'fit_match', 'fit_ba', 'gof_struct', 'gof_match', 'gof_ba', 'net_raw' available.\n")

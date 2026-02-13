@@ -1013,16 +1013,16 @@ if (PAPER_OUTPUT) {
     if (!is.null(gof_res$plots) && length(gof_res$plots) > 0) {
       cat(sprintf("  Displaying GOF plots for %s from gof() function...\n", model_name))
       if (!is.null(gof_res$plots$degree_plot)) {
-        print(gof_res$plots$degree_plot + labs(subtitle = model_name))
+        print(gof_res$plots$degree_plot + ggplot2::labs(subtitle = model_name))
       }
       if (!is.null(gof_res$plots$esp_plot)) {
-        print(gof_res$plots$esp_plot + labs(subtitle = model_name))
+        print(gof_res$plots$esp_plot + ggplot2::labs(subtitle = model_name))
       }
       if (!is.null(gof_res$plots$geodist_plot)) {
-        print(gof_res$plots$geodist_plot + labs(subtitle = model_name))
+        print(gof_res$plots$geodist_plot + ggplot2::labs(subtitle = model_name))
       }
       if (!is.null(gof_res$plots$waiting_times_plot)) {
-        print(gof_res$plots$waiting_times_plot + labs(subtitle = model_name))
+        print(gof_res$plots$waiting_times_plot + ggplot2::labs(subtitle = model_name))
       }
     } else if (requireNamespace("ggplot2", quietly = TRUE)) {
       cat(sprintf("  Generating GOF plots for %s (legacy method)...\n", model_name))
