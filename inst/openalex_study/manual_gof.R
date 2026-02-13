@@ -205,8 +205,8 @@ cat("  Edges:", network.edgecount(net_obs), "\n")
 cat("  Mean degree:", round(mean(degree(net_obs, gmode = "graph")), 2), "\n")
 cat("  Events:", length(get_times(net_obs)$times), "\n")
 
-# --- 7. Run ONE verbose simulation ---
-cat("\n=== Running 1 verbose simulation ===\n")
+# --- 7. Run TWO verbose simulations for comparison ---
+cat("\n=== Running Comparison Simulations ===\n")
 if (SEED_EVENTS > 0) {
   cat(sprintf("  (Conditional on first %d events)\n", SEED_EVENTS))
 }
@@ -227,9 +227,10 @@ if (SEED_EVENTS > 0) {
     }
 }
 
-t_sim <- proc.time()
-
-sim_result <- tryCatch({
+# --- Simulation 1: Growth-Only (New Logic) ---
+cat("\n>>> SIMULATION 1: Growth-Only (Citation Logic) <<<\n")
+t_sim1 <- proc.time()
+sim_growth <- tryCatch({
   sim_hawkesNet(
     params = pfit,
     time_window = time_window,
@@ -238,7 +239,7 @@ sim_result <- tryCatch({
     formula_RHS = formula_RHS,
     truncation = TRUNCATION,
     mark_decay = "activity",
-    growth_only = GROWTH_ONLY,
+    growth_only = TRUE,
     max_node_time = 1,
     hashed_edges = TRUE,
     verbose = TRUE,
@@ -249,46 +250,70 @@ sim_result <- tryCatch({
     seed_times = seed_times
   )
 }, error = function(e) {
-  cat("\n*** SIMULATION FAILED:", e$message, "***\n")
+  cat("\n*** GROWTH-ONLY SIMULATION FAILED:", e$message, "***\n")
   NULL
 })
+elapsed_sim1 <- (proc.time() - t_sim1)[3]
 
-elapsed_sim <- (proc.time() - t_sim)[3]
-cat("\nSimulation took:", round(elapsed_sim, 1), "s\n")
+# --- Simulation 2: All-Edges (Old Logic) ---
+cat("\n>>> SIMULATION 2: All-Edges (Continuous Collaboration Logic) <<<\n")
+t_sim2 <- proc.time()
+sim_all <- tryCatch({
+  sim_hawkesNet(
+    params = pfit,
+    time_window = time_window,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = formula_RHS,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    growth_only = FALSE,
+    max_node_time = 1,
+    hashed_edges = TRUE,
+    verbose = TRUE,
+    mu_multiplier = 5,
+    stop_on_full_network = FALSE,
+    inhom_bg = inhom_bg,
+    seed_net = seed_net,
+    seed_times = seed_times
+  )
+}, error = function(e) {
+  cat("\n*** ALL-EDGES SIMULATION FAILED:", e$message, "***\n")
+  NULL
+})
+elapsed_sim2 <- (proc.time() - t_sim2)[3]
 
 # --- 8. Compare simulated vs observed ---
-if (!is.null(sim_result) && !is.null(sim_result$net)) {
-  net_sim <- sim_result$net
-  cat("\n=== Simulated network ===\n")
-  cat("  Nodes:", network.size(net_sim), "\n")
-  cat("  Edges:", network.edgecount(net_sim), "\n")
-  cat("  Mean degree:", round(mean(degree(net_sim, gmode = "graph")), 2), "\n")
-  cat("  Events:", length(sim_result$events$t), "\n")
-  
-  cat("\n=== Comparison ===\n")
-  cat(sprintf("  %-20s %10s %10s\n", "", "Observed", "Simulated"))
-  cat(sprintf("  %-20s %10d %10d\n", "Nodes", network.size(net_obs), network.size(net_sim)))
-  cat(sprintf("  %-20s %10d %10d\n", "Edges", network.edgecount(net_obs), network.edgecount(net_sim)))
-  cat(sprintf("  %-20s %10.2f %10.2f\n", "Mean degree", 
-              mean(degree(net_obs, gmode = "graph")), mean(degree(net_sim, gmode = "graph"))))
-  cat(sprintf("  %-20s %10d %10d\n", "Events", 
-              length(get_times(net_obs)$times), length(sim_result$events$t)))
-  
-  # Ratio
-  node_ratio <- network.size(net_sim) / network.size(net_obs)
-  edge_ratio <- network.edgecount(net_sim) / network.edgecount(net_obs)
-  cat(sprintf("\n  Node ratio (sim/obs): %.2f\n", node_ratio))
-  cat(sprintf("  Edge ratio (sim/obs): %.2f\n", edge_ratio))
-  
-  if (node_ratio < 0.5 || node_ratio > 2.0) {
-    cat("\n  *** WARNING: Simulated network size is very different from observed! ***\n")
-    cat("  This suggests the parameters may not be correctly reconstructed.\n")
-  } else {
-    cat("\n  Network sizes are in reasonable agreement.\n")
-  }
-} else {
-  cat("\n  No simulated network to compare.\n")
-}
+cat("\n=== FINAL COMPARISON ===\n")
+cat(sprintf("  %-20s %10s %15s %15s\n", "", "Observed", "Growth-Only", "All-Edges"))
+
+n_obs <- network.size(net_obs)
+e_obs <- network.edgecount(net_obs)
+d_obs <- mean(degree(net_obs, gmode = "graph"))
+ev_obs <- length(get_times(net_obs)$times)
+
+n_growth <- if(!is.null(sim_growth)) network.size(sim_growth$net) else NA
+e_growth <- if(!is.null(sim_growth)) network.edgecount(sim_growth$net) else NA
+d_growth <- if(!is.null(sim_growth)) mean(degree(sim_growth$net, gmode = "graph")) else NA
+ev_growth <- if(!is.null(sim_growth)) length(sim_growth$events$t) else NA
+
+n_all <- if(!is.null(sim_all)) network.size(sim_all$net) else NA
+e_all <- if(!is.null(sim_all)) network.edgecount(sim_all$net) else NA
+d_all <- if(!is.null(sim_all)) mean(degree(sim_all$net, gmode = "graph")) else NA
+ev_all <- if(!is.null(sim_all)) length(sim_all$events$t) else NA
+
+cat(sprintf("  %-20s %10d %15d %15d\n", "Nodes", n_obs, n_growth, n_all))
+cat(sprintf("  %-20s %10d %15d %15d\n", "Edges", e_obs, e_growth, e_all))
+cat(sprintf("  %-20s %10.2f %15.2f %15.2f\n", "Mean degree", d_obs, d_growth, d_all))
+cat(sprintf("  %-20s %10d %15d %15d\n", "Events", ev_obs, ev_growth, ev_all))
+cat(sprintf("  %-20s %10s %15.1fs %15.1fs\n", "Sim Time", "", elapsed_sim1, elapsed_sim2))
+
+cat("\n=== Interpretation ===\n")
+cat("Note: Both simulations use the SAME fitted parameters (which were likely\n")
+cat("fitted under the old 'All-Edges' logic). You should see that 'All-Edges'\n")
+cat("produces much thinner networks because the probability is diluted over\n")
+cat("thousands of candidates, whereas 'Growth-Only' focuses probability on\n")
+cat("new entrants.\n")
 
 cat("\n=== Manual GOF script complete ===\n")
-cat("Objects available for inspection: pfit, net_obs, sim_result, dat\n")
+cat("Objects available for inspection: pfit, net_obs, sim_growth, sim_all, dat\n")
