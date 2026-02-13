@@ -413,15 +413,16 @@ sim_hawkesNet <- function(params,
     accept_probs_buf[n_proposed] <- accept
 
     # if we accept the point add it in
-    if(verbose){
-      print(paste0("Number of edges proposed is ", network.edgecount(net)))
-      print(paste0("Number of nodes proposed is ", net %n% "n"))
-      print(paste0("accept prob is: ",accept))
-      
-      }
+    if(verbose && (n_proposed %% 10 == 0)){
+      cat(sprintf("[Sim] Prop %d: nodes=%d, edges=%d, accept_prob=%.4f\n", 
+                  n_proposed, net %n% "n", edgecount(net), accept))
+    }
     if(runif(1) < accept){
       if(verbose){
-        print('accepted!')
+        cat(sprintf("[Sim] ACCEPTED at t=%.4f (nodes: %d -> %d, edges: %d -> %d)\n",
+                    current_event$time, 
+                    if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n', net %n% 'n',
+                    if(is.null(current_net %v% 'n')) 0 else edgecount(current_net), edgecount(net)))
       }
       current_net <- net
       n_accepted <- n_accepted + 1L
@@ -435,9 +436,9 @@ sim_hawkesNet <- function(params,
         mark_density_buf[n_mark_dens] <- mark_sample$mark_density
       }
     }
-    if(verbose){
-      print(paste0("time is ",current_event$time, " size of net is ",current_net %n% 'n',' number of edges is ',network.edgecount(current_net)))
-      print(paste0("time is ",current_event$time, " this iteration of while loop took ", round((proc.time()-t)[3],2)," seconds"))
+    if(verbose && (n_proposed %% 10 == 0)){
+      cat(sprintf("[Sim] t=%.4f, iter_time=%.2fs\n", 
+                  current_event$time, (proc.time()-t)[3]))
     }
     # Concatenate new events to event_queue only if we have only one event left to go
     event_queue <- rbindlist(list(event_queue, rbindlist(new_events_list, use.names = TRUE)))
@@ -467,8 +468,13 @@ sim_hawkesNet <- function(params,
       n_accepted, n_proposed))
   }
   if (verbose) {
-    cat(sprintf("  Thinning: proposed=%d, accepted=%d, max_accept_ratio=%.3f, lambda=%.1f\n",
-                n_proposed, n_accepted, max_accept, lambda))
+    cat(sprintf("\n=== Simulation Complete ===\n"))
+    cat(sprintf("  Proposed: %d\n", n_proposed))
+    cat(sprintf("  Accepted: %d\n", n_accepted))
+    cat(sprintf("  Final size: %d nodes, %d edges\n", 
+                current_net %n% 'n', edgecount(current_net)))
+    cat(sprintf("  Thinning: max_accept_ratio=%.3f, lambda=%.1f\n", max_accept, lambda))
+    cat(sprintf("  Time: %.2f s\n", t1[3]))
   }
   
   return(list(events = events,

@@ -616,11 +616,20 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
     heads <- poss_edges[, 2]
   } else {
     # Default: node_entrance -- use index-based window (original behavior)
-    poss_tails <- (old_nodes - truncation):(new_nodes)
-    poss_tails <- poss_tails[poss_tails > 0]
-    poss_heads <- (new_nodes - truncation - 1):new_nodes
-    poss_heads <- poss_heads[poss_heads > 0]
-    poss_edges <- expand.grid(poss_tails, poss_heads)
+    # Ensure we consider edges between new nodes and recent nodes, 
+    # and among new nodes themselves.
+    # poss_tails: nodes that can be the 'tail' (higher index)
+    # poss_heads: nodes that can be the 'head' (lower index)
+    
+    # We want to consider all pairs where at least one node is "new" (index > old_nodes)
+    # OR both nodes are within the truncation window of the most recent nodes.
+    
+    # Let's simplify: consider all pairs within the truncation window of the current total size.
+    window_start <- max(1L, n - truncation + 1L)
+    active_nodes <- window_start:n
+    
+    if (length(active_nodes) < 2) return(list(tails = integer(0), heads = integer(0)))
+    poss_edges <- expand.grid(active_nodes, active_nodes)
     poss_edges <- poss_edges[poss_edges[, 1] > poss_edges[, 2], , drop = FALSE]
     tails <- poss_edges[, 1]
     heads <- poss_edges[, 2]
@@ -1075,6 +1084,12 @@ PMF_mark_CS <- function(time,
         factor[!is.finite(factor)] <- 1
       }
       probs <- sanitize_probs(factor * probs, eps, " (generate_mark, post-decay)")
+      
+      verbose_mark <- if ("verbose" %in% names(dot_list)) dot_list$verbose else FALSE
+      if (verbose_mark) {
+        cat(sprintf("    [Mark] Cands: %d, Mean prob: %.4e, Max prob: %.4e, Expected edges: %.2f\n", 
+                    length(probs), mean(probs), max(probs), sum(probs)))
+      }
 
       add <- runif(length(probs)) < probs
       # --- Safety: no NA in add before add.edges (suggestion 5 & 9) ---
@@ -1082,11 +1097,14 @@ PMF_mark_CS <- function(time,
         warning("PMF_mark_CS (generate_mark): NA in edge add vector; treating as FALSE (do not add edge).")
         add[is.na(add)] <- FALSE
       }
-      add.edges(mark_sample,
-                heads[add],
-                tails[add]
-      )
-      set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time,sum(add))))
+      n_added_edges <- sum(add)
+      if (n_added_edges > 0) {
+        add.edges(mark_sample,
+                  heads[add],
+                  tails[add]
+        )
+        set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time, n_added_edges)))
+      }
       # --- Safety: safe log and dpois for sample density (suggestion 6 & 8) ---
       dpois_val <- dpois(new_nodes-old_nodes, params$node_lambda)
       if (!is.finite(dpois_val) || dpois_val <= 0) {
