@@ -577,7 +577,8 @@ loglik_hawkesNet = function(params,
     # Materialise ... into a concrete list so the closure serialises cleanly
     # for PSOCK workers (promises from ... cannot survive serialisation).
     extra_args <- dot_args
-    extra_args[c("cores", "formula_RHS", "combine_intensity",
+    # Ensure formula_RHS is included in extra_args for PMF_mark
+    extra_args[c("cores", "combine_intensity",
                  "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i){
       # Log start of task in child

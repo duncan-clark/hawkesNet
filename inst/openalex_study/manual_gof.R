@@ -43,8 +43,8 @@ cat(sprintf("Network: %d events, %d nodes\n",
 # --- 2. Fit Models ---
 TRUNCATION <- 300
 GROWTH_ONLY <- TRUE
-FORMULA_STRUCT <- "edges + triangles + gwdegree(0.5)"
-FORMULA_MATCH  <- "edges + triangles + gwdegree(0.5) + nodeMatch('gender')"
+FORMULA_STRUCT <- "edges + gwdegree(0.5)"
+FORMULA_MATCH  <- "edges + gwdegree(0.5) + nodeMatch('gender')"
 
 cat("\n--- Preparing Background ---\n")
 inhom_bg <- prepare_inhomogeneous_background(net_raw, time_attr = "time")
@@ -63,34 +63,36 @@ make_p <- function(n_cs, mu, gender = FALSE) {
 
 cat("\n--- Fitting Structural Model ---\n")
 fit_struct <- fit_hawkesNet(
-  params_init = make_p(3, mu_init),
+  params_init = make_p(2, mu_init),
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_STRUCT, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE,
+  maxit = 1000
 )
 print(fit_struct$fit_table)
 
 cat("\n--- Fitting NodeMatch Model ---\n")
 fit_match <- fit_hawkesNet(
-  params_init = make_p(4, mu_init, gender = TRUE),
+  params_init = make_p(3, mu_init, gender = TRUE),
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_MATCH, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE,
+  maxit = 1000
 )
 print(fit_match$fit_table)
 
 # --- 3. GOF ---
 cat("\n--- Running GOF (Structural) ---\n")
-gof_struct <- gof(fit = fit_struct, net_obs = net_raw, params_init = make_p(3, mu_init),
+gof_struct <- gof(fit = fit_struct, net_obs = net_raw, params_init = make_p(2, mu_init),
                   PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
                   formula_RHS = FORMULA_STRUCT, time_window = c(0, 1), 
                   inhom_bg = inhom_bg, n_sim = 2, cores = N_CORES, 
                   seed_events = 20, growth_only = GROWTH_ONLY)
 
 cat("\n--- Running GOF (NodeMatch) ---\n")
-gof_match <- gof(fit = fit_match, net_obs = net_raw, params_init = make_p(4, mu_init, gender=T),
+gof_match <- gof(fit = fit_match, net_obs = net_raw, params_init = make_p(3, mu_init, gender=T),
                  PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
                  formula_RHS = FORMULA_MATCH, time_window = c(0, 1), 
                  inhom_bg = inhom_bg, n_sim = 2, cores = N_CORES, 
