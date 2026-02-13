@@ -588,8 +588,9 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   }
   CS_params_names <- NULL
   tryCatch({
-    model <- createCppModel(as.formula(paste("net ~ ", formula_RHS)))
-    model$setNetwork(as.BinaryNet(net))
+    net_safe <- sanitize_net_for_binarynet(network::network.copy(net))
+    model <- createCppModel(as.formula(paste("net_safe ~ ", formula_RHS)))
+    model$setNetwork(as.BinaryNet(net_safe))
     model$calculate()
     stats <- model$statistics()
     CS_params_length <- length(stats)
@@ -879,6 +880,7 @@ PMF_mark_CS <- function(time,
       if(is.null(model)){
         model <- createCppModel(as.formula(paste("new_net ~ ",formula_RHS)))
       }else{
+        sanitize_net_for_binarynet(new_net)
         model$setNetwork(as.BinaryNet(new_net))
       }
       new_net <- old_new_net
@@ -1166,6 +1168,7 @@ PMF_mark_CS <- function(time,
       need_create <- is.null(cache[[key]])
       if (!need_create) {
         need_create <- tryCatch({
+          sanitize_net_for_binarynet(mark_sample)
           cache[[key]]$setNetwork(as.BinaryNet(mark_sample))
           cache[[key]]$calculate()
           FALSE
@@ -1174,9 +1177,11 @@ PMF_mark_CS <- function(time,
       if (need_create) {
         ms_ref <- mark_sample
         cache[[key]] <- createCppModel(as.formula(paste("ms_ref ~ ", formula_RHS)))
+        sanitize_net_for_binarynet(mark_sample)
         cache[[key]]$setNetwork(as.BinaryNet(mark_sample))
       }
       model <- cache[[key]]
+      sanitize_net_for_binarynet(mark_sample)
       model$setNetwork(as.BinaryNet(mark_sample))
       model$calculate()
       change_stats <- model$computeChangeStats(tails, heads)

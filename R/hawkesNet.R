@@ -61,6 +61,49 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
   fit_table
 }
 
+#' Merge fit$par with params_init to get full parameter list
+#'
+#' When \code{fixed_params} is used, \code{fit$par} contains only free parameters.
+#' This helper merges fitted values with \code{params_init} so fixed params (e.g. mu, K)
+#' are included. Needed for \code{compensators_hawkesNet}, \code{ks_test_pval_hawkesNet}.
+#'
+#' @param par_vec Named vector from \code{fit$fit$par}.
+#' @param params_init Full initial parameter list (includes fixed params).
+#' @param fixed_params Character vector of fixed param names (unused; for API consistency).
+#' @return List with full params (fitted + fixed).
+#' @export
+merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
+  pfit <- as.list(params_init)
+  pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
+  par_names <- names(par_vec)
+  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m")
+  for (nm in scalar_names) {
+    if (nm %in% par_names) pfit[[nm]] <- as.numeric(par_vec[nm])
+  }
+  cs_idx <- grep("^CS_params[0-9]+$", par_names)
+  if (length(cs_idx) > 0 && !is.null(pfit$CS_params)) {
+    cs_nums <- as.integer(sub("^CS_params", "", par_names[cs_idx]))
+    for (j in seq_along(cs_idx)) {
+      k <- cs_nums[j]
+      if (k >= 1L && k <= length(pfit$CS_params))
+        pfit$CS_params[k] <- as.numeric(par_vec[cs_idx[j]])
+    }
+  }
+  vc_idx <- grep("^vertex_categorical\\.", par_names)
+  if (length(vc_idx) > 0 && !is.null(pfit$vertex_categorical)) {
+    for (j in vc_idx) {
+      parts <- strsplit(par_names[j], "\\.")[[1]]
+      if (length(parts) >= 3) {
+        attr_name <- parts[2]
+        level_name <- paste(parts[3:length(parts)], collapse = ".")
+        if (!is.null(pfit$vertex_categorical[[attr_name]]))
+          pfit$vertex_categorical[[attr_name]][level_name] <- as.numeric(par_vec[j])
+      }
+    }
+  }
+  pfit
+}
+
 #' Conditional intensity for Hawkes network growth model
 #'
 #' Evaluates the conditional intensity at time \code{t} given the mark (network) and past events.
@@ -817,9 +860,43 @@ fit_hawkesNet <- function(params_init,
   # so unlist() yields a purely numeric vector for optim.
   params_init$vertex_categorical_levels <- NULL
   
+  flat_par <- unlist(params_init)
   if (is.null(parscale)) {
-    flat_params <- unlist(params_init)
-    parscale <- rep(1, length(flat_params))
+    parscale <- rep(1, length(flat_par))
+  } else if (length(parscale) != length(flat_par)) {
+    # parscale may include fixed params; subset to match free params only
+    par_names <- names(flat_par)
+    pscale_names <- names(parscale)
+    if (!is.null(pscale_names) && !is.null(par_names)) {
+      # Map: par_names may be CS_params1,2,... while parscale may use edges, triangles, etc.
+      dot_args <- list(...)
+      formula_RHS <- dot_args$formula_RHS
+      exp_cs <- tryCatch(
+        expected_params_PMF_mark_CS(mark_filtration, formula_RHS),
+        error = function(e) NULL
+      )
+      pscale_new <- rep(1, length(flat_par))
+      names(pscale_new) <- par_names
+      for (i in seq_along(par_names)) {
+        nm <- par_names[i]
+        if (nm %in% pscale_names) {
+          pscale_new[i] <- parscale[nm]
+        } else if (!is.null(exp_cs$CS_params_names) && grepl("^CS_params[0-9]+$", nm)) {
+          k <- as.integer(sub("^CS_params", "", nm))
+          if (k >= 1L && k <= length(exp_cs$CS_params_names)) {
+            stat_nm <- exp_cs$CS_params_names[k]
+            if (stat_nm %in% pscale_names) pscale_new[i] <- parscale[stat_nm]
+          }
+        }
+      }
+      parscale <- as.vector(pscale_new)
+    } else {
+      stop("'parscale' is of the wrong length (", length(parscale), " vs ", length(flat_par),
+           " free params). When using fixed_params, parscale must match the free parameters only, ",
+           "or be a named vector so it can be subset.")
+    }
+  } else if (!is.null(names(parscale)) && !is.null(names(flat_par))) {
+    parscale <- as.vector(parscale[names(flat_par)])
   }
   
   # Validate that params match the mark PMF (required names and, for CS, CS_params length)
@@ -967,7 +1044,6 @@ fit_hawkesNet <- function(params_init,
       return(ll)
     }
   }
-  flat_par <- unlist(params_init)
   n_par <- length(flat_par)
   n_events_actual <- length(times_cached)
 
@@ -1170,11 +1246,15 @@ fit_hawkesNet <- function(params_init,
     vcat("(Standard errors not available; Hessian inversion failed.)\n")
   }
 
+  # Full params (fitted + fixed) for compensators, KS test, etc.
+  params_full <- merge_fit_params(fit$par, params_init_old, fixed_params)
+
   # NOTE: intens_funcs can be very large (closure environments with stacked matrices
   # for all events). If running multiple fits sequentially, NULL out intens_funcs and
   # call gc() before the next fit to prevent fork()/PSOCK memory bloat.
   list(
     fit = fit,
+    params = params_full,
     intens_funcs = cached_funcs,
     params_init_old = params_init_old,
     fit_table = fit_table,
@@ -1219,7 +1299,7 @@ compensators_hawkesNet <- function(params,
 ks_test_pval_hawkesNet <- function(params,
                                          time_window,
                                          mark_filtration){
-  compensators <- compensators_hawkesNet(params = unlist(params),
+  compensators <- compensators_hawkesNet(params = params,
                                                time_window = time_window,
                                                mark_filtration = mark_filtration
                                                )

@@ -7,7 +7,8 @@
 expected_params_PMF_mark_BA()
 }
 \value{
-List with \code{required} (character vector: \code{beta_edges}, \code{m}).
+List with \code{required} (character vector: \code{beta_edges}, \code{m}) and
+\code{optional} (character vector: \code{vertex_categorical}, \code{vertex_categorical_levels}).
 }
 \description{
 Expected parameter names for PMF_mark_BA

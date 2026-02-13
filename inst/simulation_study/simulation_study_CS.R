@@ -761,9 +761,10 @@ if(PAPER_OUTPUT){
     if (length(keep_idx) > 0) {
       marked_p_vals <- sapply(keep_idx, function(sim_idx){
         sim <- sims[[sim_idx]]
-        fit_par <- fits[[sim_idx]]$fit$par
-        times <- get_times(sim$net)$times
-        ks_test_pval_temporal(realiz = data.frame(t = times, n = rep(length(times), length(times))), windowT = c(0, TIME), hawkes_par = fit_par)
+        fit_obj <- fits[[sim_idx]]
+        # Use full params (includes fixed mu, K) — fit$par alone lacks them
+        pfull <- if (!is.null(fit_obj$params)) fit_obj$params else merge_fit_params(fit_obj$fit$par, params_init, fit_obj$fixed_params)
+        ks_test_pval_hawkesNet(params = pfull, time_window = c(0, TIME), mark_filtration = sim$net)
       })
       cat("Mean marked KS p-value:", mean(marked_p_vals), "\n")
     }

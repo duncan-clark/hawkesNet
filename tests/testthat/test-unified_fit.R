@@ -255,13 +255,7 @@ test_that("compensators_hawkesNet returns numeric vector", {
 
 test_that("ks_test_pval_hawkesNet returns p-value in [0, 1]", {
   d <- make_test_net_BA()
-  # compensators_hawkesNet uses params$beta_overall etc. — needs a list, not atomic
-  # Use compensators_hawkesNet directly rather than ks_test_pval_hawkesNet
-  # (ks_test_pval_hawkesNet has a pre-existing issue with unlist)
-  comp <- compensators_hawkesNet(d$params, d$tw, d$net)
-  comp_incs <- diff(comp)
-  test_dist <- 1 - exp(-comp_incs)
-  pval <- ks.test(test_dist, "punif")$p.value
+  pval <- ks_test_pval_hawkesNet(d$params, d$tw, d$net)
   expect_true(is.numeric(pval))
   expect_true(pval >= 0 && pval <= 1)
 })

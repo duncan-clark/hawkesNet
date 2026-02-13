@@ -10,7 +10,7 @@ gof(
   params_init,
   PMF_mark,
   cond_intensity,
-  formula_RHS,
+  formula_RHS = NULL,
   time_window = c(0, 0.05),
   truncation = 100L,
   mark_decay = "activity",

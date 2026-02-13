@@ -614,9 +614,9 @@ if(PAPER_OUTPUT){
     marked_p_vals <- mapply(seq_along(keep), FUN = function(i){
       sim_idx <- keep[i]
       sim <- sims[[sim_idx]]
-      fit_par <- fits[[sim_idx]]$fit$par
-      times <- get_times(sim$net)$times
-      ks_test_pval_temporal(realiz = data.frame(t = times, n = rep(length(times), length(times))), windowT = c(0, TIME), hawkes_par = fit_par)
+      fit_obj <- fits[[sim_idx]]
+      pfull <- if (!is.null(fit_obj$params)) fit_obj$params else merge_fit_params(fit_obj$fit$par, params_init, fit_obj$fixed_params)
+      ks_test_pval_hawkesNet(params = pfull, time_window = c(0, TIME), mark_filtration = sim$net)
     })
     temp_p_vals <- mapply(sims, temp_hawkes_fits, FUN = function(x,y){
       ks_test_pval_temporal(realiz = data.frame(t = x$events$t, n = rep(x$events$n, length(x$events$t))), windowT = c(0, TIME), hawkes_par = y$par)

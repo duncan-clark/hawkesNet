@@ -119,6 +119,43 @@ sanitize_vertex_attr_for_binarynet <- function(vals, default_val = "unknown", ma
   vals
 }
 
+#' Sanitize all vertex attributes on a network before passing to ernm as.BinaryNet.
+#' Prevents C++ segfaults from non-ASCII, long strings, or NA in vertex attributes.
+#' Modifies net in place and returns it.
+#' @param net A network object.
+#' @return The same network with sanitized vertex attributes.
+#' @noRd
+sanitize_net_for_binarynet <- function(net) {
+  if (is.null(net) || network::network.size(net) == 0L) return(net)
+  nv <- network::network.size(net)
+  all_attrs <- network::list.vertex.attributes(net)
+  all_attrs <- setdiff(all_attrs, "na")
+  for (a in all_attrs) {
+    vals <- network::get.vertex.attribute(net, a)
+    if (length(vals) < nv) {
+      default_val <- if (is.numeric(vals)) 0 else "unknown"
+      vals <- c(vals, rep(default_val, nv - length(vals)))
+    }
+    if (is.factor(vals)) vals <- as.character(vals)
+    if (any(is.na(vals))) {
+      if (is.numeric(vals)) {
+        vals[is.na(vals)] <- 0
+      } else {
+        vals <- as.character(vals)
+        vals[is.na(vals)] <- "unknown"
+      }
+    }
+    if (!is.numeric(vals)) {
+      vals <- sanitize_vertex_attr_for_binarynet(vals, default_val = "unknown", max_len = 200L)
+    }
+    network::set.vertex.attribute(net, a, vals)
+  }
+  if ("na" %in% network::list.vertex.attributes(net)) {
+    network::delete.vertex.attribute(net, "na")
+  }
+  net
+}
+
 #' Waiting times between consecutive structure formations.
 #'
 #' Replays the network event-by-event (grouped by event time) and records

@@ -20,7 +20,8 @@ PMF_mark_BA(
 \arguments{
 \item{time}{Current event time.}
 
-\item{params}{List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally \code{beta_overall}, \code{K}, \code{mu}.}
+\item{params}{List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally
+\code{beta_overall}, \code{K}, \code{mu}, \code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
 \item{mark_filtration}{Observed network up to \code{time}.}
 
@@ -38,6 +39,13 @@ PMF_mark_BA(
 One of \code{"node_entrance"} (default) or \code{"activity"}.}
 
 \item{...}{Additional arguments (currently unused).}
+
+\item{vertex_categorical}{Optional named list in \code{params}: for each discrete vertex attribute, a named
+numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
+Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).}
+
+\item{vertex_categorical_levels}{Optional named list in \code{params}: level names per attribute
+(e.g. \code{list(gender = c("female", "male", "unknown"))}); last level is reference.}
 }
 \value{
 List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
