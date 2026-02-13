@@ -105,22 +105,22 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
     df <- df[seq_len(max_edges), , drop = FALSE]
   }
 
-  # Map vertex ids to 1..n
-  nodes <- sort(unique(c(df$from, df$to)))
+  # Map vertex ids to 1..n in *entry-time* order so node_entrance truncation is meaningful.
+  # Entry time = first appearance in any edge.
+  nodes_raw <- sort(unique(c(df$from, df$to)))
+  entry_time_by_node <- vapply(nodes_raw, function(v) {
+    min(df$time[df$from == v | df$to == v], na.rm = TRUE)
+  }, numeric(1))
+  ord_nodes <- order(entry_time_by_node, nodes_raw)
+  nodes <- nodes_raw[ord_nodes]
+  entry_time_by_node <- entry_time_by_node[ord_nodes]
+
   id_map <- setNames(seq_along(nodes), nodes)
   df$tail <- unname(id_map[as.character(df$from)])
   df$head <- unname(id_map[as.character(df$to)])
 
-  # Node "entry" times: first appearance in any edge
-  node_time <- rep(Inf, length(nodes))
-  idx_tail <- split(df$time, df$tail)
-  idx_head <- split(df$time, df$head)
-  for (i in seq_along(node_time)) {
-    tt <- idx_tail[[as.character(i)]]
-    th <- idx_head[[as.character(i)]]
-    node_time[i] <- min(c(tt, th), na.rm = TRUE)
-  }
-  node_time[!is.finite(node_time)] <- max(df$time)
+  # Node "entry" times in ID order
+  node_time <- as.numeric(entry_time_by_node)
 
   # Build a simple undirected network
   el <- as.matrix(df[, c("tail", "head")])
@@ -132,27 +132,110 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
   list(net = net, edges = df, nodes = nodes, id_map = id_map)
 }
 
-diagnose_truncation <- function(net, trunc_grid = c(25L, 50L, 100L, 200L, 400L), mark_decay = "activity") {
-  nv <- network::network.size(net)
-  tmax <- max(get_times(net)$times)
-  net_final <- filtration_to_net(net, tmax, equals = TRUE)
-  old_nodes <- nv
-  new_nodes <- nv
+diagnose_truncation <- function(edges_df, node_entry_time,
+                                trunc_grid = c(25L, 50L, 100L, 200L, 400L),
+                                mark_decay = c("node_entrance", "activity")) {
+  mark_decay <- match.arg(mark_decay)
+  stopifnot(all(c("tail", "head", "time") %in% names(edges_df)))
+  stopifnot(is.numeric(node_entry_time) && length(node_entry_time) >= max(edges_df$tail, edges_df$head))
 
-  # Version-tolerant call: some installs may not export get_truncated_candidates or accept growth_only.
-  gtc <- if (exists("get_truncated_candidates", mode = "function")) get_truncated_candidates else hawkesNet:::get_truncated_candidates
-  gtc_formals <- names(formals(gtc))
+  edges_df <- edges_df[order(edges_df$time), , drop = FALSE]
+  n_all <- length(node_entry_time)
 
-  out <- data.frame(truncation = trunc_grid, n_candidate_edges = NA_integer_)
+  # Edges that are *impossible regardless of truncation*: endpoint not yet present at its first-contact time.
+  # (Also catches inconsistent node-time assignment.)
+  impossible_any <- edges_df$time < pmax(node_entry_time[edges_df$tail], node_entry_time[edges_df$head])
+  # In a simple graph, re-adding an existing edge is impossible under any truncation.
+  u <- pmin(edges_df$tail, edges_df$head)
+  v <- pmax(edges_df$tail, edges_df$head)
+  edge_key <- u + n_all * v
+  impossible_any <- impossible_any | duplicated(edge_key)
+  n_impossible_any <- sum(impossible_any, na.rm = TRUE)
+
+  # For "activity" truncation: maintain last-activity times as we replay events.
+  last_activity <- node_entry_time
+  n_edges <- nrow(edges_df)
+  n_impossible <- integer(length(trunc_grid))
+  n_candidate_edges <- numeric(length(trunc_grid))
+
+  # Precompute, per edge, the number of present nodes at that time (entry time <= t)
+  # Since node IDs are entry-ordered, we can advance a pointer.
+  entry_sorted <- node_entry_time
+  if (!isTRUE(all(diff(entry_sorted) >= -1e-12))) {
+    # Safety: if entry times are not monotone, fall back to ranking by time
+    entry_sorted <- sort(entry_sorted)
+  }
+  present_count_at_edge <- integer(n_edges)
+  ptr <- 0L
+  for (i in seq_len(n_edges)) {
+    t_i <- edges_df$time[i]
+    while (ptr < n_all && entry_sorted[ptr + 1L] <= t_i) ptr <- ptr + 1L
+    present_count_at_edge[i] <- ptr
+  }
+
+  # Helper: compute active set (IDs) for current time given truncation
+  get_active_nodes <- function(n_present, truncation) {
+    if (n_present <= 1L) return(integer(0))
+    if (mark_decay == "node_entrance") {
+      window_start <- max(1L, n_present - truncation + 1L)
+      return(window_start:n_present)
+    }
+    # activity: top-k by last_activity among present nodes; tie-break by id
+    ids <- seq_len(n_present)
+    ord <- order(last_activity[ids], ids, decreasing = TRUE)
+    sort(ord[seq_len(min(truncation, n_present))])
+  }
+
+  # Main pass for each truncation value.
+  # Optimized enough for this dataset size; avoids constructing networks or ERNM objects.
   for (k in seq_along(trunc_grid)) {
     tr <- as.integer(trunc_grid[k])
-    args <- list(net = net_final, new_nodes = new_nodes, old_nodes = old_nodes,
-                 truncation = tr, mark_decay = mark_decay)
-    if ("growth_only" %in% gtc_formals) args$growth_only <- FALSE
-    cands <- do.call(gtc, args)
-    out$n_candidate_edges[k] <- length(cands$heads)
+    if (!is.finite(tr) || tr < 2L) tr <- 2L
+
+    # Reset activity tracker for each truncation run.
+    last_activity <- node_entry_time
+    imp <- 0L
+    cand_total <- 0
+
+    for (i in seq_len(n_edges)) {
+      if (impossible_any[i]) {
+        imp <- imp + 1L
+        next
+      }
+      n_present <- present_count_at_edge[i]
+      active <- get_active_nodes(n_present, tr)
+
+      # Candidate edges count at this time (ignores existing-edge filtering; OK for rough scaling).
+      cand_total <- cand_total + (length(active) * (length(active) - 1L) / 2)
+
+      tail_i <- edges_df$tail[i]
+      head_i <- edges_df$head[i]
+      if (!(tail_i %in% active && head_i %in% active)) {
+        imp <- imp + 1L
+      }
+
+      # Update activity after processing this edge (so "pre-edge" activity defines candidate set).
+      if (mark_decay == "activity") {
+        last_activity[tail_i] <- edges_df$time[i]
+        last_activity[head_i] <- edges_df$time[i]
+      }
+    }
+
+    n_impossible[k] <- imp
+    n_candidate_edges[k] <- cand_total
   }
-  out
+
+  data.frame(
+    mark_decay = mark_decay,
+    truncation = as.integer(trunc_grid),
+    n_impossible_edges = n_impossible,
+    prop_impossible = round(n_impossible / n_edges, 4),
+    pct_impossible_edges = round(100 * n_impossible / n_edges, 1),
+    n_candidate_edges_total = n_candidate_edges,
+    n_impossible_any_truncation = n_impossible_any,
+    pct_impossible_any_truncation = round(100 * n_impossible_any / n_edges, 1),
+    stringsAsFactors = FALSE
+  )
 }
 
 # -----------------------------------------------------------------------------
@@ -181,13 +264,23 @@ cat("  Time window (hours):", sprintf("[%.3f, %.3f]", time_window[1], time_windo
 # Choose truncation (diagnostic + default)
 # -----------------------------------------------------------------------------
 if (is.na(TRUNCATION)) {
-  diag <- diagnose_truncation(net, mark_decay = MARK_DECAY)
-  cat("--- Truncation diagnostic (candidate edge counts) ---\n")
-  print(diag, row.names = FALSE)
-  # Default heuristic: keep candidate set in the low tens of thousands
-  # (depends on node count; safe choice for local quick is smaller).
-  TRUNCATION <- if (LOCAL_QUICK) 50L else min(200L, network.size(net))
-  cat("  Using TRUNCATION =", TRUNCATION, "\n\n")
+  cat("--- Truncation diagnostic (coverage of observed edges) ---\n")
+  diag_entry <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "node_entrance")
+  diag_act   <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "activity")
+  print(diag_entry, row.names = FALSE)
+  print(diag_act, row.names = FALSE)
+
+  # Choose smallest truncation with 0 impossible edges under the selected mark_decay (if possible).
+  diag_use <- if (MARK_DECAY == "activity") diag_act else diag_entry
+  ok <- diag_use$truncation[diag_use$n_impossible_edges == 0L]
+  if (length(ok) > 0) {
+    TRUNCATION <- min(ok)
+    cat("  Using TRUNCATION (min with 0 impossible edges under", MARK_DECAY, ") =", TRUNCATION, "\n\n")
+  } else {
+    # Fallback heuristic: safe choice for local quick is smaller.
+    TRUNCATION <- if (LOCAL_QUICK) 50L else min(200L, network.size(net))
+    cat("  Using TRUNCATION (fallback heuristic) =", TRUNCATION, "\n\n")
+  }
 } else {
   cat("  Using TRUNCATION (from env) =", TRUNCATION, "\n\n")
 }
