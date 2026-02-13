@@ -399,8 +399,10 @@ if(RUN_CONSISTENCY){
       round(elapsed_consistency / 3600, 2), "h)\n")
 
   # --- Cleanup: remove consistency temporaries ---
-  rm(t_consistency_total, t_cluster, t_window, t_simfit, elapsed_simfit,
-     elapsed_window, res_list, res_df, n_success, n_fail, remaining_windows, elapsed_so_far)
+  cleanup_vars <- c("t_consistency_total", "t_cluster", "t_window", "t_simfit",
+                     "elapsed_simfit", "elapsed_window", "res_list", "res_df",
+                     "n_success", "n_fail", "remaining_windows", "elapsed_so_far")
+  rm(list = intersect(cleanup_vars, ls()), envir = environment())
   gc()
 
   # ==========================
@@ -755,18 +757,19 @@ if(PAPER_OUTPUT){
     }
 
     comps <- lapply(sims, function(x) compensators_hawkesNet(params = params, mark_filtration = x$net, time_window = c(0, TIME)))
-    marked_p_vals <- mapply(seq_along(keep), FUN = function(i){
-      sim_idx <- keep[i]
-      sim <- sims[[sim_idx]]
-      fit_par <- fits[[sim_idx]]$fit$par
-      times <- get_times(sim$net)$times
-      ks_test_pval_temporal(realiz = data.frame(t = times, n = rep(length(times), length(times))), windowT = c(0, TIME), hawkes_par = fit_par)
+    if (length(keep_idx) > 0) {
+      marked_p_vals <- sapply(keep_idx, function(sim_idx){
+        sim <- sims[[sim_idx]]
+        fit_par <- fits[[sim_idx]]$fit$par
+        times <- get_times(sim$net)$times
+        ks_test_pval_temporal(realiz = data.frame(t = times, n = rep(length(times), length(times))), windowT = c(0, TIME), hawkes_par = fit_par)
+      })
+      cat("Mean marked KS p-value:", mean(marked_p_vals), "\n")
+    }
+    temp_p_vals <- sapply(seq_along(sims), function(i){
+      ks_test_pval_temporal(realiz = data.frame(t = sims[[i]]$events$t, n = rep(sims[[i]]$events$n, length(sims[[i]]$events$t))), windowT = c(0, TIME), hawkes_par = temp_hawkes_fits[[i]]$par)
     })
-    temp_p_vals <- mapply(sims, temp_hawkes_fits, FUN = function(x,y){
-      ks_test_pval_temporal(realiz = data.frame(t = x$events$t, n = rep(x$events$n, length(x$events$t))), windowT = c(0, TIME), hawkes_par = y$par)
-    })
-    print(mean(marked_p_vals))
-    print(mean(temp_p_vals))
+    cat("Mean temporal KS p-value:", mean(temp_p_vals), "\n")
   }
 
   # ---------- Consistency study output ----------

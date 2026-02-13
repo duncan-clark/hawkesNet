@@ -1047,10 +1047,21 @@ PMF_mark_CS <- function(time,
         assign(".ernm_model_cache", cache, envir = asNamespace("hawkesNet"))
       }
       key <- formula_RHS
-      if (is.null(cache[[key]])) {
-        g0 <- network.initialize(0L, directed = FALSE)
-        cache[[key]] <- createCppModel(as.formula(paste("g0 ~ ", formula_RHS)))
-        cache[[key]]$setNetwork(as.BinaryNet(g0))
+      # Create or re-create the model.  Use mark_sample (not an empty g0) so
+      # that ERNM can find vertex attributes such as 'gender' for nodeMatch.
+      # Also re-create if the cached C++ pointer is stale (e.g. after fork).
+      need_create <- is.null(cache[[key]])
+      if (!need_create) {
+        need_create <- tryCatch({
+          cache[[key]]$setNetwork(as.BinaryNet(mark_sample))
+          cache[[key]]$calculate()
+          FALSE
+        }, error = function(e) TRUE)
+      }
+      if (need_create) {
+        ms_ref <- mark_sample
+        cache[[key]] <- createCppModel(as.formula(paste("ms_ref ~ ", formula_RHS)))
+        cache[[key]]$setNetwork(as.BinaryNet(mark_sample))
       }
       model <- cache[[key]]
       model$setNetwork(as.BinaryNet(mark_sample))

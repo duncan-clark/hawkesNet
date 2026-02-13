@@ -311,7 +311,7 @@ sim_hawkesNet <- function(params,
                               stop_on_full_network = stop_on_full_network,
                               ...)
       net <- mark_sample$mark_sample
-      if(hashed_edges && network.edgecount(net)!=0){
+      if(hashed_edges && network::network.edgecount(net)!=0){
         # hash the network edge list for fast lookup:
         edges <- as.edgelist(net)
         keys_vec <- paste(edges[,1], edges[,2], sep = "-")
@@ -413,11 +413,10 @@ sim_hawkesNet <- function(params,
     accept_probs_buf[n_proposed] <- accept
 
     # if we accept the point add it in
-    n_new_nodes <- (net %n% "n") - (if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n')
-    n_new_edges <- edgecount(net) - (if(is.null(current_net %v% 'n')) 0 else edgecount(current_net))
-    n_cands <- if(!is.null(mark_sample$edge_probs)) length(mark_sample$edge_probs) else 0
-    
     if(verbose && (n_proposed %% 10 == 0)){
+      n_new_nodes <- (net %n% "n") - (if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n')
+      n_new_edges <- network::network.edgecount(net) - (if(is.null(current_net %v% 'n')) 0 else network::network.edgecount(current_net))
+      n_cands <- if(!is.null(mark_sample$edge_probs)) length(mark_sample$edge_probs) else 0
       cat(sprintf("[Sim] Prop %d: nodes=%d (+%d), new_edges=%d/%d cands, accept_prob=%.4f\n", 
                   n_proposed, net %n% "n", n_new_nodes, n_new_edges, n_cands, accept))
     }
@@ -426,7 +425,7 @@ sim_hawkesNet <- function(params,
         cat(sprintf("[Sim] ACCEPTED at t=%.4f (nodes: %d -> %d, edges: %d -> %d)\n",
                     current_event$time, 
                     if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n', net %n% 'n',
-                    if(is.null(current_net %v% 'n')) 0 else edgecount(current_net), edgecount(net)))
+                    if(is.null(current_net %v% 'n')) 0 else network::network.edgecount(current_net), network::network.edgecount(net)))
       }
       current_net <- net
       n_accepted <- n_accepted + 1L
@@ -476,7 +475,7 @@ sim_hawkesNet <- function(params,
     cat(sprintf("  Proposed: %d\n", n_proposed))
     cat(sprintf("  Accepted: %d\n", n_accepted))
     cat(sprintf("  Final size: %d nodes, %d edges\n", 
-                current_net %n% 'n', edgecount(current_net)))
+                current_net %n% 'n', network::network.edgecount(current_net)))
     cat(sprintf("  Thinning: max_accept_ratio=%.3f, lambda=%.1f\n", max_accept, lambda))
     cat(sprintf("  Time: %.2f s\n", t1[3]))
   }
@@ -1047,23 +1046,123 @@ fit_hawkesNet <- function(params_init,
     row.names = NULL,
     stringsAsFactors = FALSE
   )
-  hessian <- fit$hessian
-  if (!is.null(hessian)) {
-    # optim returns hessian of fn (loglik), which is negative definite at a maximum.
-    # The variance-covariance matrix is the inverse of the *negative* hessian (observed information).
-    vcov <- tryCatch({
-      # Check if hessian is all zeros or has NAs
-      if (all(hessian == 0) || any(is.na(hessian))) {
-        NULL
-      } else {
-        solve(-hessian)
-      }
-    }, error = function(e) NULL)
-    if (!is.null(vcov)) {
-        se <- sqrt(pmax(diag(vcov), 0))
-        fit_table$std.error <- se
+  
+  # ---------------------------------------------------------------------------
+  # Hessian & Standard Errors
+  # ---------------------------------------------------------------------------
+  # Prefer numDeriv::hessian (Richardson extrapolation) — much more accurate
+  # than optim's simple central-differences, especially for Nelder-Mead.
+  # ---------------------------------------------------------------------------
+  vcat("[fit] --- Hessian / Standard-Error Computation ---\n")
+  t_hess_start <- proc.time()[3]
+  hessian <- NULL
+  hessian_source <- "none"
+  
+  if (requireNamespace("numDeriv", quietly = TRUE)) {
+    vcat("[fit] Computing Hessian via numDeriv::hessian (Richardson extrapolation)...\n")
+    vcat("[fit]   n_params = ", n_par, " → ~", 2 * n_par * n_par, " function evaluations\n")
+    hessian <- tryCatch({
+      numDeriv::hessian(func = optim_func, x = fit$par)
+    }, error = function(e) {
+      vcat("[fit]   numDeriv FAILED: ", e$message, "\n")
+      NULL
+    })
+    if (!is.null(hessian)) {
+      hessian_source <- "numDeriv"
+      vcat("[fit]   numDeriv Hessian computed in ",
+           round(proc.time()[3] - t_hess_start, 2), " s\n")
+    }
+  } else {
+    vcat("[fit] numDeriv not available; install with install.packages('numDeriv') for better SEs\n")
+  }
+  
+  if (is.null(hessian)) {
+    hessian <- fit$hessian
+    if (!is.null(hessian)) {
+      hessian_source <- "optim"
+      vcat("[fit] Using optim's built-in Hessian (less accurate for Nelder-Mead)\n")
+    } else {
+      vcat("[fit] WARNING: No Hessian available at all (optim returned NULL)\n")
     }
   }
+  
+  if (!is.null(hessian)) {
+    # --- Hessian diagnostics ---
+    n_h <- nrow(hessian)
+    diag_h <- diag(hessian)
+    vcat("[fit] Hessian diagnostics (source: ", hessian_source, ", ", n_h, "x", n_h, "):\n")
+    vcat("[fit]   Range of entries: [", sprintf("%.6g", min(hessian)),
+         ", ", sprintf("%.6g", max(hessian)), "]\n")
+    vcat("[fit]   Diagonal entries (should be negative at a maximum):\n")
+    for (i in seq_len(n_h)) {
+      vcat(sprintf("[fit]     %-30s  H[%d,%d] = %12.4f\n",
+                   par_names[i], i, i, diag_h[i]))
+    }
+    n_na <- sum(is.na(hessian))
+    n_zero <- sum(hessian == 0)
+    n_pos_diag <- sum(diag_h > 0, na.rm = TRUE)
+    if (n_na > 0) vcat("[fit]   WARNING: ", n_na, " NA entries in Hessian\n")
+    if (n_zero == length(hessian)) vcat("[fit]   WARNING: Hessian is all zeros\n")
+    if (n_pos_diag > 0) {
+      vcat("[fit]   WARNING: ", n_pos_diag, " positive diagonal entries",
+           " (suggests non-concave loglik at MLE for those params)\n")
+    }
+    
+    # Eigenvalue check (negative definite => all eigenvalues of -H positive)
+    eig <- tryCatch(eigen(-hessian, symmetric = TRUE, only.values = TRUE)$values, error = function(e) NULL)
+    if (!is.null(eig)) {
+      vcat("[fit]   Eigenvalues of -H (observed information): ",
+           paste(sprintf("%.4g", eig), collapse = ", "), "\n")
+      n_neg_eig <- sum(eig < 0)
+      if (n_neg_eig > 0) {
+        vcat("[fit]   WARNING: ", n_neg_eig, " negative eigenvalue(s) — ",
+             "-H is NOT positive definite (MLE may not be a true maximum)\n")
+      } else {
+        vcat("[fit]   All eigenvalues positive — -H is positive definite (good)\n")
+      }
+    }
+    
+    # --- Inversion ---
+    vcov <- NULL
+    if (all(hessian == 0) || any(is.na(hessian))) {
+      vcat("[fit]   Cannot invert: Hessian is all-zero or contains NA\n")
+    } else {
+      vcov <- tryCatch({
+        solve(-hessian)
+      }, error = function(e) {
+        vcat("[fit]   Matrix inversion failed: ", e$message, "\n")
+        # Try pseudo-inverse as fallback
+        if (requireNamespace("MASS", quietly = TRUE)) {
+          vcat("[fit]   Attempting Moore-Penrose pseudo-inverse (MASS::ginv)...\n")
+          tryCatch(MASS::ginv(-hessian), error = function(e2) {
+            vcat("[fit]   Pseudo-inverse also failed: ", e2$message, "\n")
+            NULL
+          })
+        } else NULL
+      })
+    }
+    
+    if (!is.null(vcov)) {
+      diag_vcov <- diag(vcov)
+      n_neg_var <- sum(diag_vcov < 0)
+      if (n_neg_var > 0) {
+        vcat("[fit]   WARNING: ", n_neg_var, " negative variance(s) on diagonal of vcov:\n")
+        for (i in which(diag_vcov < 0)) {
+          vcat(sprintf("[fit]     %-30s  var = %.6g (negative!)\n", par_names[i], diag_vcov[i]))
+        }
+        vcat("[fit]   Negative variances set to 0 (SE reported as 0)\n")
+      }
+      se <- sqrt(pmax(diag_vcov, 0))
+      fit_table$std.error <- se
+      vcat("[fit]   Standard errors computed successfully:\n")
+      for (i in seq_len(n_h)) {
+        vcat(sprintf("[fit]     %-30s  SE = %.6f\n", par_names[i], se[i]))
+      }
+    } else {
+      vcat("[fit]   FAILED to compute variance-covariance matrix — all SEs will be NA\n")
+    }
+  }
+  vcat("[fit] Hessian total time: ", round(proc.time()[3] - t_hess_start, 2), " s\n")
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   vcat("[fit] Results:\n")
