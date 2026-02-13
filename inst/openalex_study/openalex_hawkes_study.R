@@ -814,6 +814,40 @@ if (RUN_GOF && !is.null(fit_inhom_nodemix)) {
   if (is.null(fit_inhom_nodemix)) cat("  No nodeMix fit available; skipping nodeMix GOF\n")
 }
 
+# --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
+cat(sprintf("  [GOF] Memory after nodeMix GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
+
+# GOF for BA model (fourth)
+if (RUN_GOF && !is.null(fit_inhom_ba)) {
+  cat("\n  GOF for BA model...\n")
+  
+  GOF_results_ba <- gof(
+    fit = fit_inhom_ba,
+    net_obs = net_raw,
+    params_init = params_init_ba,
+    PMF_mark = PMF_mark_BA,
+    cond_intensity = cond_intensity,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    growth_only = GROWTH_ONLY,
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES,
+    max_deg = 15,
+    k_esp = 15,
+    degree = 0,
+    esp = 0,
+    mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
+    verbose = TRUE
+  )
+} else {
+  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping BA GOF\n")
+  if (is.null(fit_inhom_ba)) cat("  No BA fit available; skipping BA GOF\n")
+}
+
 # Use nodeMix GOF as primary for display (fallback to nodeMatch then structural)
 if (RUN_GOF) {
   cat("\n--- GOF Summary Results ---\n")
