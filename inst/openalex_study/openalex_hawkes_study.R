@@ -978,6 +978,18 @@ if (PAPER_OUTPUT) {
       }
     }
   }
+
+  # Print BA fit results
+  if (!is.null(dat$fit_inhom_ba)) {
+    cat("\n--- BA Fit Results ---\n")
+    if (!is.null(dat$fit_inhom_ba$fit_table)) {
+      cat("  Inhomogeneous fit (BA): parameter estimates and standard errors\n")
+      print(dat$fit_inhom_ba$fit_table, max = NULL)
+    } else {
+      cat("  Inhomogeneous fit (BA): raw parameters\n")
+      print(fit_inhom_ba$fit$par)
+    }
+  }
   
   # Print structural-only fit results
   if (!is.null(dat$fit_inhom_structural)) {
