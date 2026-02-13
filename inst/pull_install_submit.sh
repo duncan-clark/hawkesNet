@@ -1,23 +1,26 @@
 #!/bin/bash
 # One-shot: git pull, load R, install package (no save workspace), sbatch chosen job.
-# Usage: pull_install_submit.sh <BA|CS|openalex>
-#   BA      - simulation_study (Barabási–Albert)
-#   CS      - simulation_study (Change Statistics)
+# Usage: pull_install_submit.sh <BA|CS|openalex|hypertext>
+#   BA       - simulation_study (Barabási–Albert)
+#   CS       - simulation_study (Change Statistics)
 #   openalex - OpenAlex Hawkes study
+#   hypertext - Hypertext conference Hawkes study
 # Run from package root or from inst/.
 set -e
 
 STUDY="${1:-}"
 STUDY_LOWER="$(echo "$STUDY" | tr '[:upper:]' '[:lower:]')"
 case "$STUDY_LOWER" in
-  ba)       SLURM_SCRIPT="inst/simulation_study/run_BA.slurm" ;;
-  cs)       SLURM_SCRIPT="inst/simulation_study/run_CS.slurm" ;;
-  openalex) SLURM_SCRIPT="inst/openalex_study/run_openalex.slurm" ;;
+  ba)        SLURM_SCRIPT="inst/simulation_study/run_BA.slurm" ;;
+  cs)        SLURM_SCRIPT="inst/simulation_study/run_CS.slurm" ;;
+  openalex)  SLURM_SCRIPT="inst/openalex_study/run_openalex.slurm" ;;
+  hypertext) SLURM_SCRIPT="inst/hypertext_conference/run_hypertext.slurm" ;;
   *)
-    echo "Usage: $0 <BA|CS|openalex>"
+    echo "Usage: $0 <BA|CS|openalex|hypertext>"
     echo "  BA       - simulation study (Barabási–Albert)"
     echo "  CS       - simulation study (Change Statistics)"
     echo "  openalex - OpenAlex Hawkes study"
+    echo "  hypertext - Hypertext conference Hawkes study"
     exit 1
     ;;
 esac

@@ -25,10 +25,11 @@ Defaults: 8 CPUs, 32G mem, 24h. Edit `run_openalex.slurm` to change.
 From package root or from `inst/`:
 
 ```bash
-./inst/pull_install_submit.sh <BA|CS|openalex>
+./inst/pull_install_submit.sh <BA|CS|openalex|hypertext>
 ```
 
 - **openalex** – OpenAlex Hawkes study (`run_openalex.slurm`)
+- **hypertext** – Hypertext conference Hawkes study (`inst/hypertext_conference/run_hypertext.slurm`)
 - **BA** – Simulation study, Barabási–Albert (`inst/simulation_study/run_BA.slurm`)
 - **CS** – Simulation study, Change Statistics (`inst/simulation_study/run_CS.slurm`)
 

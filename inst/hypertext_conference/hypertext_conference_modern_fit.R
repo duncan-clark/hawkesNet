@@ -7,8 +7,11 @@
 ## Quick local mode (keeps runtime under ~2 minutes):
 ##   LOCAL_QUICK=TRUE Rscript inst/hypertext_conference/hypertext_conference_modern_fit.R
 ##
+## Cluster mode (SLURM):
+##   sbatch inst/hypertext_conference/run_hypertext.slurm
+##
 ## Cluster mode knobs:
-##   SLURM_CPUS_PER_TASK=32 MAX_ITER=5000 N_GOF=50 OPENALEX_GOF_CORES=32 Rscript ...
+##   SLURM_CPUS_PER_TASK=32 MAX_ITER=5000 N_GOF=50 GOF_CORES=32 Rscript ...
 ##
 ## Notes:
 ## - This models *edge formation* (simple graph): we collapse repeated contacts to first contact per dyad.
@@ -22,7 +25,11 @@ library(network)
 library(ernm)
 library(sna)
 
-PKG_ROOT <- getwd()
+# Paths: run from package root. Under SLURM, use submit dir so path stays valid.
+PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) Sys.getenv("SLURM_SUBMIT_DIR") else getwd()
+if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) {
+  PKG_ROOT <- getwd()
+}
 
 # Use the repo (most up-to-date) implementation even if the installed package is older.
 # This is helpful during development, but note: on macOS/Windows we use PSOCK workers for parallelism,
@@ -492,24 +499,51 @@ if (RUN_GOF) {
 }
 
 # -----------------------------------------------------------------------------
-# Save results for poking
+# Save results (cluster_output when on SLURM, same structure as openalex)
 # -----------------------------------------------------------------------------
-out_path <- file.path(PKG_ROOT, "inst", "hypertext_conference", "hypertext_conference_modern_results.rds")
-saveRDS(
-  list(
-    fit = fit,
-    gof = gof_res,
-    sim_test = sim_test_res,
-    net = net,
-    edges = obj$edges,
-    inhom_bg = inhom_bg,
-    params_init = params_init,
-    formula_rhs = FORMULA_RHS,
-    truncation = TRUNCATION,
-    time_window = time_window
-  ),
-  out_path
+save_list <- list(
+  fit = fit,
+  gof = gof_res,
+  GOF = gof_res,  # alias for consistency with openalex
+  sim_test = sim_test_res,
+  net = net,
+  edges = obj$edges,
+  inhom_bg = inhom_bg,
+  params_init = params_init,
+  formula_rhs = FORMULA_RHS,
+  truncation = TRUNCATION,
+  time_window = time_window,
+  N_GOF = N_GOF,
+  SEED_EVENTS_GOF = SEED_EVENTS_GOF
 )
-cat("\nSaved:", out_path, "\n")
+
+cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+rds_path_primary <- file.path(cluster_output_dir, "results_hypertext_full.RDS")
+
+# Use cluster_output when running under SLURM or when it exists
+use_cluster_output <- nzchar(Sys.getenv("SLURM_JOB_ID")) || dir.exists(cluster_output_dir)
+
+if (use_cluster_output) {
+  dir.create(cluster_output_dir, showWarnings = FALSE, recursive = TRUE)
+  save_ok <- tryCatch({
+    saveRDS(save_list, rds_path_primary)
+    cat("\nSaved to cluster_output:", rds_path_primary, "\n")
+    TRUE
+  }, error = function(e) {
+    cat("  Save to ", rds_path_primary, " failed: ", conditionMessage(e), "\n")
+    FALSE
+  })
+  if (!save_ok) {
+    out_path <- file.path(PKG_ROOT, "inst", "hypertext_conference", "hypertext_conference_modern_results.rds")
+    tryCatch({
+      saveRDS(save_list, out_path)
+      cat("  Fallback save:", out_path, "\n")
+    }, error = function(e) cat("  Fallback save failed:", conditionMessage(e), "\n"))
+  }
+} else {
+  out_path <- file.path(PKG_ROOT, "inst", "hypertext_conference", "hypertext_conference_modern_results.rds")
+  saveRDS(save_list, out_path)
+  cat("\nSaved:", out_path, "\n")
+}
 cat("Done.\n")
 
