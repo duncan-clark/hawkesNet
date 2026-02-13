@@ -64,23 +64,59 @@ ensure_vertex_attribute <- function(net, attr_name, default_value = "unknown") {
   
   # Check if attribute exists
   if (!attr_name %in% list.vertex.attributes(net)) {
-    # Attribute doesn't exist: set all nodes to default
     set.vertex.attribute(net, attr_name, rep(default_value, nv))
   } else {
-    # Attribute exists: check and fix missing/NA values
     attr_vals <- get.vertex.attribute(net, attr_name)
     if (length(attr_vals) < nv) {
-      # Not enough values: pad with default
       attr_vals <- c(attr_vals, rep(default_value, nv - length(attr_vals)))
       set.vertex.attribute(net, attr_name, attr_vals)
     } else if (any(is.na(attr_vals)) || any(attr_vals == "")) {
-      # Has NA or empty values: replace with default
       attr_vals[is.na(attr_vals) | attr_vals == ""] <- default_value
+      set.vertex.attribute(net, attr_name, attr_vals)
+    }
+    if (!is.numeric(attr_vals)) {
+      attr_vals <- sanitize_vertex_attr_for_binarynet(attr_vals, default_val = default_value)
       set.vertex.attribute(net, attr_name, attr_vals)
     }
   }
   
   net
+}
+
+#' Vertex attributes required by an ERNM formula (nodeMatch/nodeMix).
+#' @param formula_RHS Character RHS of formula.
+#' @return Character vector of attribute names, or character(0) if none.
+#' @noRd
+formula_vertex_attrs <- function(formula_RHS) {
+  if (is.null(formula_RHS) || !nzchar(trimws(formula_RHS))) return(character(0))
+  m <- gregexpr("node(?:Match|Mix)\\s*\\(\\s*['\"]([^'\"]+)['\"]", formula_RHS, perl = TRUE)[[1]]
+  if (m[1] == -1) return(character(0))
+  s <- attr(m, "capture.start")
+  l <- attr(m, "capture.length")
+  unique(substring(formula_RHS, s[, 1], s[, 1] + l[, 1] - 1))
+}
+
+#' Sanitize character vertex attributes for ernm as.BinaryNet (avoids C++ segfaults).
+#' Strips non-ASCII and truncates long strings; replaces NA/empty with default.
+#' @param vals Character or numeric vector.
+#' @param default_val Default for NA/empty (default "unknown").
+#' @param max_len Max character length per element (default 200).
+#' @return Sanitized vector.
+#' @noRd
+sanitize_vertex_attr_for_binarynet <- function(vals, default_val = "unknown", max_len = 200L) {
+  if (is.numeric(vals)) {
+    vals[!is.finite(vals)] <- 0
+    return(vals)
+  }
+  vals <- as.character(vals)
+  vals[is.na(vals) | nchar(vals) == 0] <- default_val
+  vals <- vapply(vals, function(x) {
+    x <- iconv(x, from = "UTF-8", to = "ASCII", sub = "?")
+    if (is.na(x)) return(default_val)
+    if (nchar(x) > max_len) x <- substring(x, 1L, max_len)
+    x
+  }, character(1), USE.NAMES = FALSE)
+  vals
 }
 
 #' Waiting times between consecutive structure formations.
@@ -103,12 +139,16 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   n <- network.size(net)
   g_temp <- network.initialize(n, directed = is.directed(net))
   
-  # Copy vertex attributes from net to g_temp (required for nodeMatch/nodeMix)
+  # Copy ONLY vertex attributes required by the formula (nodeMatch/nodeMix).
+  # For "edges + triangles + star(c(2,3))" none are needed; copying author/title
+  # etc. causes ernm C++ segfaults with non-ASCII or long strings.
+  needed_attrs <- formula_vertex_attrs(formula_RHS)
   vattrs <- list.vertex.attributes(net)
   for (attr_name in vattrs) {
-    if (attr_name != "na") {
+    if (attr_name != "na" && attr_name %in% needed_attrs) {
       attr_vals <- get.vertex.attribute(net, attr_name)
       if (length(attr_vals) == n) {
+        attr_vals <- sanitize_vertex_attr_for_binarynet(attr_vals)
         set.vertex.attribute(g_temp, attr_name, attr_vals)
       }
     }
@@ -154,12 +194,12 @@ waiting_times_between_formations <- function(net, time_attr = "time",
   event_times <- unique(edge_times)
   g <- network.initialize(n, directed = is.directed(net))
   
-  # Copy vertex attributes from net to g (required for nodeMatch/nodeMix)
-  vattrs <- list.vertex.attributes(net)
-  for (attr_name in vattrs) {
-    if (attr_name != "na") {
+  # Copy ONLY vertex attributes required by the formula (same as g_temp)
+  for (attr_name in needed_attrs) {
+    if (attr_name %in% list.vertex.attributes(net)) {
       attr_vals <- get.vertex.attribute(net, attr_name)
       if (length(attr_vals) == n) {
+        attr_vals <- sanitize_vertex_attr_for_binarynet(attr_vals)
         set.vertex.attribute(g, attr_name, attr_vals)
       }
     }
@@ -613,16 +653,31 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
 })
 
 # Observed nodeMix statistics (if gender attribute exists)
+# Fail gracefully: if nodal covariates cause errors (encoding, ernm C++, etc.), skip nodeMix entirely
 if (verbose) cat("    Computing observed nodeMix statistics...\n")
 tryCatch({
   if ("gender" %in% list.vertex.attributes(net_obs) || 
       any(grepl("nodeMix|nodeMatch", formula_RHS))) {
-    # Ensure gender attribute is properly set for all nodes before ERNM operations
-    net_obs_clean <- ensure_vertex_attribute(net_obs, "gender", default_value = "unknown")
-    GOF_results$nodemix_obs <- as.vector(calculateStatistics(net_obs_clean ~ nodeMix('gender')))
+    net_obs_clean <- tryCatch(
+      ensure_vertex_attribute(net_obs, "gender", default_value = "unknown"),
+      error = function(e) {
+        if (verbose) cat("      Warning: Could not ensure gender attribute:", e$message, "\n")
+        NULL
+      }
+    )
+    if (!is.null(net_obs_clean)) {
+      GOF_results$nodemix_obs <- tryCatch(
+        as.vector(calculateStatistics(net_obs_clean ~ nodeMix('gender'))),
+        error = function(e) {
+          if (verbose) cat("      Warning: Could not compute nodeMix statistics:", e$message, "\n")
+          NULL
+        }
+      )
+    }
   }
 }, error = function(e) {
-  if (verbose) cat("      Warning: Could not compute observed nodeMix:", e$message, "\n")
+  if (verbose) cat("      Warning: Nodal covariate (nodeMix) skipped:", e$message, "\n")
+  GOF_results$nodemix_obs <- NULL
 })
 
 # --- Optimization: Clean up net_obs before parallel stats if possible ---
@@ -650,24 +705,25 @@ dist_stats_sim <- tryCatch({
   safe_parallel_lapply(sim_nets, function(n) {
     tryCatch({
       if (is.null(n)) return(NULL)
-      # Ensure vertex attributes for nodeMix if needed
       n_clean <- n
       if (needs_gender) {
         n_clean <- tryCatch({
           ensure_vertex_attribute(n, "gender", default_value = "unknown")
         }, error = function(e) n)
       }
-      
+      nodemix_val <- NULL
+      if (has_nodemix_obs) {
+        nodemix_val <- tryCatch({
+          as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
+        }, error = function(e) NULL)
+      }
       list(
         degree = degree_dist(n, max_deg, min_deg = degree),
         esp = esp_dist(n, k_esp, min_esp = esp),
         geodist = geodist_dist(n),
-        nodemix = if (has_nodemix_obs) {
-          as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
-        } else NULL
+        nodemix = nodemix_val
       )
     }, error = function(e) {
-      # Return a structure with NAs so rbind doesn't fail on atomic vectors
       list(degree = rep(NA_real_, n_deg_bins), 
            esp = rep(NA_real_, n_esp_bins), 
            geodist = numeric(0), 

@@ -6,7 +6,8 @@
 #' approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
 #'
 #' @param time Current event time.
-#' @param params List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally \code{beta_overall}, \code{K}, \code{mu}.
+#' @param params List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally
+#'   \code{beta_overall}, \code{K}, \code{mu}, \code{vertex_categorical}, \code{vertex_categorical_levels}.
 #' @param mark_filtration Observed network up to \code{time}.
 #' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
 #' @param generate_mark If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).
@@ -15,6 +16,11 @@
 #' @param truncation Optional integer cap on the number of edges per event.
 #' @param mark_decay Character string controlling how temporal weights decay.
 #'   One of \code{"node_entrance"} (default) or \code{"activity"}.
+#' @param vertex_categorical Optional named list in \code{params}: for each discrete vertex attribute, a named
+#'   numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
+#'   Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).
+#' @param vertex_categorical_levels Optional named list in \code{params}: level names per attribute
+#'   (e.g. \code{list(gender = c("female", "male", "unknown"))}); last level is reference.
 #' @param ... Additional arguments (currently unused).
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
@@ -118,19 +124,40 @@ PMF_mark_BA <- function(time,
     p_in <- pmax(probs[in_mark], .Machine$double.eps)
     p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
     log_mark_density <- log_poisson + sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
+    observed_categorical <- list()
+    if (!is.null(mark) && (new_nodes - old_nodes) > 0) {
+      vcat_res <- log_categorical_density(params, mark, old_nodes, new_nodes, eps = 1e-10)
+      if (!is.null(vcat_res$log_dens) && is.finite(vcat_res$log_dens)) log_mark_density <- log_mark_density + vcat_res$log_dens
+      observed_categorical <- vcat_res$observed
+    }
     mark_density <- exp(log_mark_density)
   } else {
     in_mark <- rep(1, length(heads))
     K_obs <- if (length(heads) > 0) sum(in_mark, na.rm = TRUE) else 0
     log_mark_density <- dpois(K_obs, m_val, log = TRUE)
+    observed_categorical <- list()
+    if (!is.null(mark) && (new_nodes - old_nodes) > 0) {
+      vcat_res <- log_categorical_density(params, mark, old_nodes, new_nodes, eps = 1e-10)
+      if (!is.null(vcat_res$log_dens) && is.finite(vcat_res$log_dens)) log_mark_density <- log_mark_density + vcat_res$log_dens
+      observed_categorical <- vcat_res$observed
+    }
     mark_density <- exp(log_mark_density)
   }
   
-  # 1. Define the lightweight log-density function for BA (includes Poisson(m) for K_obs edges)
+  # Pre-compute level names for vertex categorical (for closure)
+  level_names_by_attr <- list()
+  if (length(observed_categorical) > 0) {
+    for (an in names(observed_categorical)) {
+      level_names_by_attr[[an]] <- vertex_categorical_level_names(params, an, mark)
+    }
+  }
+
+  # 1. Define the lightweight log-density function for BA (includes Poisson(m) for K_obs edges + vertex categorical)
   log_density_func_light <- function(params) {
     m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
     log_poisson <- dpois(K_obs, m_p, log = TRUE)
     if (!is.finite(log_poisson)) return(-1e10)
+    node_dens <- 0
     if (!is.null(node_degrees)) {
       degs <- node_degrees * exp(-params$beta_edges * (time - times))
       degs[is.na(degs) | is.nan(degs)] <- 0
@@ -143,13 +170,33 @@ PMF_mark_BA <- function(time,
       if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
       p_in <- pmax(probs[in_mark], .Machine$double.eps)
       p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
-      edge_part <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
-      return(log_poisson + edge_part)
+      node_dens <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
     }
-    return(log_poisson)
+    vcat <- params$vertex_categorical
+    if (!is.null(vcat) && is.list(vcat) && length(observed_categorical) > 0) {
+      eps_cl <- 1e-10
+      for (attr_name in names(observed_categorical)) {
+        if (attr_name %in% names(vcat)) {
+          levs_attr <- level_names_by_attr[[attr_name]]
+          if (is.null(levs_attr) && !is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels))
+            levs_attr <- params$vertex_categorical_levels[[attr_name]]
+          if (!is.null(levs_attr)) {
+            p_attr <- expand_vertex_categorical_probs(vcat[[attr_name]], levs_attr, eps = eps_cl)
+            if (!is.null(p_attr)) {
+              obs <- observed_categorical[[attr_name]]
+              idx <- match(obs, names(p_attr))
+              idx[is.na(idx)] <- match("unknown", names(p_attr))
+              idx[is.na(idx)] <- 1L
+              node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps_cl)))
+            }
+          }
+        }
+      }
+    }
+    return(log_poisson + node_dens)
   }
 
-  # 2. Capture the environment (include K_obs for Poisson term)
+  # 2. Capture the environment (include K_obs for Poisson term + vertex categorical)
   environment(log_density_func_light) <- list2env(
     list(
       heads = heads,
@@ -158,7 +205,10 @@ PMF_mark_BA <- function(time,
       node_degrees = node_degrees,
       in_mark = in_mark,
       K_obs = K_obs,
-      dpois = stats::dpois
+      dpois = stats::dpois,
+      observed_categorical = observed_categorical,
+      level_names_by_attr = level_names_by_attr,
+      expand_vertex_categorical_probs = expand_vertex_categorical_probs
     ),
     parent = baseenv()
   )
@@ -179,11 +229,12 @@ PMF_mark_BA <- function(time,
     last_net <- mark
     times <- get.vertex.attribute(last_net, "time")
     if (!is.null(last_net) && (last_net %n% 'n') > 1) {
-      mark_sample <- last_net
+      mark_sample <- network.copy(last_net)
       old_nodes <- last_net %n% 'n'
       new_nodes <- 1
       mark_sample <- add.vertices(mark_sample, new_nodes)
       set.vertex.attribute(mark_sample, "time", c((last_net %v% 'time'), rep(time, new_nodes)))
+      mark_sample <- sample_vertex_attrs(params, last_net, mark_sample, old_nodes, new_nodes, eps = 1e-10)
       new_node_idx <- old_nodes + 1
 
       if (!is.null(truncation) && old_nodes > truncation) {
@@ -234,7 +285,7 @@ PMF_mark_BA <- function(time,
           mark_sample <- network(matrix(1), directed = FALSE)
           set.vertex.attribute(mark_sample, "time", time)
         } else {
-          mark_sample <- last_net
+          mark_sample <- network.copy(last_net)
         }
         times <- mark_sample %v% 'time'
         mark_sample <- add.vertices(mark_sample, 1)
@@ -242,6 +293,7 @@ PMF_mark_BA <- function(time,
           add.edges(mark_sample, 2, 1)
         }
         set.vertex.attribute(mark_sample, "time", c(times, time))
+        mark_sample <- sample_vertex_attrs(params, last_net, mark_sample, mark_sample %n% 'n' - 1L, 1L, eps = 1e-10)
         log_mark_sample_density <- dpois(1, m_val, log = TRUE)
         mark_sample_density <- exp(log_mark_sample_density)
       }
@@ -352,7 +404,7 @@ sample_vertex_attrs <- function(params, last_net, mark_sample, old_nodes, new_no
     if (is.null(p)) next
     levs <- names(p)
     if (any(!is.finite(p)) || sum(p) <= 0) { p <- rep(1 / length(levs), length(levs)); names(p) <- levs }
-    existing <- if (attr_name %in% list.vertex.attributes(last_net)) last_net %v% attr_name else rep(levs[1L], old_nodes)
+    existing <- if (is.null(last_net) || !(attr_name %in% list.vertex.attributes(last_net))) rep(levs[1L], old_nodes) else last_net %v% attr_name
     if (new_nodes > 0) {
       sampled <- sample(levs, size = new_nodes, replace = TRUE, prob = p)
       set.vertex.attribute(mark_sample, attr_name, c(existing, sampled))
@@ -396,23 +448,17 @@ ensure_vertex_attrs <- function(params, net) {
   
   # 2. Safety: Sanitize ALL vertex attributes to prevent C++ segfaults in as.BinaryNet.
   # Rcpp/ERNM expects attributes to be purely numeric or character, and NO NAs.
-  # Factors or NAs in attributes not in vcat can still trigger the segfault.
+  # Non-ASCII (e.g. accented names) or very long strings can trigger segfaults.
   all_attrs <- list.vertex.attributes(net)
-  # Exclude 'na' which is internal to network package
   all_attrs <- setdiff(all_attrs, "na")
   
   for (a in all_attrs) {
     vals <- get.vertex.attribute(net, a)
     if (length(vals) < nv) {
-      # Pad missing values
       default_val <- if (is.numeric(vals)) 0 else "unknown"
       vals <- c(vals, rep(default_val, nv - length(vals)))
     }
-    
-    # Convert factors to character (factors cause issues in C++)
     if (is.factor(vals)) vals <- as.character(vals)
-    
-    # Fill NAs
     if (any(is.na(vals))) {
       if (is.numeric(vals)) {
         vals[is.na(vals)] <- 0
@@ -420,6 +466,9 @@ ensure_vertex_attrs <- function(params, net) {
         vals <- as.character(vals)
         vals[is.na(vals)] <- "unknown"
       }
+    }
+    if (!is.numeric(vals)) {
+      vals <- sanitize_vertex_attr_for_binarynet(vals, default_val = "unknown", max_len = 200L)
     }
     set.vertex.attribute(net, a, vals)
   }
@@ -487,10 +536,11 @@ vertex_categorical_level_names <- function(params, attr_name, mark = NULL) {
 
 #' Expected parameter names for PMF_mark_BA
 #'
-#' @return List with \code{required} (character vector: \code{beta_edges}, \code{m}).
+#' @return List with \code{required} (character vector: \code{beta_edges}, \code{m}) and
+#'   \code{optional} (character vector: \code{vertex_categorical}, \code{vertex_categorical_levels}).
 #' @export
 expected_params_PMF_mark_BA <- function() {
-  list(required = c("beta_edges", "m"))
+  list(required = c("beta_edges", "m"), optional = c("vertex_categorical", "vertex_categorical_levels"))
 }
 
 #' Expected parameter structure for PMF_mark_CS
