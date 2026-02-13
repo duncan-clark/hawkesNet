@@ -663,10 +663,11 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           if (is.null(n)) return(NULL)
           # Ensure vertex attributes for nodeMix if needed
           n_clean <- n
-          if (needs_gender) {
-            n_clean <- tryCatch(ensure_vertex_attribute(n, "gender", default_value = "unknown"), 
-                               error = function(e) n)
-          }
+    if (needs_gender) {
+      n_clean <- tryCatch({
+        ensure_vertex_attribute(n, "gender", default_value = "unknown")
+      }, error = function(e) n)
+    }
           
           list(
             degree = degree_dist(n, max_deg, min_deg = degree),

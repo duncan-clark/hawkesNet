@@ -1051,7 +1051,14 @@ fit_hawkesNet <- function(params_init,
   if (!is.null(hessian)) {
     # optim returns hessian of fn (loglik), which is negative definite at a maximum.
     # The variance-covariance matrix is the inverse of the *negative* hessian (observed information).
-    vcov <- tryCatch(solve(-hessian), error = function(e) NULL)
+    vcov <- tryCatch({
+      # Check if hessian is all zeros or has NAs
+      if (all(hessian == 0) || any(is.na(hessian))) {
+        NULL
+      } else {
+        solve(-hessian)
+      }
+    }, error = function(e) NULL)
     if (!is.null(vcov)) {
         se <- sqrt(pmax(diag(vcov), 0))
         fit_table$std.error <- se

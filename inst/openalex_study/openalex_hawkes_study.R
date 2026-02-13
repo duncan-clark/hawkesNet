@@ -885,9 +885,9 @@ if (PAPER_OUTPUT) {
       if (!is.null(pfit_nodematch)) {
         pfit_nodematch$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
         # Restore names and repair parameters before expanding
-        pfit_nodematch <- :reconstruct_vertex_categorical_names(
+        pfit_nodematch <- hawkesNet::reconstruct_vertex_categorical_names(
           pfit_nodematch, params_init_nodematch$vertex_categorical_levels)
-        pfit_nodematch <- :repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
+        pfit_nodematch <- hawkesNet::repair_vertex_categorical_params(pfit_nodematch, eps = 1e-6)
         if (!is.null(pfit_nodematch$vertex_categorical$gender)) {
           levs <- params_init_nodematch$vertex_categorical_levels$gender
           pgender_nodematch <- expand_vertex_categorical_probs(pfit_nodematch$vertex_categorical$gender, levs)
