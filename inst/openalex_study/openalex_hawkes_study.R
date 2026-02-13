@@ -58,16 +58,21 @@ if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- 256L
   cat("Request was 128; using 256 (USE_256_WHEN_128 set)\n")
 }
+# Separate core budget for GOF (defaults to N_CORES). Useful because GOF uses forked workers.
+N_CORES_GOF <- as.numeric(Sys.getenv("OPENALEX_GOF_CORES", N_CORES))
 MAX_ITER <- 10000
 TRUNCATION <- 300L
 GROWTH_ONLY <- TRUE  # Edges only form when a node enters the network (citation logic)
 GOF_TIME_WINDOW <- c(0, 1)  # Full time period for GOF simulations
 N_GOF <- 25L   # number of simulated networks for goodness-of-fit
+# Don't use more workers than simulations (fork overhead).
+N_CORES_GOF <- max(1, min(as.integer(N_CORES_GOF), as.integer(N_GOF)))
 SEED_EVENTS_GOF <- 20L  # Seed simulations with first 20 events (prevents cold-start degeneracy)
 PAPER_OUTPUT <- TRUE
 RUN_GOF <- TRUE
 RUN_FIT_STRUCTURAL <- TRUE
 RUN_FIT_NODEMATCH <- TRUE
+RUN_FIT_NODEMATCH_GWESP <- TRUE
 RUN_FIT_BA <- TRUE
 
 # FLOW CONTROL:
@@ -468,36 +473,72 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
 }
 
   # =============================================================================
-  # 2c. Additional structural model: gwdegree(0.01)
+  # 2c. nodeMatch + gwesp fit (NON-growth edges) — allows edge dependence via gwesp
   # =============================================================================
-  fit_inhom_structural_gw001 <- NULL
-  FORMULA_RHS_STRUCTURAL_GW001 <- "edges + gwdegree(0.01)"
-  if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
-    cat("\n--- Step 2c: Structural-only fit (gwdegree(0.01)) ---\n")
-    cat("  Formula:", FORMULA_RHS_STRUCTURAL_GW001, "\n")
-    t_step_structural_gw001 <- proc.time()
+  fit_inhom_nodematch_gwesp <- NULL
+  FORMULA_RHS_NODEMATCH_GWESP <- "edges + gwdegree(0.1) + nodeMatch('gender') + gwesp(0.1)"
+  if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH && RUN_FIT_NODEMATCH_GWESP) {
+    cat("\n--- Step 2c: nodeMatch + gwesp fit (NON-growth edges) ---\n")
+    cat("  Formula:", FORMULA_RHS_NODEMATCH_GWESP, "\n")
+    t_step_nodematch_gwesp <- proc.time()
     
-    exp_cs_structural_gw001 <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL_GW001)
-    n_cs_structural_gw001 <- if (!is.na(exp_cs_structural_gw001$CS_params_length)) exp_cs_structural_gw001$CS_params_length else 2L
+    exp_cs_nodematch_gwesp <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_NODEMATCH_GWESP)
+    n_cs_nodematch_gwesp <- if (!is.na(exp_cs_nodematch_gwesp$CS_params_length)) {
+      exp_cs_nodematch_gwesp$CS_params_length
+    } else {
+      # Conservative fallback: nodeMatch + gwesp adds terms beyond nodeMatch.
+      max(4L, (if (exists("n_cs_nodematch", inherits = FALSE)) n_cs_nodematch else 3L) + 1L)
+    }
+    cat("  CS_params length:", n_cs_nodematch_gwesp, "\n")
+
+    # Reclaim memory before starting another heavy fit.
+    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$intens_funcs)) {
+      fit_inhom_nodematch$intens_funcs <- NULL
+    }
+    gc()
     
-    params_init_structural_gw001 <- make_default_params(n_cs_structural_gw001, mu_init)
-    p_scale_structural_gw001 <- c(
+    # Initialize from growth-only nodeMatch fit if available (best), else from nodeMatch init.
+    params_init_nodematch_gwesp <- NULL
+    if (!is.null(fit_inhom_nodematch) && !is.null(fit_inhom_nodematch$params)) {
+      params_init_nodematch_gwesp <- fit_inhom_nodematch$params
+      # Ensure vertex categorical levels are present for consistent downstream printing/repair
+      if (!is.null(params_init_nodematch$vertex_categorical_levels)) {
+        params_init_nodematch_gwesp$vertex_categorical_levels <- params_init_nodematch$vertex_categorical_levels
+      }
+      cs0 <- params_init_nodematch_gwesp$CS_params
+      params_init_nodematch_gwesp$CS_params <- c(cs0, rep(0, max(0L, n_cs_nodematch_gwesp - length(cs0))))[seq_len(n_cs_nodematch_gwesp)]
+      cat("  Initialized from growth-only nodeMatch fit (padded CS_params for gwesp)\n")
+    } else if (exists("params_init_nodematch", inherits = FALSE) && !is.null(params_init_nodematch)) {
+      params_init_nodematch_gwesp <- params_init_nodematch
+      cs0 <- params_init_nodematch_gwesp$CS_params
+      params_init_nodematch_gwesp$CS_params <- c(cs0, rep(0, max(0L, n_cs_nodematch_gwesp - length(cs0))))[seq_len(n_cs_nodematch_gwesp)]
+      cat("  Initialized from nodeMatch init (padded CS_params for gwesp)\n")
+    } else {
+      params_init_nodematch_gwesp <- make_default_params(n_cs_nodematch_gwesp, mu_init, include_gender = TRUE)
+      cat("  Initialized independently (fallback)\n")
+    }
+    
+    p_scale_nodematch_gwesp <- c(
       beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-      setNames(rep(0.1, n_cs_structural_gw001), paste0("CS_params", seq_len(n_cs_structural_gw001)))
+      setNames(rep(0.1, n_cs_nodematch_gwesp), paste0("CS_params", seq_len(n_cs_nodematch_gwesp))),
+      vertex_categorical.gender.female = 0.1, vertex_categorical.gender.male = 0.1
     )
     
-    fit_inhom_structural_gw001 <- safe_run(
+    cat("  Method: Nelder-Mead (max", MAX_ITER, "iterations)\n")
+    t_fit_nodematch_gwesp <- proc.time()
+    
+    fit_inhom_nodematch_gwesp <- safe_run(
       fit_hawkesNet(
-        params_init = params_init_structural_gw001,
+        params_init = params_init_nodematch_gwesp,
         time_window = time_window_01,
         mark_filtration = net_raw,
         PMF_mark = PMF_mark_CS,
         mu_vec = inhom_bg$mu_vec,
         integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS_STRUCTURAL_GW001,
+        formula_RHS = FORMULA_RHS_NODEMATCH_GWESP,
         truncation = TRUNCATION,
         mark_decay = "activity",
-        growth_only = GROWTH_ONLY,
+        growth_only = FALSE,
         max_node_time = 1,
         method = "Nelder-Mead",
         maxit = MAX_ITER,
@@ -505,79 +546,37 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
         reltol = 1e-8,
         verbose = FALSE,
         fixed_params = c("K", "mu"),
-        parscale = p_scale_structural_gw001,
+        parscale = p_scale_nodematch_gwesp,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
         cores = N_CORES
       ),
-      "Structural gwdegree(0.01) fit"
+      "nodeMatch+gwesp (non-growth) fit"
     )
     
-    if (!is.null(fit_inhom_structural_gw001) && !is.null(fit_inhom_structural_gw001$intens_funcs)) {
-      fit_inhom_structural_gw001$intens_funcs <- NULL
+    elapsed_fit_nodematch_gwesp <- (proc.time() - t_fit_nodematch_gwesp)[3]
+    if (!is.null(fit_inhom_nodematch_gwesp)) {
+      cat("  Fit completed:", round(elapsed_fit_nodematch_gwesp, 1), "s (", round(elapsed_fit_nodematch_gwesp / 60, 1), "min)\n")
+      cat("  Convergence:", fit_inhom_nodematch_gwesp$fit$convergence, "\n")
+      cat("  Iterations:", fit_inhom_nodematch_gwesp$fit$counts[1], "\n")
+      if (!is.null(fit_inhom_nodematch_gwesp$fit_table)) {
+        cat("\n  nodeMatch+gwesp (non-growth) fit results:\n")
+        print(fit_inhom_nodematch_gwesp$fit_table, max = NULL)
+      }
+      if (!is.null(fit_inhom_nodematch_gwesp$intens_funcs)) fit_inhom_nodematch_gwesp$intens_funcs <- NULL
+    } else {
+      cat("  Fit FAILED after", round(elapsed_fit_nodematch_gwesp, 1), "s\n")
     }
-    
-    cat("  Step 2c total:", round((proc.time() - t_step_structural_gw001)[3], 1), "s\n")
+    cat("  Step 2c total:", round((proc.time() - t_step_nodematch_gwesp)[3], 1), "s\n")
+  } else {
+    cat("  Skipping nodeMatch+gwesp fit (RUN_FIT_NODEMATCH_GWESP=FALSE or no inhom_bg)\n")
   }
-  
-  # =============================================================================
-  # 2d. Additional structural model: degree(0) + star(c(2,3,4,5))
-  # =============================================================================
-  fit_inhom_structural_degstars <- NULL
-  FORMULA_RHS_STRUCTURAL_DEGSTARS <- "degree(0) + star(c(2,3,4,5))"
-  if (!is.null(inhom_bg) && RUN_FIT_STRUCTURAL) {
-    cat("\n--- Step 2d: Structural-only fit (degree(0) + star(2:5)) ---\n")
-    cat("  Formula:", FORMULA_RHS_STRUCTURAL_DEGSTARS, "\n")
-    t_step_structural_degstars <- proc.time()
-    
-    exp_cs_structural_degstars <- expected_params_PMF_mark_CS(net_raw, FORMULA_RHS_STRUCTURAL_DEGSTARS)
-    n_cs_structural_degstars <- if (!is.na(exp_cs_structural_degstars$CS_params_length)) exp_cs_structural_degstars$CS_params_length else 5L
-    
-    params_init_structural_degstars <- make_default_params(n_cs_structural_degstars, mu_init)
-    p_scale_structural_degstars <- c(
-      beta_overall = 0.1, beta_edges = 0.1, node_lambda = 1,
-      setNames(rep(0.1, n_cs_structural_degstars), paste0("CS_params", seq_len(n_cs_structural_degstars)))
-    )
-    
-    fit_inhom_structural_degstars <- safe_run(
-      fit_hawkesNet(
-        params_init = params_init_structural_degstars,
-        time_window = time_window_01,
-        mark_filtration = net_raw,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = inhom_bg$mu_vec,
-        integral_bg = inhom_bg$integral_bg,
-        formula_RHS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
-        truncation = TRUNCATION,
-        mark_decay = "activity",
-        growth_only = GROWTH_ONLY,
-        max_node_time = 1,
-        method = "Nelder-Mead",
-        maxit = MAX_ITER,
-        trace = 0,
-        reltol = 1e-8,
-        verbose = FALSE,
-        fixed_params = c("K", "mu"),
-        parscale = p_scale_structural_degstars,
-        cache_intensity = TRUE,
-        combine_intensity = TRUE,
-        cores = N_CORES
-      ),
-      "Structural degree+stars fit"
-    )
-    
-    if (!is.null(fit_inhom_structural_degstars) && !is.null(fit_inhom_structural_degstars$intens_funcs)) {
-      fit_inhom_structural_degstars$intens_funcs <- NULL
-    }
-    
-    cat("  Step 2d total:", round((proc.time() - t_step_structural_degstars)[3], 1), "s\n")
-  }
-  
+
   # BA (Barabási–Albert) model fit
   # =============================================================================
   fit_inhom_ba <- NULL
   if (!is.null(inhom_bg) && RUN_FIT_BA) {
-    cat("\n--- Step 2e: BA (Barabási–Albert) model fit ---\n")
+    cat("\n--- Step 2d: BA (Barabási–Albert) model fit ---\n")
     t_step_ba <- proc.time()
     
     # Initialize BA parameters
@@ -719,13 +718,10 @@ t_step <- proc.time()
 GOF_results_structural <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
-GOF_results_structural_gw001 <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
-                               geodist_obs = NULL, geodist_sim = NULL,
-                               wait_obs = NULL, wait_sim = NULL)
-GOF_results_structural_degstars <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
-                               geodist_obs = NULL, geodist_sim = NULL,
-                               wait_obs = NULL, wait_sim = NULL)
 GOF_results_nodematch <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
+                               geodist_obs = NULL, geodist_sim = NULL,
+                               wait_obs = NULL, wait_sim = NULL)
+GOF_results_nodematch_gwesp <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
                                geodist_obs = NULL, geodist_sim = NULL,
                                wait_obs = NULL, wait_sim = NULL)
 GOF_results_ba <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
@@ -762,7 +758,7 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
     max_node_time = 1,
     inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
-    cores = N_CORES,
+    cores = N_CORES_GOF,
     max_deg = 15,
     k_esp = 15,
     degree = 0,
@@ -778,70 +774,6 @@ if (RUN_GOF && !is.null(fit_inhom_structural)) {
 
 # --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
 cat(sprintf("  [GOF] Memory after structural GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
-
-# GOF for gwdegree(0.01) structural model
-if (RUN_GOF && !is.null(fit_inhom_structural_gw001)) {
-  cat("\n  GOF for structural gwdegree(0.01) model...\n")
-  GOF_results_structural_gw001 <- gof(
-    fit = fit_inhom_structural_gw001,
-    net_obs = net_raw,
-    params_init = params_init_structural_gw001,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS_STRUCTURAL_GW001,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    growth_only = GROWTH_ONLY,
-    max_node_time = 1,
-    inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    degree = 0,
-    esp = 0,
-    mu_multiplier = 5,
-    seed_events = SEED_EVENTS_GOF,
-    verbose = TRUE
-  )
-} else {
-  if (RUN_GOF && is.null(fit_inhom_structural_gw001)) cat("  No gwdegree(0.01) structural fit available; skipping GOF\n")
-}
-
-cat(sprintf("  [GOF] Memory after structural gwdegree(0.01) GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
-
-# GOF for degree(0)+star(2:5) structural model
-if (RUN_GOF && !is.null(fit_inhom_structural_degstars)) {
-  cat("\n  GOF for structural degree(0)+star(2:5) model...\n")
-  GOF_results_structural_degstars <- gof(
-    fit = fit_inhom_structural_degstars,
-    net_obs = net_raw,
-    params_init = params_init_structural_degstars,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
-    time_window = GOF_TIME_WINDOW,
-    truncation = TRUNCATION,
-    mark_decay = "activity",
-    growth_only = GROWTH_ONLY,
-    max_node_time = 1,
-    inhom_bg = inhom_bg,
-    n_sim = N_GOF,
-    cores = N_CORES,
-    max_deg = 15,
-    k_esp = 15,
-    degree = 0,
-    esp = 0,
-    mu_multiplier = 5,
-    seed_events = SEED_EVENTS_GOF,
-    verbose = TRUE
-  )
-} else {
-  if (RUN_GOF && is.null(fit_inhom_structural_degstars)) cat("  No degree+stars structural fit available; skipping GOF\n")
-}
-
-cat(sprintf("  [GOF] Memory after structural degree+stars GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
 # GOF for nodeMatch model (second)
 if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
@@ -863,7 +795,7 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
     max_node_time = 1,
     inhom_bg = inhom_bg,  # This enables inhomogeneous simulations matching the fitted model
     n_sim = N_GOF,
-    cores = N_CORES,
+    cores = N_CORES_GOF,
     max_deg = 15,
     k_esp = 15,
     degree = 0,
@@ -879,6 +811,39 @@ if (RUN_GOF && !is.null(fit_inhom_nodematch)) {
 
 # --- Cleanup between GOF models: reclaim memory so next fork inherits less ---
 cat(sprintf("  [GOF] Memory after nodeMatch GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
+
+# GOF for nodeMatch+gwesp model (NON-growth edges; third)
+if (RUN_GOF && !is.null(fit_inhom_nodematch_gwesp)) {
+  cat("\n  GOF for nodeMatch+gwesp model (NON-growth edges)...\n")
+  GOF_results_nodematch_gwesp <- gof(
+    fit = fit_inhom_nodematch_gwesp,
+    net_obs = net_raw,
+    params_init = params_init_nodematch_gwesp,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS_NODEMATCH_GWESP,
+    time_window = GOF_TIME_WINDOW,
+    truncation = TRUNCATION,
+    mark_decay = "activity",
+    growth_only = FALSE,
+    max_node_time = 1,
+    inhom_bg = inhom_bg,
+    n_sim = N_GOF,
+    cores = N_CORES_GOF,
+    max_deg = 15,
+    k_esp = 15,
+    degree = 0,
+    esp = 0,
+    mu_multiplier = 5,
+    seed_events = SEED_EVENTS_GOF,
+    verbose = TRUE
+  )
+} else {
+  if (!RUN_GOF) cat("  RUN_GOF = FALSE; skipping nodeMatch+gwesp GOF\n")
+  if (is.null(fit_inhom_nodematch_gwesp)) cat("  No nodeMatch+gwesp fit available; skipping GOF\n")
+}
+
+cat(sprintf("  [GOF] Memory after nodeMatch+gwesp GOF: %.1f Mb\n", gc()[2, 2]), file = stderr())
 
 # GOF for BA model (fourth)
 if (RUN_GOF && !is.null(fit_inhom_ba)) {
@@ -898,7 +863,7 @@ if (RUN_GOF && !is.null(fit_inhom_ba)) {
     max_node_time = 1,
     inhom_bg = inhom_bg,
     n_sim = N_GOF,
-    cores = N_CORES,
+    cores = N_CORES_GOF,
     max_deg = 15,
     k_esp = 15,
     degree = 0,
@@ -921,11 +886,8 @@ if (RUN_GOF) {
   if (!is.null(GOF_results_nodematch) && !is.null(GOF_results_nodematch$degree_obs)) {
     cat("  [nodeMatch Model]  Degree obs mean:", round(mean(GOF_results_nodematch$degree_obs), 2), "\n")
   }
-  if (!is.null(GOF_results_structural_gw001) && !is.null(GOF_results_structural_gw001$degree_obs)) {
-    cat("  [gwdegree(0.01)]   Degree obs mean:", round(mean(GOF_results_structural_gw001$degree_obs), 2), "\n")
-  }
-  if (!is.null(GOF_results_structural_degstars) && !is.null(GOF_results_structural_degstars$degree_obs)) {
-    cat("  [degree+stars]     Degree obs mean:", round(mean(GOF_results_structural_degstars$degree_obs), 2), "\n")
+  if (!is.null(GOF_results_nodematch_gwesp) && !is.null(GOF_results_nodematch_gwesp$degree_obs)) {
+    cat("  [nodeMatch+gwesp]  Degree obs mean:", round(mean(GOF_results_nodematch_gwesp$degree_obs), 2), "\n")
   }
   if (!is.null(GOF_results_ba) && !is.null(GOF_results_ba$degree_obs)) {
     cat("  [BA Model]         Degree obs mean:", round(mean(GOF_results_ba$degree_obs), 2), "\n")
@@ -946,12 +908,10 @@ if (is.null(fit_inhom_structural) && file.exists(file.path(PKG_ROOT, "cluster_ou
 # Strip intensity caches from fits so RDS stays small (low cost to re-run intensity if needed)
 fit_structural_for_save <- fit_inhom_structural
 if (!is.null(fit_structural_for_save)) fit_structural_for_save$intens_funcs <- NULL
-fit_structural_gw001_for_save <- fit_inhom_structural_gw001
-if (!is.null(fit_structural_gw001_for_save)) fit_structural_gw001_for_save$intens_funcs <- NULL
-fit_structural_degstars_for_save <- fit_inhom_structural_degstars
-if (!is.null(fit_structural_degstars_for_save)) fit_structural_degstars_for_save$intens_funcs <- NULL
 fit_nodematch_for_save <- fit_inhom_nodematch
 if (!is.null(fit_nodematch_for_save)) fit_nodematch_for_save$intens_funcs <- NULL
+fit_nodematch_gwesp_for_save <- fit_inhom_nodematch_gwesp
+if (!is.null(fit_nodematch_gwesp_for_save)) fit_nodematch_gwesp_for_save$intens_funcs <- NULL
 
 save_list <- list(
   net_raw = net_raw,
@@ -959,18 +919,15 @@ save_list <- list(
   inhom_bg = inhom_bg,
   fit_inhom_ba = fit_inhom_ba,
   fit_inhom_nodematch = fit_nodematch_for_save,
+  fit_inhom_nodematch_gwesp = fit_nodematch_gwesp_for_save,
   fit_inhom_structural = fit_structural_for_save,
-  fit_inhom_structural_gw001 = fit_structural_gw001_for_save,
-  fit_inhom_structural_degstars = fit_structural_degstars_for_save,
   params_init_ba = if (exists("params_init_ba")) params_init_ba else NULL,
   params_init_nodematch = if (exists("params_init_nodematch")) params_init_nodematch else NULL,
+  params_init_nodematch_gwesp = if (exists("params_init_nodematch_gwesp")) params_init_nodematch_gwesp else NULL,
   params_init_structural = if (exists("params_init_structural")) params_init_structural else NULL,
-  params_init_structural_gw001 = if (exists("params_init_structural_gw001")) params_init_structural_gw001 else NULL,
-  params_init_structural_degstars = if (exists("params_init_structural_degstars")) params_init_structural_degstars else NULL,
   FORMULA_RHS_NODEMATCH = FORMULA_RHS_NODEMATCH,
+  FORMULA_RHS_NODEMATCH_GWESP = FORMULA_RHS_NODEMATCH_GWESP,
   FORMULA_RHS_STRUCTURAL = FORMULA_RHS_STRUCTURAL,
-  FORMULA_RHS_STRUCTURAL_GW001 = FORMULA_RHS_STRUCTURAL_GW001,
-  FORMULA_RHS_STRUCTURAL_DEGSTARS = FORMULA_RHS_STRUCTURAL_DEGSTARS,
   fit_temporal = fit_temporal,
   ks_temporal_pval = ks_temporal_pval,
   realiz = realiz,
@@ -979,9 +936,8 @@ save_list <- list(
   GOF = GOF_results,  # alias so dat$GOF$plots works
   GOF_results_ba = GOF_results_ba,
   GOF_results_nodematch = GOF_results_nodematch,
+  GOF_results_nodematch_gwesp = GOF_results_nodematch_gwesp,
   GOF_results_structural = GOF_results_structural,
-  GOF_results_structural_gw001 = GOF_results_structural_gw001,
-  GOF_results_structural_degstars = GOF_results_structural_degstars,
   N_GOF = N_GOF,
   SEARCH_STRING = SEARCH_STRING,
   time_window_01 = time_window_01
@@ -1130,28 +1086,16 @@ if (PAPER_OUTPUT) {
       print(fit_inhom_structural$fit$par)
     }
   }
-
-  # Print gwdegree(0.01) structural fit results
-  if (!is.null(dat$fit_inhom_structural_gw001)) {
-    cat("\n--- Structural-Only Fit Results (gwdegree(0.01)) ---\n")
-    if (!is.null(dat$fit_inhom_structural_gw001$fit_table)) {
-      cat("  Inhomogeneous fit (gwdegree(0.01)): parameter estimates and standard errors\n")
-      print(dat$fit_inhom_structural_gw001$fit_table, max = NULL)
+  
+  # Print nodeMatch+gwesp (NON-growth edges) fit results
+  if (!is.null(dat$fit_inhom_nodematch_gwesp)) {
+    cat("\n--- nodeMatch + gwesp Fit Results (NON-growth edges) ---\n")
+    if (!is.null(dat$fit_inhom_nodematch_gwesp$fit_table)) {
+      cat("  Inhomogeneous fit (nodeMatch + gwesp): parameter estimates and standard errors\n")
+      print(dat$fit_inhom_nodematch_gwesp$fit_table, max = NULL)
     } else {
-      cat("  Inhomogeneous fit (gwdegree(0.01)): raw parameters\n")
-      print(dat$fit_inhom_structural_gw001$fit$par)
-    }
-  }
-
-  # Print degree(0)+star(2:5) structural fit results
-  if (!is.null(dat$fit_inhom_structural_degstars)) {
-    cat("\n--- Structural-Only Fit Results (degree(0) + star(2:5)) ---\n")
-    if (!is.null(dat$fit_inhom_structural_degstars$fit_table)) {
-      cat("  Inhomogeneous fit (degree+stars): parameter estimates and standard errors\n")
-      print(dat$fit_inhom_structural_degstars$fit_table, max = NULL)
-    } else {
-      cat("  Inhomogeneous fit (degree+stars): raw parameters\n")
-      print(dat$fit_inhom_structural_degstars$fit$par)
+      cat("  Inhomogeneous fit (nodeMatch + gwesp): raw parameters\n")
+      print(dat$fit_inhom_nodematch_gwesp$fit$par)
     }
   }
   
@@ -1163,9 +1107,8 @@ if (PAPER_OUTPUT) {
   # GOF plots: process all models
   gof_models <- list(
     Structural = dat$GOF_results_structural,
-    gwdegree_0_01 = dat$GOF_results_structural_gw001,
-    degree_stars = dat$GOF_results_structural_degstars,
     nodeMatch  = dat$GOF_results_nodematch,
+    nodeMatch_gwesp = dat$GOF_results_nodematch_gwesp,
     BA         = dat$GOF_results_ba
   )
 
