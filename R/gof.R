@@ -505,29 +505,29 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
               n_sim, cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
   sim_results <- tryCatch({
     safe_parallel_lapply(seq_len(n_sim), function(i) {
-      s <- tryCatch(
+      s <- tryCatch({
         sim_hawkesNet(
-          params = pfit,
-          time_window = time_window,
-          PMF_mark = PMF_mark,
-          cond_intensity = cond_intensity,
-          formula_RHS = formula_RHS,
-          truncation = truncation,
-          mark_decay = mark_decay,
-          growth_only = growth_only,
-          max_node_time = max_node_time,
-          hashed_edges = TRUE,
-          verbose = FALSE,
-          mu_multiplier = mu_multiplier,
-          stop_on_full_network = FALSE,
-          inhom_bg = inhom_bg,
-          seed_net = seed_net,
-          seed_times = seed_times
-        ),
-        error = function(e) { 
-          return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
-        }
-      )
+            params = pfit,
+            time_window = time_window,
+            PMF_mark = PMF_mark,
+            cond_intensity = cond_intensity,
+            formula_RHS = formula_RHS,
+            truncation = truncation,
+            mark_decay = mark_decay,
+            growth_only = growth_only,
+            max_node_time = max_node_time,
+            hashed_edges = TRUE,
+            verbose = FALSE,
+            mu_multiplier = mu_multiplier,
+            stop_on_full_network = FALSE,
+            inhom_bg = inhom_bg,
+            seed_net = seed_net,
+            seed_times = seed_times
+        )
+      },
+      error = function(e) { 
+        return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
+      })
       if (is.null(s$net)) {
         return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
       }

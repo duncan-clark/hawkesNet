@@ -5,6 +5,15 @@
 # =============================================================================
 
 library(hawkesNet)
+library(parallel)
+# Load source files directly for verification to ensure we use the latest changes
+source("R/hawkesNet.R")
+source("R/mark_PMF.R")
+source("R/gof.R")
+source("R/utils.R")
+source("R/temporal_hawkes.R")
+source("R/kde_background.R")
+
 library(network)
 library(sna)
 library(ernm)
@@ -14,8 +23,8 @@ library(dplyr)
 EMAIL <- "duncan-clark@outlook.com"
 SEARCH_STRING <- "Hawkes Process"
 TOPIC <- "Point processes and geometric inequalities"
-PAGES <- 100
-N_CORES <- parallel::detectCores() - 1
+PAGES <- 2
+N_CORES <- 1 # Use 1 core locally to avoid complex PSOCK exports in minimal script
 
 cat("--- Fetching OpenAlex Data ---\n")
 source("inst/openalex_study/get_network_openalex.R")
@@ -58,7 +67,7 @@ fit_struct <- fit_hawkesNet(
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_STRUCT, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
 )
 print(fit_struct$fit_table)
 
@@ -68,7 +77,7 @@ fit_match <- fit_hawkesNet(
   time_window = c(0, 1), mark_filtration = net_raw, PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec, integral_bg = inhom_bg$integral_bg,
   formula_RHS = FORMULA_MATCH, truncation = TRUNCATION, growth_only = GROWTH_ONLY,
-  fixed_params = c("K"), cores = N_CORES, combine_intensity = TRUE
+  fixed_params = c("K", "mu"), cores = N_CORES, combine_intensity = TRUE
 )
 print(fit_match$fit_table)
 
@@ -77,14 +86,14 @@ cat("\n--- Running GOF (Structural) ---\n")
 gof_struct <- gof(fit = fit_struct, net_obs = net_raw, params_init = make_p(3, mu_init),
                   PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
                   formula_RHS = FORMULA_STRUCT, time_window = c(0, 1), 
-                  inhom_bg = inhom_bg, n_sim = 25, cores = N_CORES, 
+                  inhom_bg = inhom_bg, n_sim = 2, cores = N_CORES, 
                   seed_events = 20, growth_only = GROWTH_ONLY)
 
 cat("\n--- Running GOF (NodeMatch) ---\n")
 gof_match <- gof(fit = fit_match, net_obs = net_raw, params_init = make_p(4, mu_init, gender=T),
                  PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
                  formula_RHS = FORMULA_MATCH, time_window = c(0, 1), 
-                 inhom_bg = inhom_bg, n_sim = 25, cores = N_CORES, 
+                 inhom_bg = inhom_bg, n_sim = 2, cores = N_CORES, 
                  seed_events = 20, growth_only = GROWTH_ONLY)
 
 cat("\nDone. Objects 'fit_struct', 'fit_match', 'gof_struct', 'gof_match', 'net_raw' available.\n")

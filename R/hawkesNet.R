@@ -565,7 +565,8 @@ loglik_hawkesNet = function(params,
     # Reuse one ERNM model when running sequentially (avoids createCppModel per event)
     shared_model <- NULL
     if (!use_parallel && !is.null(formula_rhs)) {
-      g0 <- network.initialize(0L, directed = FALSE)
+      # Use the full mark_filtration to initialize the model if it has vertex attributes
+      g0 <- filtration_to_net(mark_filtration, times[1], equals = TRUE)
       if ("na" %in% list.vertex.attributes(g0)) delete.vertex.attribute(g0, "na")
       shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
       shared_model$setNetwork(as.BinaryNet(g0))
@@ -800,7 +801,7 @@ fit_hawkesNet <- function(params_init,
                                 time_window,
                                 mark_filtration,
                                 PMF_mark,
-                                maxit,
+                                maxit = 500,
                                 trace = 0,
                                 REPORT = 10,
                                 reltol = 1e-8,

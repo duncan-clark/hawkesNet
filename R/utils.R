@@ -81,6 +81,11 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
                                  mc.preschedule = FALSE,
                                  parallel_type = "auto") {
 
+  # Short-circuit: if only 1 core, just use lapply (no overhead, no serialization issues)
+  if (mc.cores <= 1L) {
+    return(lapply(X, FUN))
+  }
+
   os <- Sys.info()[["sysname"]]
 
   if (parallel_type == "auto") {
