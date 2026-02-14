@@ -326,7 +326,7 @@ if(RUN_CONSISTENCY){
         
         if(is.null(sim_res)) return(NULL)
         
-        # B. Fit - fix K only so mu can be estimated (allows background vs triggering balance to be learned)
+        # B. Fit
         # Initialize near true params + small noise for better convergence
         params_init <- list(
           mu = params_true$mu,

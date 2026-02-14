@@ -900,6 +900,12 @@ fit_hawkesNet <- function(params_init,
   } else if (!is.null(names(parscale)) && !is.null(names(flat_par))) {
     parscale <- as.vector(parscale[names(flat_par)])
   }
+  # Guard: optim() errors on "non-finite value supplied" if parscale contains NA
+  # (e.g. when parscale uses formula names like "edges" but flat_par uses "CS_params1")
+  bad_pscale <- !is.finite(parscale) | parscale <= 0
+  if (any(bad_pscale)) {
+    parscale[bad_pscale] <- 1
+  }
   
   # Validate that params match the mark PMF (required names and, for CS, CS_params length)
   validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)

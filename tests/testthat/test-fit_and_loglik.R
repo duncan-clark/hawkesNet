@@ -98,3 +98,99 @@ test_that("cond_intensity returns list with result and func", {
   expect_true(is.finite(out$result))
   expect_true(out$result > 0)
 })
+
+test_that("CS fit with p_scale (formula names) does not error on parscale NA", {
+  # Regression: parscale with formula names (edges, triangles, star.2, star.3) but
+  # flat_par uses CS_params1,2,3,4 -> parscale[names(flat_par)] gave NA -> optim error.
+  params_true <- list(mu = 10, beta_overall = 2, K = 0.5, beta_edges = 1, node_lambda = 1,
+                      CS_params = c(-6.7, 2, 0.1, -0.1))
+  set.seed(1)
+  sim <- sim_hawkesNet(params = params_true, time_window = c(0, 5),
+                      PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
+                      hashed_edges = TRUE, verbose = FALSE, truncation = 500L,
+                      formula_RHS = "edges + triangles + star(c(2,3))",
+                      mark_decay = "node_entrance", growth_only = FALSE)
+  skip_if(network::network.edgecount(sim$net) < 5, "Need at least 5 edges")
+  n_nodes <- network::network.size(sim$net)
+  params_init <- list(mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, node_lambda = 1,
+                     CS_params = c(-10, 0, 0, 0))
+  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+               edges = 1, triangles = 0.1, star.2 = 0.1, star.3 = 0.1)
+  suppressMessages({
+    fit <- fit_hawkesNet(params_init = params_init,
+                         time_window = c(0, 5),
+                         mark_filtration = sim$net,
+                         PMF_mark = PMF_mark_CS,
+                         formula_RHS = "edges + triangles + star(c(2,3))",
+                         maxit = 100,
+                         trace = 0,
+                         truncation = n_nodes,
+                         mark_decay = "node_entrance",
+                         growth_only = FALSE,
+                         fixed_params = c("K"),
+                         parscale = p_scale,
+                         cores = 1,
+                         cache_intensity = TRUE,
+                         combine_intensity = TRUE,
+                         verbose = FALSE)
+  })
+  expect_type(fit, "list")
+  expect_true("fit" %in% names(fit))
+  expect_true(all(is.finite(fit$fit$par)))
+})
+
+test_that("CS model sim+fit at T=5 converges (truncation = network size)", {
+  # Same setup as simulation_study_CS consistency study - package should easily fit these.
+  params_true <- list(mu = 10, beta_overall = 2, K = 0.5, beta_edges = 1, node_lambda = 1,
+                      CS_params = c(-6.7, 2, 0.1, -0.1))
+  set.seed(1)
+  sim <- sim_hawkesNet(
+    params = params_true,
+    time_window = c(0, 5),
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    hashed_edges = TRUE,
+    verbose = FALSE,
+    truncation = 500L,
+    formula_RHS = "edges + triangles + star(c(2,3))",
+    mark_decay = "node_entrance",
+    growth_only = FALSE
+  )
+  skip_if(network::network.edgecount(sim$net) < 5, "Need at least 5 edges for CS fit test")
+  n_nodes <- network::network.size(sim$net)
+  # Init near true with small perturbation (as in consistency study)
+  set.seed(2)
+  params_init <- list(
+    mu = params_true$mu,
+    beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
+    K = params_true$K,
+    beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
+    node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+    CS_params = params_true$CS_params + rnorm(4, 0, 0.3)
+  )
+  params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
+  suppressMessages({
+    fit <- fit_hawkesNet(
+      params_init = params_init,
+      time_window = c(0, 5),
+      mark_filtration = sim$net,
+      PMF_mark = PMF_mark_CS,
+      formula_RHS = "edges + triangles + star(c(2,3))",
+      maxit = 1500,
+      trace = 0,
+      truncation = n_nodes,
+      mark_decay = "node_entrance",
+      growth_only = FALSE,
+      fixed_params = c("K"),
+      method = "Nelder-Mead",
+      cores = 1,
+      cache_intensity = TRUE,
+      combine_intensity = TRUE,
+      verbose = FALSE
+    )
+  })
+  expect_type(fit, "list")
+  expect_true("fit" %in% names(fit))
+  expect_true(all(is.finite(fit$fit$par)), info = "All fitted params should be finite")
+  expect_equal(fit$fit$convergence, 0, info = "CS fit at T=5 should converge (truncation = network size)")
+})
