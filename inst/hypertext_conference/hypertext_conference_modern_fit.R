@@ -10,6 +10,7 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
+## Full run (default under SLURM): MAX_EDGES=10000, no truncation, N_GOF=100, MAX_ITER=5000, 100 cores.
 ## Cluster mode knobs:
 ##   SLURM_CPUS_PER_TASK=32 MAX_ITER=5000 N_GOF=50 GOF_CORES=32 Rscript ...
 ##
@@ -68,13 +69,15 @@ if (USE_REPO_CODE) {
 }
 
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
-TRUNCATION <- as.integer(Sys.getenv("TRUNCATION", NA_integer_))  # if NA, choose below
+trunc_env <- Sys.getenv("TRUNCATION", "")
+TRUNCATION <- if (nzchar(trunc_env)) suppressWarnings(as.integer(trunc_env)) else NA_integer_
+if (length(TRUNCATION) != 1L || !is.finite(TRUNCATION)) TRUNCATION <- NA_integer_
 
-# GOF
+# GOF: proper run uses 100 sims (matches 100 cores); quick run skips or uses 2
 RUN_GOF <- isTRUE(as.logical(Sys.getenv("RUN_GOF", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 25L))
-# Optional quick simulation test from fitted values (before GOF) to check model produces reasonable networks
-RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "TRUE")))
+N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
+# Optional quick simulation test from fitted values (before GOF). Skip when under SLURM (saves time).
+RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "FALSE")))
 N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
 N_GOF <- max(1L, N_GOF)
 N_CORES_GOF <- as.integer(Sys.getenv("GOF_CORES", N_CORES))
@@ -83,7 +86,7 @@ SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 # Data shaping
 USE_FIRST_CONTACT_ONLY <- isTRUE(as.logical(Sys.getenv("USE_FIRST_CONTACT_ONLY", "TRUE")))
-MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", if (LOCAL_QUICK) 400L else 0L)) # 0 = no cap
+MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", if (LOCAL_QUICK) 400L else 10000L))
 
 # Background KDE
 GRID_N <- as.integer(Sys.getenv("KDE_GRID_N", if (LOCAL_QUICK) 1024L else 4096L))
@@ -102,7 +105,7 @@ cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
 cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "\n")
 cat("  MAX_ITER:", MAX_ITER, "| RUN_GOF:", RUN_GOF, "| N_GOF:", N_GOF, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
-cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "\n\n")
+cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "| MAX_EDGES:", if (MAX_EDGES > 0) MAX_EDGES else "no cap", "\n\n")
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -289,25 +292,23 @@ cat("  Network:", length(times), "event times | nodes:", network.size(net), "| e
 cat("  Time window (hours):", sprintf("[%.3f, %.3f]", time_window[1], time_window[2]), "\n\n")
 
 # -----------------------------------------------------------------------------
-# Choose truncation (diagnostic + default)
+# Choose truncation
 # -----------------------------------------------------------------------------
+# Full run: no truncation (use all nodes as candidates). Quick run: diagnostic picks smallest safe value.
 if (is.na(TRUNCATION)) {
-  cat("--- Truncation diagnostic (coverage of observed edges) ---\n")
-  diag_entry <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "node_entrance")
-  diag_act   <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "activity")
-  print(diag_entry, row.names = FALSE)
-  print(diag_act, row.names = FALSE)
-
-  # Choose smallest truncation with 0 impossible edges under the selected mark_decay (if possible).
-  diag_use <- if (MARK_DECAY == "activity") diag_act else diag_entry
-  ok <- diag_use$truncation[diag_use$n_impossible_edges == 0L]
-  if (length(ok) > 0) {
-    TRUNCATION <- min(ok)
-    cat("  Using TRUNCATION (min with 0 impossible edges under", MARK_DECAY, ") =", TRUNCATION, "\n\n")
+  if (LOCAL_QUICK) {
+    cat("--- Truncation diagnostic (coverage of observed edges) ---\n")
+    diag_entry <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "node_entrance")
+    diag_act   <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "activity")
+    print(diag_entry, row.names = FALSE)
+    print(diag_act, row.names = FALSE)
+    diag_use <- if (MARK_DECAY == "activity") diag_act else diag_entry
+    ok <- diag_use$truncation[diag_use$n_impossible_edges == 0L]
+    TRUNCATION <- if (length(ok) > 0) min(ok) else 50L
+    cat("  Using TRUNCATION (min with 0 impossible under", MARK_DECAY, ") =", TRUNCATION, "\n\n")
   } else {
-    # Fallback heuristic: safe choice for local quick is smaller.
-    TRUNCATION <- if (LOCAL_QUICK) 50L else min(200L, network.size(net))
-    cat("  Using TRUNCATION (fallback heuristic) =", TRUNCATION, "\n\n")
+    TRUNCATION <- network.size(net)
+    cat("  Using TRUNCATION =", TRUNCATION, "(no truncation; full network)\n\n")
   }
 } else {
   cat("  Using TRUNCATION (from env) =", TRUNCATION, "\n\n")
