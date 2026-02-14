@@ -96,7 +96,10 @@ BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_))) # NA => defau
 # Note: "edges" is omitted — in growth models we add exactly one edge per event, so the edges
 # change statistic is +1 for every candidate; it cancels in the softmax and is redundant.
 # Dropping it may improve identifiability of beta_overall and K.
-FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "gwdegree(0.1) + gwesp(0.1)")
+# degree(0) penalizes degree-0 nodes (reduces excess isolates in simulations).
+FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "degree(0) + gwdegree(0.1) + gwesp(0.1)")
+FORMULA_RHS_STAR_ESP <- "degree(0) + star(c(2,3,4)) + esp(2:4)"  # Alternative: star+esp instead of gwdegree+gwesp
+FORMULA_RHS_DECAY001 <- "degree(0) + gwdegree(0.01) + gwesp(0.01)"  # Smaller decay = stronger penalty on fat tails
 MARK_DECAY <- Sys.getenv("MARK_DECAY", "activity")
 GROWTH_ONLY <- FALSE
 
@@ -378,8 +381,116 @@ fit <- fit_hawkesNet(
 )
 
 if (!is.null(fit$fit_table)) {
-  cat("\n--- Fit results ---\n")
+  cat("\n--- Fit results (gwdegree + gwesp) ---\n")
   print(fit$fit_table, max = NULL)
+}
+
+# -----------------------------------------------------------------------------
+# Fit alternative: star(c(2,3,4)) + esp(2:4) instead of gwdegree + gwesp
+# -----------------------------------------------------------------------------
+cat("\n--- Fitting hawkesNet (CS, star+esp variant) ---\n")
+exp_cs_alt <- expected_params_PMF_mark_CS(net, FORMULA_RHS_STAR_ESP)
+n_cs_alt <- if (!is.na(exp_cs_alt$CS_params_length)) exp_cs_alt$CS_params_length else 7L
+cat("  CS_params length:", n_cs_alt, "\n")
+
+params_init_star_esp <- list(
+  mu = mu_init,
+  beta_overall = 0.3,
+  K = 0.5,
+  beta_edges = 0.3,
+  node_lambda = 0.1,
+  CS_params = c(-10, rep(0, n_cs_alt - 1))
+)
+
+p_scale_star_esp <- c(
+  beta_overall = 0.1,
+  K = 0.1,
+  beta_edges = 0.1,
+  node_lambda = 0.5,
+  setNames(rep(0.1, n_cs_alt), paste0("CS_params", seq_len(n_cs_alt)))
+)
+
+fit_star_esp <- fit_hawkesNet(
+  params_init = params_init_star_esp,
+  time_window = time_window,
+  mark_filtration = net,
+  PMF_mark = PMF_mark_CS,
+  mu_vec = inhom_bg$mu_vec,
+  integral_bg = inhom_bg$integral_bg,
+  formula_RHS = FORMULA_RHS_STAR_ESP,
+  truncation = TRUNCATION,
+  mark_decay = MARK_DECAY,
+  growth_only = GROWTH_ONLY,
+  max_node_time = max(get_times(net)$node_times),
+  method = "Nelder-Mead",
+  maxit = MAX_ITER,
+  reltol = 1e-8,
+  trace = 0,
+  verbose = TRUE,
+  fixed_params = c("mu"),
+  parscale = p_scale_star_esp,
+  cache_intensity = TRUE,
+  combine_intensity = TRUE,
+  cores = N_CORES
+)
+
+if (!is.null(fit_star_esp$fit_table)) {
+  cat("\n--- Fit results (star+esp) ---\n")
+  print(fit_star_esp$fit_table, max = NULL)
+}
+
+# -----------------------------------------------------------------------------
+# Fit alternative: decay=0.01 (stronger penalty on fat tails)
+# -----------------------------------------------------------------------------
+cat("\n--- Fitting hawkesNet (CS, decay=0.01) ---\n")
+exp_cs_decay <- expected_params_PMF_mark_CS(net, FORMULA_RHS_DECAY001)
+n_cs_decay <- if (!is.na(exp_cs_decay$CS_params_length)) exp_cs_decay$CS_params_length else 3L
+cat("  CS_params length:", n_cs_decay, "\n")
+
+params_init_decay001 <- list(
+  mu = mu_init,
+  beta_overall = 0.3,
+  K = 0.5,
+  beta_edges = 0.3,
+  node_lambda = 0.1,
+  CS_params = c(-10, rep(0, n_cs_decay - 1))
+)
+
+p_scale_decay001 <- c(
+  beta_overall = 0.1,
+  K = 0.1,
+  beta_edges = 0.1,
+  node_lambda = 0.5,
+  setNames(rep(0.1, n_cs_decay), paste0("CS_params", seq_len(n_cs_decay)))
+)
+
+fit_decay001 <- fit_hawkesNet(
+  params_init = params_init_decay001,
+  time_window = time_window,
+  mark_filtration = net,
+  PMF_mark = PMF_mark_CS,
+  mu_vec = inhom_bg$mu_vec,
+  integral_bg = inhom_bg$integral_bg,
+  formula_RHS = FORMULA_RHS_DECAY001,
+  truncation = TRUNCATION,
+  mark_decay = MARK_DECAY,
+  growth_only = GROWTH_ONLY,
+  max_node_time = max(get_times(net)$node_times),
+  method = "Nelder-Mead",
+  maxit = MAX_ITER,
+  reltol = 1e-8,
+  trace = 0,
+  verbose = TRUE,
+  fixed_params = c("mu"),
+  parscale = p_scale_decay001,
+  cache_intensity = TRUE,
+  combine_intensity = TRUE,
+  cores = N_CORES
+)
+
+if (!is.null(fit_decay001$fit_table)) {
+  cat("\n--- Fit results (decay=0.01) ---\n")
+  print(fit_decay001$fit_table, max = NULL)
 }
 
 # -----------------------------------------------------------------------------
@@ -481,8 +592,8 @@ if (RUN_GOF) {
     inhom_bg = inhom_bg,
     n_sim = as.integer(N_GOF),
     cores = as.integer(N_CORES_GOF),
-    max_deg = 15L,
-    k_esp = 15L,
+    max_deg = 30L,
+    k_esp = 30L,
     degree = 0L,
     esp = 0L,
     mu_multiplier = 5,
@@ -502,16 +613,86 @@ if (RUN_GOF) {
 # -----------------------------------------------------------------------------
 # Save results (cluster_output when on SLURM, same structure as openalex)
 # -----------------------------------------------------------------------------
+# GOF for star+esp fit (same settings, degree/ESP up to 30)
+gof_star_esp <- NULL
+gof_decay001 <- NULL
+if (RUN_GOF && !is.null(fit_star_esp$fit)) {
+  cat("\n--- GOF (star+esp fit) ---\n")
+  gof_args_alt <- list(
+    fit = fit_star_esp,
+    net_obs = net,
+    params_init = params_init_star_esp,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS_STAR_ESP,
+    time_window = time_window,
+    truncation = as.integer(TRUNCATION),
+    mark_decay = as.character(MARK_DECAY),
+    growth_only = isTRUE(GROWTH_ONLY),
+    max_node_time = max(get_times(net)$node_times),
+    inhom_bg = inhom_bg,
+    n_sim = as.integer(N_GOF),
+    cores = as.integer(N_CORES_GOF),
+    max_deg = 30L,
+    k_esp = 30L,
+    degree = 0L,
+    esp = 0L,
+    mu_multiplier = 5,
+    seed_events = as.integer(SEED_EVENTS_GOF),
+    verbose = TRUE
+  )
+  gof_args_alt <- gof_args_alt[names(gof_args_alt) %in% gof_formals]
+  gof_star_esp <- do.call(gof_fun, gof_args_alt)
+}
+
+# GOF for decay=0.01 fit
+if (RUN_GOF && !is.null(fit_decay001$fit)) {
+  cat("\n--- GOF (decay=0.01 fit) ---\n")
+  gof_args_decay <- list(
+    fit = fit_decay001,
+    net_obs = net,
+    params_init = params_init_decay001,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS_DECAY001,
+    time_window = time_window,
+    truncation = as.integer(TRUNCATION),
+    mark_decay = as.character(MARK_DECAY),
+    growth_only = isTRUE(GROWTH_ONLY),
+    max_node_time = max(get_times(net)$node_times),
+    inhom_bg = inhom_bg,
+    n_sim = as.integer(N_GOF),
+    cores = as.integer(N_CORES_GOF),
+    max_deg = 30L,
+    k_esp = 30L,
+    degree = 0L,
+    esp = 0L,
+    mu_multiplier = 5,
+    seed_events = as.integer(SEED_EVENTS_GOF),
+    verbose = TRUE
+  )
+  gof_args_decay <- gof_args_decay[names(gof_args_decay) %in% gof_formals]
+  gof_decay001 <- do.call(gof_fun, gof_args_decay)
+}
+
 save_list <- list(
   fit = fit,
+  fit_star_esp = fit_star_esp,
+  fit_decay001 = fit_decay001,
   gof = gof_res,
+  gof_star_esp = gof_star_esp,
+  gof_decay001 = gof_decay001,
   GOF = gof_res,  # alias for consistency with openalex
   sim_test = sim_test_res,
   net = net,
   edges = obj$edges,
   inhom_bg = inhom_bg,
   params_init = params_init,
+  params_init_star_esp = params_init_star_esp,
+  params_init_decay001 = params_init_decay001,
   formula_rhs = FORMULA_RHS,
+  formula_rhs_star_esp = FORMULA_RHS_STAR_ESP,
+  formula_rhs_decay001 = FORMULA_RHS_DECAY001,
   truncation = TRUNCATION,
   time_window = time_window,
   N_GOF = N_GOF,

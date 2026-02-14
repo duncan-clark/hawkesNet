@@ -266,8 +266,8 @@ if(SIMULATE){
 
 if(RUN_CONSISTENCY){
 
-  # 1. Define Time Windows to test
-  time_windows <- c(5, 10, 25, 50, 75, 100)
+  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic)
+  time_windows <- c(5, 10, 20, 25, 50, 75, 100)
   N_SIMS_CONSISTENCY <- 25
 
   # Parameters (Standard/Stable regime) - CS model
@@ -445,21 +445,23 @@ if(RUN_CONSISTENCY){
         summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
       print(prop_keep)
       
-      # Calculate Bias and RMSE (use all runs; keep filter commented)
+      # Calculate Bias and RMSE (converged fits only - non-converged inflate RMSE and break monotonicity)
       summary_stats <- consistency_results %>%
-        # filter(keep == TRUE) %>%
+        filter(keep == TRUE) %>%
         group_by(time_window, param) %>%
         summarise(
           mean_est = mean(estimate),
           sd_est = sd(estimate),
           rmse = sqrt(mean((estimate - true_value)^2)),
           true_val = mean(true_value),
+          n_conv = n(),
+          .groups = "drop"
         )
       
       print(summary_stats,n=100)
       
-      # Plot 1: Boxplots of convergence (use all runs; keep filter commented)
-      p_cons <- ggplot(consistency_results, aes(x = factor(time_window), y = estimate)) +  # %>% filter(keep == TRUE) 
+      # Plot 1: Boxplots of convergence (converged fits only)
+      p_cons <- ggplot(consistency_results %>% filter(keep == TRUE), aes(x = factor(time_window), y = estimate)) +
         geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
         geom_jitter(width = 0.2, alpha = 0.3) +
         geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
