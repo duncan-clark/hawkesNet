@@ -168,7 +168,9 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
 
 diagnose_truncation <- function(edges_df, node_entry_time,
                                 trunc_grid = c(25L, 50L, 100L, 200L, 400L),
-                                mark_decay = c("node_entrance", "activity")) {
+                                mark_decay = c("node_entrance", "activity"),
+                                n_nodes = NULL) {
+  if (!is.null(n_nodes)) trunc_grid <- sort(unique(c(trunc_grid, n_nodes)))
   mark_decay <- match.arg(mark_decay)
   stopifnot(all(c("tail", "head", "time") %in% names(edges_df)))
   stopifnot(is.numeric(node_entry_time) && length(node_entry_time) >= max(edges_df$tail, edges_df$head))
@@ -272,6 +274,25 @@ diagnose_truncation <- function(edges_df, node_entry_time,
   )
 }
 
+#' Verify that the chosen truncation makes all observed edges possible.
+#' Stops with error if any edge would be impossible under the given truncation.
+verify_truncation <- function(edges_df, node_entry_time, truncation, mark_decay) {
+  diag <- diagnose_truncation(edges_df, node_entry_time,
+                              trunc_grid = as.integer(truncation),
+                              mark_decay = mark_decay)
+  n_imp <- diag$n_impossible_edges[1]
+  n_any <- diag$n_impossible_any_truncation[1]
+  if (n_any > 0) {
+    stop("Truncation verification failed: ", n_any, " edges are impossible under ANY truncation ",
+         "(endpoint not yet present or duplicate edge). Check node entry times.")
+  }
+  if (n_imp > 0) {
+    stop("Truncation verification failed: TRUNCATION=", truncation, " makes ", n_imp,
+         " observed edges impossible. Increase TRUNCATION or use network.size(net) for no truncation.")
+  }
+  invisible(TRUE)
+}
+
 # -----------------------------------------------------------------------------
 # Load data
 # -----------------------------------------------------------------------------
@@ -297,25 +318,18 @@ cat("  Time window (hours):", sprintf("[%.3f, %.3f]", time_window[1], time_windo
 # -----------------------------------------------------------------------------
 # Choose truncation
 # -----------------------------------------------------------------------------
-# Full run: no truncation (use all nodes as candidates). Quick run: diagnostic picks smallest safe value.
+# Hypertext: truncation = number of nodes (all nodes in candidate set at all times).
+n_nodes <- network.size(net)
 if (is.na(TRUNCATION)) {
-  if (LOCAL_QUICK) {
-    cat("--- Truncation diagnostic (coverage of observed edges) ---\n")
-    diag_entry <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "node_entrance")
-    diag_act   <- diagnose_truncation(obj$edges, node_entry_time = net %v% "time", mark_decay = "activity")
-    print(diag_entry, row.names = FALSE)
-    print(diag_act, row.names = FALSE)
-    diag_use <- if (MARK_DECAY == "activity") diag_act else diag_entry
-    ok <- diag_use$truncation[diag_use$n_impossible_edges == 0L]
-    TRUNCATION <- if (length(ok) > 0) min(ok) else 50L
-    cat("  Using TRUNCATION (min with 0 impossible under", MARK_DECAY, ") =", TRUNCATION, "\n\n")
-  } else {
-    TRUNCATION <- network.size(net)
-    cat("  Using TRUNCATION =", TRUNCATION, "(no truncation; full network)\n\n")
-  }
+  TRUNCATION <- n_nodes
+  cat("  Using TRUNCATION =", TRUNCATION, "(= network size; all edges possible)\n\n")
 } else {
   cat("  Using TRUNCATION (from env) =", TRUNCATION, "\n\n")
 }
+
+# Verify: all edges must be possible under the chosen truncation
+verify_truncation(obj$edges, node_entry_time = net %v% "time",
+                  truncation = TRUNCATION, mark_decay = MARK_DECAY)
 
 # -----------------------------------------------------------------------------
 # Estimate inhomogeneous background (KDE) over the full multi-day window
