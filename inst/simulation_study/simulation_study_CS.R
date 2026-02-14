@@ -163,7 +163,9 @@ if(SIMULATE){
                     mu_multiplier = 3,
                     joint_accept = FALSE,
                     truncation = TRUNCATION,
-                    formula_RHS = "edges + triangles + star(c(2,3))")
+                    formula_RHS = "edges + triangles + star(c(2,3))",
+                    mark_decay = "node_entrance",
+                    growth_only = FALSE)
     }, error = function(e) {
       message("Error in sim_hawkesNet: ", e$message)
       return(NULL)
@@ -209,7 +211,9 @@ if(SIMULATE){
         trace = 1,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
-        fixed_params = c("mu", "K"),
+        mark_decay = "node_entrance",
+        growth_only = FALSE,
+        fixed_params = c("K"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -315,14 +319,15 @@ if(RUN_CONSISTENCY){
                               mu_multiplier = 3,
                               verbose = FALSE,
                               truncation = TRUNCATION,
-                              formula_RHS = "edges + triangles + star(c(2,3))")
+                              formula_RHS = "edges + triangles + star(c(2,3))",
+                              mark_decay = "node_entrance",
+                              growth_only = FALSE)
         }, error = function(e) return(NULL))
         
         if(is.null(sim_res)) return(NULL)
         
-        # B. Fit - CS options: formula_RHS, fixed_params = c("mu", "K")
+        # B. Fit - fix K only so mu can be estimated (allows background vs triggering balance to be learned)
         # Initialize near true params + small noise for better convergence
-        # mu and K are fixed at true values to stabilize structural estimation
         params_init <- list(
           mu = params_true$mu,
           beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
@@ -342,13 +347,15 @@ if(RUN_CONSISTENCY){
                               formula_RHS = "edges + triangles + star(c(2,3))",
                               maxit = MAX_ITER,
                               truncation = TRUNCATION,
-                            cache_intensity = TRUE,
-                            combine_intensity = TRUE,
-                            verbose = FALSE,
-                            fixed_params = c("mu", "K"),
-                            parscale = p_scale,
-                            cores = N_CORES_INNER,
-                            method = "Nelder-Mead")
+                              mark_decay = "node_entrance",
+                              growth_only = FALSE,
+                              cache_intensity = TRUE,
+                              combine_intensity = TRUE,
+                              verbose = FALSE,
+                              fixed_params = c("K"),
+                              parscale = p_scale,
+                              cores = N_CORES_INNER,
+                              method = "Nelder-Mead")
       }, error = function(e) return(NULL))
         
         if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
@@ -362,14 +369,33 @@ if(RUN_CONSISTENCY){
                  length(fit_res$fit$par) >= 2 &&
                  fit_res$fit$par[2] <= 10)
         
+        # Map true values: unlist gives CS_params1,2,...; fit$par may use those or formula names
+        par_names <- names(fit_res$fit$par)
+        true_vals <- setNames(numeric(length(par_names)), par_names)
+        true_vals["mu"] <- params_true$mu
+        true_vals["beta_overall"] <- params_true$beta_overall
+        if ("K" %in% par_names) true_vals["K"] <- params_true$K
+        true_vals["beta_edges"] <- params_true$beta_edges
+        true_vals["node_lambda"] <- params_true$node_lambda
+        for (k in seq_along(params_true$CS_params)) {
+          nm <- paste0("CS_params", k)
+          if (nm %in% par_names) true_vals[nm] <- params_true$CS_params[k]
+        }
+        # Fallback: formula names from expected_params
+        exp_cs <- tryCatch(expected_params_PMF_mark_CS(sim_res$net, "edges + triangles + star(c(2,3))"), error = function(e) NULL)
+        if (!is.null(exp_cs$CS_params_names) && length(params_true$CS_params) >= length(exp_cs$CS_params_names)) {
+          for (k in seq_along(exp_cs$CS_params_names)) {
+            if (exp_cs$CS_params_names[k] %in% par_names) true_vals[exp_cs$CS_params_names[k]] <- params_true$CS_params[k]
+          }
+        }
         # Return row
         return(data.frame(
           keep = keep,
           sim_id = i,
           time_window = curr_time,
-          param = names(fit_res$fit$par),
+          param = par_names,
           estimate = as.numeric(fit_res$fit$par),
-          true_value = as.numeric(unlist(params_true)[names(fit_res$fit$par)])
+          true_value = as.numeric(true_vals)
         ))
       })
       elapsed_simfit <- (proc.time() - t_simfit)[3]
@@ -514,6 +540,8 @@ if(RUN_EXPLOSIVE){
                                  verbose = FALSE,
                                  truncation = TRUNCATION,
                                  formula_RHS = "edges + triangles + star(c(2,3))",
+                                 mark_decay = "node_entrance",
+                                 growth_only = FALSE,
                                  mu_multiplier = 50)
 
   cat("Simulating Stable Regime (CS model)...\n")
@@ -525,6 +553,8 @@ if(RUN_EXPLOSIVE){
                                     verbose = FALSE,
                                     truncation = TRUNCATION,
                                     formula_RHS = "edges + triangles + star(c(2,3))",
+                                    mark_decay = "node_entrance",
+                                    growth_only = FALSE,
                                     mu_multiplier = 5)
 
   # ==========================
@@ -705,35 +735,39 @@ if(PAPER_OUTPUT){
       sample_fit <- fits[[keep_idx[1]]]
       par_names <- names(sample_fit$fit$par)
       
-      # Map true values
+      # Map true and init values
       true_vec <- setNames(numeric(length(par_names)), par_names)
+      init_vec <- setNames(numeric(length(par_names)), par_names)
       true_vec["mu"] <- params$mu
       true_vec["beta_overall"] <- params$beta_overall
       if ("K" %in% par_names) true_vec["K"] <- params$K
       true_vec["beta_edges"] <- params$beta_edges
       true_vec["node_lambda"] <- params$node_lambda
-      # Map CS params using the order from the formula
+      # Map CS params: fit may use CS_params1,2,... or formula names (edges, triangles, star.2, star.3)
       exp_cs <- expected_params_PMF_mark_CS(sims[[1]]$net, "edges + triangles + star(c(2,3))")
+      for (i in seq_along(params$CS_params)) {
+        nm <- paste0("CS_params", i)
+        if (nm %in% par_names) {
+          true_vec[nm] <- params$CS_params[i]
+          init_vec[nm] <- params_init$CS_params[i]
+        }
+      }
       if (!is.null(exp_cs$CS_params_names)) {
         for (i in seq_along(exp_cs$CS_params_names)) {
           name <- exp_cs$CS_params_names[i]
-          if (name %in% par_names) true_vec[name] <- params$CS_params[i]
+          if (name %in% par_names) {
+            true_vec[name] <- params$CS_params[i]
+            init_vec[name] <- params_init$CS_params[i]
+          }
         }
       }
       
-      # Map init values
-      init_vec <- setNames(numeric(length(par_names)), par_names)
+      # Map init values for scalar params (CS done above)
       init_vec["mu"] <- params_init$mu
       init_vec["beta_overall"] <- params_init$beta_overall
       if ("K" %in% par_names) init_vec["K"] <- params_init$K
       init_vec["beta_edges"] <- params_init$beta_edges
       init_vec["node_lambda"] <- params_init$node_lambda
-      if (!is.null(exp_cs$CS_params_names)) {
-        for (i in seq_along(exp_cs$CS_params_names)) {
-          name <- exp_cs$CS_params_names[i]
-          if (name %in% par_names) init_vec[name] <- params_init$CS_params[i]
-        }
-      }
       
       results <- data.frame(
         mean = colMeans(estims),
