@@ -82,6 +82,8 @@ N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
 N_GOF <- max(1L, N_GOF)
 N_CORES_GOF <- as.integer(Sys.getenv("GOF_CORES", N_CORES))
 N_CORES_GOF <- max(1L, min(N_CORES_GOF, N_GOF))
+# PSOCK outer workers for GOF (avoids fork deadlocks; faster on 100 cores)
+N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", if (N_CORES >= 32L) min(50L, N_CORES) else 0L))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 # Data shaping
@@ -93,19 +95,17 @@ GRID_N <- as.integer(Sys.getenv("KDE_GRID_N", if (LOCAL_QUICK) 1024L else 4096L)
 BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_))) # NA => default
 
 # Model specification (transitivity + degree).
-# Note: "edges" is omitted — in growth models we add exactly one edge per event, so the edges
-# change statistic is +1 for every candidate; it cancels in the softmax and is redundant.
-# Dropping it may improve identifiability of beta_overall and K.
+# Include "edges" as baseline for interpretability of other CS stats. Fix K for stability.
 # degree(0) penalizes degree-0 nodes (reduces excess isolates in simulations).
-FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "degree(0) + gwdegree(0.1) + gwesp(0.1)")
-FORMULA_RHS_STAR_ESP <- "degree(0) + star(c(2,3,4)) + esp(2:4)"  # Alternative: star+esp instead of gwdegree+gwesp
-FORMULA_RHS_DECAY001 <- "degree(0) + gwdegree(0.01) + gwesp(0.01)"  # Smaller decay = stronger penalty on fat tails
+FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "edges + degree(0) + gwdegree(0.1) + gwesp(0.1)")
+FORMULA_RHS_STAR_ESP <- "edges + degree(0) + star(c(2,3,4)) + esp(2:4)"  # Alternative: star+esp instead of gwdegree+gwesp
+FORMULA_RHS_DECAY001 <- "edges + degree(0) + gwdegree(0.01) + gwesp(0.01)"  # Smaller decay = stronger penalty on fat tails
 MARK_DECAY <- Sys.getenv("MARK_DECAY", "activity")
 GROWTH_ONLY <- FALSE
 
 cat("=== Hypertext conference (modern) ===\n")
 cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
-cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "\n")
+cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "| gof_outer:", N_GOF_OUTER, "\n")
 cat("  MAX_ITER:", MAX_ITER, "| RUN_GOF:", RUN_GOF, "| N_GOF:", N_GOF, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
 cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "| MAX_EDGES:", if (MAX_EDGES > 0) MAX_EDGES else "no cap", "\n\n")
@@ -359,12 +359,11 @@ params_init <- list(
   K = 0.5,
   beta_edges = 0.3,
   node_lambda = 0.1,
-  CS_params = c(-10, rep(0, n_cs - 1))
+  CS_params = c(-8, -5, rep(0, n_cs - 2))  # edges, degree(0), then gwdegree/gwesp
 )
 
 p_scale <- c(
   beta_overall = 0.1,
-  K = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
@@ -387,7 +386,7 @@ fit <- fit_hawkesNet(
   reltol = 1e-8,
   trace = 0,
   verbose = TRUE,
-  fixed_params = c("mu"),  # mu absorbed by inhomogeneous background
+  fixed_params = c("mu", "K"),  # mu absorbed by inhomogeneous background; K fixed for stability
   parscale = p_scale,
   cache_intensity = TRUE,
   combine_intensity = TRUE,
@@ -413,12 +412,11 @@ params_init_star_esp <- list(
   K = 0.5,
   beta_edges = 0.3,
   node_lambda = 0.1,
-  CS_params = c(-10, rep(0, n_cs_alt - 1))
+  CS_params = c(-8, -5, rep(0, n_cs_alt - 2))  # edges, degree(0), then star/esp
 )
 
 p_scale_star_esp <- c(
   beta_overall = 0.1,
-  K = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs_alt), paste0("CS_params", seq_len(n_cs_alt)))
@@ -441,7 +439,7 @@ fit_star_esp <- fit_hawkesNet(
   reltol = 1e-8,
   trace = 0,
   verbose = TRUE,
-  fixed_params = c("mu"),
+  fixed_params = c("mu", "K"),
   parscale = p_scale_star_esp,
   cache_intensity = TRUE,
   combine_intensity = TRUE,
@@ -467,12 +465,11 @@ params_init_decay001 <- list(
   K = 0.5,
   beta_edges = 0.3,
   node_lambda = 0.1,
-  CS_params = c(-10, rep(0, n_cs_decay - 1))
+  CS_params = c(-8, -5, rep(0, n_cs_decay - 2))  # edges, degree(0), then gwdegree/gwesp
 )
 
 p_scale_decay001 <- c(
   beta_overall = 0.1,
-  K = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs_decay), paste0("CS_params", seq_len(n_cs_decay)))
@@ -495,7 +492,7 @@ fit_decay001 <- fit_hawkesNet(
   reltol = 1e-8,
   trace = 0,
   verbose = TRUE,
-  fixed_params = c("mu"),
+  fixed_params = c("mu", "K"),
   parscale = p_scale_decay001,
   cache_intensity = TRUE,
   combine_intensity = TRUE,
@@ -606,6 +603,7 @@ if (RUN_GOF) {
     inhom_bg = inhom_bg,
     n_sim = as.integer(N_GOF),
     cores = as.integer(N_CORES_GOF),
+    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
     max_deg = 30L,
     k_esp = 30L,
     degree = 0L,
@@ -647,6 +645,7 @@ if (RUN_GOF && !is.null(fit_star_esp$fit)) {
     inhom_bg = inhom_bg,
     n_sim = as.integer(N_GOF),
     cores = as.integer(N_CORES_GOF),
+    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
     max_deg = 30L,
     k_esp = 30L,
     degree = 0L,
@@ -677,6 +676,7 @@ if (RUN_GOF && !is.null(fit_decay001$fit)) {
     inhom_bg = inhom_bg,
     n_sim = as.integer(N_GOF),
     cores = as.integer(N_CORES_GOF),
+    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
     max_deg = 30L,
     k_esp = 30L,
     degree = 0L,

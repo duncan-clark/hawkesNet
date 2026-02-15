@@ -348,7 +348,9 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #' @param inhom_bg Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
 #'   If provided, simulations use \code{cond_intensity_inhom} with time-varying background rate to match the fitted model.
 #' @param n_sim Number of simulated networks to generate (default 50).
-#' @param cores Number of cores for parallelization (default 7).
+#' @param cores Number of cores for parallelization (default 7). Ignored when \code{cores_outer} is set.
+#' @param cores_outer Optional. When set, use PSOCK cluster with this many workers instead of fork.
+#'   Avoids BLAS/fork deadlocks on high-core machines (e.g. 100 cores). Capped at 60 for socket limits.
 #' @param max_deg Maximum degree for degree distribution (default 15).
 #' @param k_esp Maximum ESP count for ESP distribution (default 15).
 #' @param degree Minimum degree to include in degree distribution (default 0).
@@ -388,6 +390,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",
                 growth_only = FALSE,
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
+                cores_outer = NULL,
                 max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5,
                 seed_events = 0L, verbose = TRUE) {
   
@@ -406,6 +409,9 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   max_node_time <- as.numeric(max_node_time)
   n_sim <- as.integer(n_sim)
   cores <- as.integer(cores)
+  cores_outer <- if (is.null(cores_outer)) NULL else as.integer(cores_outer)
+  use_psock <- !is.null(cores_outer) && cores_outer > 0L
+  n_workers <- if (use_psock) min(as.integer(cores_outer), 60L) else cores
   max_deg <- as.integer(max_deg)
   k_esp <- as.integer(k_esp)
   degree <- as.integer(degree)
@@ -581,55 +587,96 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   # Parallelize GOF simulations
   if (verbose) {
-    cat("  Using", cores, "cores for parallel GOF simulations...\n")
+    cat("  Using", n_workers, if (use_psock) "PSOCK workers" else "cores", "for parallel GOF simulations...\n")
     if (use_inhom) {
       cat("  Simulations will use inhomogeneous background (cond_intensity_inhom)\n")
     } else {
       cat("  Simulations will use homogeneous background (cond_intensity)\n")
     }
   }
-  # CRITICAL: Use safe_parallel_lapply instead of raw parallel::mclapply.
-  # Raw mclapply doesn't guard BLAS/OpenMP threads before forking and doesn't
-  # clean up zombie children from prior mclapply calls (e.g. the fitting step).
-  # After sequential fits, BLAS threads may be restored to multi-threaded state;
-  # forking with active BLAS threads causes deadlock on the second fork.
-  cat(sprintf("  [GOF] Memory before simulation fork: %.1f Mb\n", gc()[2, 2]), file = stderr())
-  cat(sprintf("  [GOF] Starting %d parallel simulations on %d cores at %s\n",
-              n_sim, cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
-  sim_results <- tryCatch({
-    safe_parallel_lapply(seq_len(n_sim), function(i) {
-      s <- tryCatch({
-        sim_hawkesNet(
-            params = pfit,
-            time_window = time_window,
-            PMF_mark = PMF_mark,
-            cond_intensity = cond_intensity,
-            formula_RHS = formula_RHS,
-            truncation = truncation,
-            mark_decay = mark_decay,
-            growth_only = growth_only,
-            max_node_time = max_node_time,
-            hashed_edges = TRUE,
-            verbose = FALSE,
-            mu_multiplier = mu_multiplier,
-            stop_on_full_network = FALSE,
-            inhom_bg = inhom_bg,
-            seed_net = seed_net,
-            seed_times = seed_times
-        )
-      },
-      error = function(e) { 
-        return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message))) 
-      })
-      if (is.null(s$net)) {
-        return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
+  sim_fun <- function(i) {
+    s <- tryCatch({
+      sim_hawkesNet(
+          params = pfit,
+          time_window = time_window,
+          PMF_mark = PMF_mark,
+          cond_intensity = cond_intensity,
+          formula_RHS = formula_RHS,
+          truncation = truncation,
+          mark_decay = mark_decay,
+          growth_only = growth_only,
+          max_node_time = max_node_time,
+          hashed_edges = TRUE,
+          verbose = FALSE,
+          mu_multiplier = mu_multiplier,
+          stop_on_full_network = FALSE,
+          inhom_bg = inhom_bg,
+          seed_net = seed_net,
+          seed_times = seed_times
+      )
+    }, error = function(e) {
+      return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message)))
+    })
+    if (is.null(s$net)) {
+      return(list(net = NULL, error = ifelse(is.null(s$error), paste0("Sim ", i, ": unknown error"), s$error)))
+    }
+    list(net = s$net, error = NULL)
+  }
+  cl_gof <- NULL
+  if (use_psock) {
+    cat(sprintf("  [GOF] Creating PSOCK cluster (%d workers) at %s\n", n_workers, format(Sys.time(), "%H:%M:%S")), file = stderr())
+    # Find package root so workers load dev version (avoids "unused argument" when installed pkg is stale)
+    pkg_path <- tryCatch({
+      p <- getwd()
+      if (file.exists(file.path(p, "DESCRIPTION"))) p
+      else if (file.exists(file.path(p, "..", "DESCRIPTION"))) normalizePath(file.path(p, ".."), mustWork = TRUE)
+      else NULL
+    }, error = function(e) NULL)
+    cl_gof <- tryCatch({
+      cl <- parallel::makeCluster(n_workers, outfile = "")
+      if (!is.null(pkg_path)) {
+        env_export <- new.env()
+        env_export$pkg_path <- pkg_path
+        parallel::clusterExport(cl, "pkg_path", envir = env_export)
       }
-      return(list(net = s$net, error = NULL))
-    }, mc.cores = cores, parallel_type = "auto")
+      parallel::clusterEvalQ(cl, {
+        if (!is.null(pkg_path) && nzchar(pkg_path) && requireNamespace("devtools", quietly = TRUE)) {
+          devtools::load_all(pkg_path, quiet = TRUE)
+        } else {
+          library(hawkesNet)
+        }
+        library(network)
+        library(ernm)
+        library(sna)
+        if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+          RhpcBLASctl::blas_set_num_threads(1L)
+          RhpcBLASctl::omp_set_num_threads(1L)
+        }
+        Sys.setenv(OMP_NUM_THREADS = "1", MKL_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
+      })
+      parallel::clusterExport(cl, c("pfit", "time_window", "PMF_mark", "cond_intensity",
+                                   "formula_RHS", "truncation", "mark_decay", "growth_only",
+                                   "max_node_time", "inhom_bg", "seed_net", "seed_times",
+                                   "mu_multiplier"), envir = environment())
+      cl
+    }, error = function(e) {
+      if (verbose) cat("  WARNING: PSOCK cluster failed, falling back to fork:", e$message, "\n")
+      NULL
+    })
+  }
+  cat(sprintf("  [GOF] Memory before simulation: %.1f Mb\n", gc()[2, 2]), file = stderr())
+  cat(sprintf("  [GOF] Starting %d parallel simulations on %d %s at %s\n",
+              n_sim, n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
+  sim_results <- tryCatch({
+    if (!is.null(cl_gof)) {
+      parallel::parLapply(cl_gof, seq_len(n_sim), sim_fun)
+    } else {
+      safe_parallel_lapply(seq_len(n_sim), sim_fun, mc.cores = n_workers, parallel_type = "auto")
+    }
   }, error = function(e) {
     if (verbose) cat("  ERROR: Failed to run simulations:", e$message, "\n")
     cat(sprintf("  [GOF] Simulation FAILED: %s\n", e$message), file = stderr())
-    list()  # Return empty list if simulations fail completely
+    list()
   })
   cat(sprintf("  [GOF] Simulations complete at %s\n", format(Sys.time(), "%H:%M:%S")), file = stderr())
   
@@ -753,16 +800,15 @@ n_esp_bins <- k_esp - esp + 1L
 # the workers are as lean as possible.
 
 if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d cores) at %s\n",
-            length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
+cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s\n",
+            length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
 
 # Combined distributional statistics: Degree, ESP, Geodist, nodeMix
 # Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
 has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
 needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
 
-dist_stats_sim <- tryCatch({
-  safe_parallel_lapply(sim_nets, function(n) {
+dist_stats_fun <- function(n) {
     tryCatch({
       if (is.null(n)) return(NULL)
       n_clean <- n
@@ -789,7 +835,17 @@ dist_stats_sim <- tryCatch({
            geodist = numeric(0), 
            nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL)
     })
-  }, mc.cores = cores, parallel_type = "auto")
+}
+dist_stats_sim <- tryCatch({
+  if (!is.null(cl_gof)) {
+    parallel::clusterExport(cl_gof, c("max_deg", "degree", "k_esp", "esp", "has_nodemix_obs", "needs_gender",
+                                     "n_deg_bins", "n_esp_bins", "GOF_results"), envir = environment())
+    parallel::clusterExport(cl_gof, c("degree_dist", "esp_dist", "geodist_dist", "ensure_vertex_attribute"),
+                            envir = asNamespace("hawkesNet"))
+    parallel::parLapply(cl_gof, sim_nets, dist_stats_fun)
+  } else {
+    safe_parallel_lapply(sim_nets, dist_stats_fun, mc.cores = n_workers, parallel_type = "auto")
+  }
 }, error = function(e) {
   if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
   NULL
@@ -852,23 +908,26 @@ dist_stats_sim <- tryCatch({
     }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
-    cat(sprintf("  [GOF] Starting waiting times (%d nets, %d cores) at %s\n",
-                length(sim_nets), cores, format(Sys.time(), "%H:%M:%S")), file = stderr())
+    cat(sprintf("  [GOF] Starting waiting times (%d nets, %d %s) at %s\n",
+                length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
+    stat_names_standard <- c("edges", "triangles", "star2", "star3")
+    wait_fun <- function(n) {
+      tryCatch({
+        wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = "edges + triangles + star(c(2,3))")
+        if (length(stat_names_standard) == length(wait_sim_raw)) {
+          names(wait_sim_raw) <- stat_names_standard
+        }
+        wait_sim_raw
+      }, error = function(e) list())
+    }
     GOF_results$wait_sim <- tryCatch({
-      # Use a standard set of statistics for waiting times in ALL cases
-      wait_formula_standard <- "edges + triangles + star(c(2,3))"
-      stat_names_standard <- c("edges", "triangles", "star2", "star3")
-      
-      # Use safe_parallel_lapply for stability
-      safe_parallel_lapply(sim_nets, function(n) {
-        tryCatch({
-          wait_sim_raw <- waiting_times_between_formations(n, formula_RHS = wait_formula_standard)
-          if (length(stat_names_standard) == length(wait_sim_raw)) {
-            names(wait_sim_raw) <- stat_names_standard
-          }
-          wait_sim_raw
-        }, error = function(e) list())
-      }, mc.cores = cores, parallel_type = "auto")
+      if (!is.null(cl_gof)) {
+        parallel::clusterExport(cl_gof, c("stat_names_standard"), envir = environment())
+        parallel::clusterExport(cl_gof, c("waiting_times_between_formations"), envir = asNamespace("hawkesNet"))
+        parallel::parLapply(cl_gof, sim_nets, wait_fun)
+      } else {
+        safe_parallel_lapply(sim_nets, wait_fun, mc.cores = n_workers, parallel_type = "auto")
+      }
     }, error = function(e) {
       if (verbose) cat("      Warning: Could not compute simulated waiting times:", e$message, "\n")
       NULL
@@ -897,6 +956,11 @@ dist_stats_sim <- tryCatch({
   } else {
     if (verbose) cat("  No successful simulations; returning empty GOF results\n")
     GOF_results$plots <- list()  # ensure plots is always set (never NULL)
+  }
+  
+  if (!is.null(cl_gof)) {
+    tryCatch(parallel::stopCluster(cl_gof), error = function(e) NULL)
+    cl_gof <- NULL
   }
   
   # Always return results, even if some computations failed
