@@ -99,7 +99,7 @@ BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_))) # NA => defau
 # degree(0) penalizes degree-0 nodes (reduces excess isolates in simulations).
 FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "edges + degree(0) + gwdegree(0.1) + gwesp(0.1)")
 FORMULA_RHS_STAR_ESP <- "edges + degree(0) + star(c(2,3,4)) + esp(2:4)"  # Alternative: star+esp instead of gwdegree+gwesp
-FORMULA_RHS_DECAY001 <- "edges + degree(0) + gwdegree(0.01) + gwesp(0.01)"  # Smaller decay = stronger penalty on fat tails
+FORMULA_RHS_DECAY05 <- "edges + degree(0) + gwdegree(0.5) + gwesp(0.5)"  # Larger decay = weaker penalty on fat tails
 MARK_DECAY <- Sys.getenv("MARK_DECAY", "activity")
 GROWTH_ONLY <- FALSE
 
@@ -452,14 +452,14 @@ if (!is.null(fit_star_esp$fit_table)) {
 }
 
 # -----------------------------------------------------------------------------
-# Fit alternative: decay=0.01 (stronger penalty on fat tails)
+# Fit alternative: decay=0.5 (larger decay parameter)
 # -----------------------------------------------------------------------------
-cat("\n--- Fitting hawkesNet (CS, decay=0.01) ---\n")
-exp_cs_decay <- expected_params_PMF_mark_CS(net, FORMULA_RHS_DECAY001)
+cat("\n--- Fitting hawkesNet (CS, decay=0.5) ---\n")
+exp_cs_decay <- expected_params_PMF_mark_CS(net, FORMULA_RHS_DECAY05)
 n_cs_decay <- if (!is.na(exp_cs_decay$CS_params_length)) exp_cs_decay$CS_params_length else 3L
 cat("  CS_params length:", n_cs_decay, "\n")
 
-params_init_decay001 <- list(
+params_init_decay05 <- list(
   mu = mu_init,
   beta_overall = 0.3,
   K = 0.5,
@@ -468,21 +468,21 @@ params_init_decay001 <- list(
   CS_params = c(-8, -5, rep(0, n_cs_decay - 2))  # edges, degree(0), then gwdegree/gwesp
 )
 
-p_scale_decay001 <- c(
+p_scale_decay05 <- c(
   beta_overall = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs_decay), paste0("CS_params", seq_len(n_cs_decay)))
 )
 
-fit_decay001 <- fit_hawkesNet(
-  params_init = params_init_decay001,
+fit_decay05 <- fit_hawkesNet(
+  params_init = params_init_decay05,
   time_window = time_window,
   mark_filtration = net,
   PMF_mark = PMF_mark_CS,
   mu_vec = inhom_bg$mu_vec,
   integral_bg = inhom_bg$integral_bg,
-  formula_RHS = FORMULA_RHS_DECAY001,
+  formula_RHS = FORMULA_RHS_DECAY05,
   truncation = TRUNCATION,
   mark_decay = MARK_DECAY,
   growth_only = GROWTH_ONLY,
@@ -493,15 +493,15 @@ fit_decay001 <- fit_hawkesNet(
   trace = 0,
   verbose = TRUE,
   fixed_params = c("mu", "K"),
-  parscale = p_scale_decay001,
+  parscale = p_scale_decay05,
   cache_intensity = TRUE,
   combine_intensity = TRUE,
   cores = N_CORES
 )
 
-if (!is.null(fit_decay001$fit_table)) {
-  cat("\n--- Fit results (decay=0.01) ---\n")
-  print(fit_decay001$fit_table, max = NULL)
+if (!is.null(fit_decay05$fit_table)) {
+  cat("\n--- Fit results (decay=0.5) ---\n")
+  print(fit_decay05$fit_table, max = NULL)
 }
 
 # -----------------------------------------------------------------------------
@@ -627,7 +627,7 @@ if (RUN_GOF) {
 # -----------------------------------------------------------------------------
 # GOF for star+esp fit (same settings, degree/ESP up to 30)
 gof_star_esp <- NULL
-gof_decay001 <- NULL
+gof_decay05 <- NULL
 if (RUN_GOF && !is.null(fit_star_esp$fit)) {
   cat("\n--- GOF (star+esp fit) ---\n")
   gof_args_alt <- list(
@@ -658,16 +658,16 @@ if (RUN_GOF && !is.null(fit_star_esp$fit)) {
   gof_star_esp <- do.call(gof_fun, gof_args_alt)
 }
 
-# GOF for decay=0.01 fit
-if (RUN_GOF && !is.null(fit_decay001$fit)) {
-  cat("\n--- GOF (decay=0.01 fit) ---\n")
+# GOF for decay=0.5 fit
+if (RUN_GOF && !is.null(fit_decay05$fit)) {
+  cat("\n--- GOF (decay=0.5 fit) ---\n")
   gof_args_decay <- list(
-    fit = fit_decay001,
+    fit = fit_decay05,
     net_obs = net,
-    params_init = params_init_decay001,
+    params_init = params_init_decay05,
     PMF_mark = PMF_mark_CS,
     cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS_DECAY001,
+    formula_RHS = FORMULA_RHS_DECAY05,
     time_window = time_window,
     truncation = as.integer(TRUNCATION),
     mark_decay = as.character(MARK_DECAY),
@@ -686,16 +686,16 @@ if (RUN_GOF && !is.null(fit_decay001$fit)) {
     verbose = TRUE
   )
   gof_args_decay <- gof_args_decay[names(gof_args_decay) %in% gof_formals]
-  gof_decay001 <- do.call(gof_fun, gof_args_decay)
+  gof_decay05 <- do.call(gof_fun, gof_args_decay)
 }
 
 save_list <- list(
   fit = fit,
   fit_star_esp = fit_star_esp,
-  fit_decay001 = fit_decay001,
+  fit_decay05 = fit_decay05,
   gof = gof_res,
   gof_star_esp = gof_star_esp,
-  gof_decay001 = gof_decay001,
+  gof_decay05 = gof_decay05,
   GOF = gof_res,  # alias for consistency with openalex
   sim_test = sim_test_res,
   net = net,
@@ -703,10 +703,10 @@ save_list <- list(
   inhom_bg = inhom_bg,
   params_init = params_init,
   params_init_star_esp = params_init_star_esp,
-  params_init_decay001 = params_init_decay001,
+  params_init_decay05 = params_init_decay05,
   formula_rhs = FORMULA_RHS,
   formula_rhs_star_esp = FORMULA_RHS_STAR_ESP,
-  formula_rhs_decay001 = FORMULA_RHS_DECAY001,
+  formula_rhs_decay05 = FORMULA_RHS_DECAY05,
   truncation = TRUNCATION,
   time_window = time_window,
   N_GOF = N_GOF,
