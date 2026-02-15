@@ -57,7 +57,7 @@ TRUNCATION  <- 100
 SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- ON_SLURM          # skip explosive in interactive mode
-RUN_CONSISTENCY <- FALSE  # Disabled for now; re-enable when ready
+RUN_CONSISTENCY <- ON_SLURM  # Run on cluster batch jobs only (slow)
 MAX_ITER <- if (ON_SLURM) 5000 else 2000
 cat(sprintf("Mode: %s | TIME=%d | N_SIMS=%d | N_CORES=%d | MAX_ITER=%d\n",
     if (ON_SLURM) "SLURM batch" else "Interactive (RStudio)", TIME, N_SIMS, N_CORES, MAX_ITER))
