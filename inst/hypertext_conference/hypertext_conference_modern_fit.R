@@ -10,7 +10,7 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Full run (default under SLURM): MAX_EDGES=10000, no truncation, N_GOF=100, MAX_ITER=5000, 100 cores.
+## Full run (default under SLURM): all edges (no cap), no truncation, N_GOF=100, MAX_ITER=5000, 100 cores.
 ## Cluster mode knobs:
 ##   SLURM_CPUS_PER_TASK=32 MAX_ITER=5000 N_GOF=50 GOF_CORES=32 Rscript ...
 ##

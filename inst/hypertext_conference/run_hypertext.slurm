@@ -13,7 +13,7 @@
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run: MAX_EDGES=10000, no truncation, N_GOF=100, MAX_ITER=5000 (defaults when under SLURM).
+# Full run: all edges (no cap), truncation=n_nodes, N_GOF=100, MAX_ITER=5000 (defaults when under SLURM).
 # Optional env (set before sbatch or in script):
 #   MAX_ITER=5000  N_GOF=100  GOF_CORES=100
 
