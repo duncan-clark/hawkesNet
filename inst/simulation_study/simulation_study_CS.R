@@ -97,11 +97,11 @@ SEED <- 1267
 
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
-  # IMPORTANT: Names must match flat_par names exactly (CS_params1,2,...).
-  # flat_par = unlist(params_init) with K removed (fixed) gives:
-  #   mu, beta_overall, beta_edges, node_lambda, CS_params1, CS_params2, CS_params3, CS_params4
+  # IMPORTANT: Names must match flat_par names exactly.
+  # flat_par = unlist(params_init) with K and CS_params1 (edges) removed (fixed) gives:
+  #   mu, beta_overall, beta_edges, node_lambda, CS_params2, CS_params3, CS_params4
   p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-               CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+               CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: each worker runs one sim or one fit at a time.
@@ -202,15 +202,14 @@ if(SIMULATE){
   cl_fit <- make_cluster(N_CORES_OUTER)
   clusterExport(cl_fit, c("N_CORES_INNER"))
   
-  # Init values: use same strategy as consistency study (near-true).
-  # Old init c(-10,0,0,0) was too far from true c(-6.7,2,0.1,-0.1) causing
-  # -Inf log-likelihood at initial point, which crashes optim.
+  # Init values: edges (CS_params[1]) is fixed to true value (-6.7) to resolve
+  # identification with mu and node_lambda. Other CS_params are free.
   params_init <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
-                      CS_params = c(-7, 1, 0, 0)
+                      CS_params = c(-6.7, 1, 0, 0)
   )
   clusterExport(cl_fit, c("params_init", "p_scale", "TIME", "MAX_ITER", "TRUNCATION"))
   
@@ -231,7 +230,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = c("K"),
+        fixed_params = c("K", "CS_params1"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -346,13 +345,15 @@ if(RUN_CONSISTENCY){
         
         # B. Fit
         # Initialize near true params + small noise for better convergence
+        # edges (CS_params[1]) is fixed to true value — no noise added
         params_init <- list(
           mu = params_true$mu,
           beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
           K = params_true$K,
           beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
           node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
-          CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
+          CS_params = c(params_true$CS_params[1],
+                        params_true$CS_params[-1] + rnorm(length(params_true$CS_params) - 1, 0, 0.5))
         )
         # Ensure CS_params are finite
         params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
@@ -370,7 +371,7 @@ if(RUN_CONSISTENCY){
                               cache_intensity = TRUE,
                               combine_intensity = TRUE,
                               verbose = FALSE,
-                              fixed_params = c("K"),
+                              fixed_params = c("K", "CS_params1"),
                               parscale = p_scale,
                               cores = N_CORES_INNER,
                               method = "Nelder-Mead")

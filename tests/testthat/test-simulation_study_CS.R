@@ -14,23 +14,23 @@ SIM_STUDY_PARAMS <- list(
 )
 SIM_STUDY_FORMULA <- "edges + triangles + star(c(2,3))"
 SIM_STUDY_TRUNCATION <- 100
-SIM_STUDY_FIXED <- c("K")
 
-# parscale: must match flat_par names exactly (CS_params1,2,... not formula names)
+# parscale: must match free flat_par names (CS_params1/edges is fixed)
 SIM_STUDY_PSCALE <- c(
   mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-  CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
+  CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
 )
 
-# Main study init (aligned with consistency study)
+# Main study init — edges (CS_params[1]) fixed to true value
 SIM_STUDY_INIT <- list(
   mu = 10,
   beta_overall = 1,
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-7, 1, 0, 0)
+  CS_params = c(-6.7, 1, 0, 0)
 )
+SIM_STUDY_FIXED <- c("K", "CS_params1")
 
 # Helper: simulate one network at a given time window
 sim_one <- function(time_window = c(0, 5), seed = 42) {
@@ -71,14 +71,15 @@ test_that("CS simulation (T=5) produces valid network with edges and nodes", {
 # =============================================================================
 # TEST 2: parscale mapping works with both CS_params and formula name conventions
 # =============================================================================
-test_that("parscale with dual naming (CS_params + formula) does not produce NAs", {
+test_that("parscale maps correctly to free flat_par (K and CS_params1 fixed)", {
   sim <- sim_one(c(0, 5), seed = 42)
   skip_if(network::network.edgecount(sim$net) < 3, "Need edges for fit test")
 
-  # Flatten params_init as fit_hawkesNet does (remove K since it's fixed)
+  # Flatten params_init as fit_hawkesNet does (remove K, then remove CS_params1)
   pi <- SIM_STUDY_INIT
   pi$K <- NULL
   flat_par <- unlist(pi)
+  flat_par <- flat_par[!names(flat_par) %in% "CS_params1"]  # element-level fixed
   # Check that parscale[names(flat_par)] gives no NAs
   mapped <- SIM_STUDY_PSCALE[names(flat_par)]
   expect_true(all(!is.na(mapped)),
@@ -166,8 +167,9 @@ test_that("CS fit with main study config completes without error", {
   expect_true("fit" %in% names(fit))
   expect_true(all(is.finite(fit$fit$par)),
     info = paste("All params should be finite:", paste(round(fit$fit$par, 4), collapse = ", ")))
-  # K should NOT be in fitted params (it's fixed)
+  # K and CS_params1 (edges) should NOT be in fitted params (they're fixed)
   expect_false("K" %in% names(fit$fit$par))
+  expect_false("CS_params1" %in% names(fit$fit$par))
 })
 
 # =============================================================================

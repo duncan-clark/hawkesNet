@@ -853,16 +853,40 @@ fit_hawkesNet <- function(params_init,
   params_init_old <- params_init
   # Shallow copy so stripping levels does not modify params_init_old (needed for loglik and relist restore)
   params_init <- as.list(params_init_old)
-  if(!is.null(fixed_params)){
-    for(k in fixed_params){
+
+  # Separate fixed_params into list-level (e.g. "K") and element-level (e.g. "CS_params1").
+  # List-level: remove entire list element before unlist (existing behaviour).
+  # Element-level: keep in params_init for skeleton, but mask out of flat_par for optim.
+  list_level_fixed <- character(0)
+  elem_level_fixed <- character(0)
+  if (!is.null(fixed_params)) {
+    list_names <- names(params_init)
+    for (k in fixed_params) {
+      if (k %in% list_names) {
+        list_level_fixed <- c(list_level_fixed, k)
+      } else {
+        elem_level_fixed <- c(elem_level_fixed, k)
+      }
+    }
+    for (k in list_level_fixed) {
       params_init[[k]] <- NULL
     }
   }
   # Strip vertex_categorical_levels (character metadata, not numeric parameters)
   # so unlist() yields a purely numeric vector for optim.
   params_init$vertex_categorical_levels <- NULL
-  
-  flat_par <- unlist(params_init)
+
+  # Full flat vector (includes elem-level fixed params for relist skeleton)
+  flat_par_full <- unlist(params_init)
+  # Mask: TRUE = element-level fixed (held constant during optimisation)
+  elem_fixed_mask <- names(flat_par_full) %in% elem_level_fixed
+  if (any(elem_fixed_mask)) {
+    vcat("[fit] Element-level fixed params: ",
+         paste(names(flat_par_full)[elem_fixed_mask], "=",
+               round(flat_par_full[elem_fixed_mask], 4), collapse = ", "), "\n")
+  }
+  # Free parameters only — these go to optim
+  flat_par <- flat_par_full[!elem_fixed_mask]
   if (is.null(parscale)) {
     parscale <- rep(1, length(flat_par))
   } else if (length(parscale) != length(flat_par)) {
@@ -969,11 +993,16 @@ fit_hawkesNet <- function(params_init,
     if (should_time) t0 <- proc.time()[3]
 
     # 1. relist + restore fixed params
-    params_curr <- relist(params, skeleton = params_init)
-    params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
-    if (!is.null(fixed_params)) {
-      for (k in fixed_params) params_curr[[k]] <- params_init_old[[k]]
+    # Re-insert element-level fixed values into full flat vector before relisting
+    if (any(elem_fixed_mask)) {
+      full_par <- flat_par_full
+      full_par[!elem_fixed_mask] <- params
+      params_curr <- relist(full_par, skeleton = params_init)
+    } else {
+      params_curr <- relist(params, skeleton = params_init)
     }
+    params_curr$vertex_categorical_levels <- params_init_old$vertex_categorical_levels
+    for (k in list_level_fixed) params_curr[[k]] <- params_init_old[[k]]
 
     # 2. validate + beta cap
     if (!point_process_params_valid(params_curr)) return(-1e10)
