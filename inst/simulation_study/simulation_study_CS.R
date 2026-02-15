@@ -32,8 +32,20 @@ dir.create(CLUSTER_OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 # ===================================================
 # Change Statistic Mark Generation
 # ===================================================
-TIME <- 50
-# takes ~ 6 minutes to simulate under this setting, gives ~600 events
+ON_SLURM <- nzchar(Sys.getenv("SLURM_JOB_ID"))
+
+# Defaults differ for interactive (RStudio on cluster) vs SLURM batch jobs
+if (ON_SLURM) {
+  TIME     <- 50
+  N_SIMS   <- 100
+  N_CORES  <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
+} else {
+  # Interactive / RStudio defaults — fast iteration for debugging
+  TIME     <- 5
+  N_SIMS   <- 8
+  N_CORES  <- 64L
+}
+# takes ~ 6 minutes to simulate at T=50, gives ~600 events
 params <- list(mu = 10,
                beta_overall = 2,
                K = 0.5,
@@ -44,12 +56,12 @@ params <- list(mu = 10,
 TRUNCATION  <- 100
 SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
-RUN_EXPLOSIVE <- TRUE
-RUN_CONSISTENCY <- TRUE
-MAX_ITER <- 5000
+RUN_EXPLOSIVE <- ON_SLURM          # skip explosive in interactive mode
+RUN_CONSISTENCY <- FALSE  # Disabled for now; re-enable when ready
+MAX_ITER <- if (ON_SLURM) 5000 else 2000
+cat(sprintf("Mode: %s | TIME=%d | N_SIMS=%d | N_CORES=%d | MAX_ITER=%d\n",
+    if (ON_SLURM) "SLURM batch" else "Interactive (RStudio)", TIME, N_SIMS, N_CORES, MAX_ITER))
 
-N_SIMS <- 100 #should take ~ 30 minuts with 2 inner cores per fit
-N_CORES <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK", 50))
 if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
 } else if (N_CORES == 128L && nzchar(Sys.getenv("USE_256_WHEN_128"))) {
@@ -85,8 +97,11 @@ SEED <- 1267
 
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
+  # IMPORTANT: Names must match flat_par names exactly (CS_params1,2,...).
+  # flat_par = unlist(params_init) with K removed (fixed) gives:
+  #   mu, beta_overall, beta_edges, node_lambda, CS_params1, CS_params2, CS_params3, CS_params4
   p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-               edges = 1, triangles = 0.1, star.2 = 0.1, star.3 = 0.1)
+               CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: each worker runs one sim or one fit at a time.
@@ -187,12 +202,15 @@ if(SIMULATE){
   cl_fit <- make_cluster(N_CORES_OUTER)
   clusterExport(cl_fit, c("N_CORES_INNER"))
   
+  # Init values: use same strategy as consistency study (near-true).
+  # Old init c(-10,0,0,0) was too far from true c(-6.7,2,0.1,-0.1) causing
+  # -Inf log-likelihood at initial point, which crashes optim.
   params_init <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
-                      CS_params = c(-10,0,0,0)
+                      CS_params = c(-7, 1, 0, 0)
   )
   clusterExport(cl_fit, c("params_init", "p_scale", "TIME", "MAX_ITER", "TRUNCATION"))
   
@@ -835,4 +853,23 @@ if(PAPER_OUTPUT){
     print(paste("Max Degree Stable:", max_deg_stable))
     print(paste("Max Degree Explosive:", max_deg_exp))
   }
+
+  # ---------- Re-save with PAPER_OUTPUT objects (tables + plots) ----------
+  # Add main study results table and estimate distribution plot
+  if (exists("results") && !is.null(results))    save_list$results_table   <- results
+  if (exists("estims") && !is.null(estims))      save_list$estims          <- estims
+  if (exists("p_est_dist") && !is.null(p_est_dist)) save_list$p_est_dist   <- p_est_dist
+  if (exists("deg_plot") && !is.null(deg_plot))   save_list$deg_plot        <- deg_plot
+  if (exists("esp_plot") && !is.null(esp_plot))   save_list$esp_plot        <- esp_plot
+  if (exists("keep_idx"))                         save_list$keep_idx        <- keep_idx
+  if (exists("marked_p_vals"))                    save_list$marked_p_vals   <- marked_p_vals
+  if (exists("temp_p_vals"))                      save_list$temp_p_vals     <- temp_p_vals
+  # Consistency plots (already in save_list from earlier, but re-add for safety)
+  if (exists("p_cons") && !is.null(p_cons))       save_list$p_cons          <- p_cons
+  if (exists("p_rmse") && !is.null(p_rmse))       save_list$p_rmse          <- p_rmse
+  # Re-save
+  tryCatch({
+    saveRDS(save_list, file.path(CLUSTER_OUTPUT_DIR, "results_CS_full.RDS"))
+    cat("Re-saved full state (with tables + plots) to results_CS_full.RDS\n")
+  }, error = function(e) message("Re-save failed: ", conditionMessage(e)))
 }

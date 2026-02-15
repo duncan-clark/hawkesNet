@@ -508,6 +508,11 @@ strip_vertex_attrs_for_ernm <- function(net, formula_RHS, params = NULL) {
   if (!is.null(params) && !is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
     keep <- unique(c(keep, names(params$vertex_categorical)))
   }
+  # CRITICAL: Always preserve "time" and "vertex.names" — these are structural
+
+  # attributes used by filtration_to_net, get_times, and the mark density
+  # (dpois for node count). Stripping "time" breaks the likelihood entirely.
+  keep <- unique(c(keep, "time", "vertex.names"))
   # Always drop the problematic placeholder attr if present.
   all_attrs <- setdiff(list.vertex.attributes(net), "na")
   drop <- setdiff(all_attrs, keep)

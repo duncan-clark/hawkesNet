@@ -28,7 +28,7 @@ N_REPS <- 12L  # More reps for less noise
 TRUNCATION <- 100
 MAX_ITER <- 3000
 p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-             edges = 1, triangles = 0.1, star.2 = 0.1, star.3 = 0.1)
+             CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 params_true <- list(
   mu = 10,
