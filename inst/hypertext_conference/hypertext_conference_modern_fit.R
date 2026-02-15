@@ -88,7 +88,7 @@ SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 # Data shaping
 USE_FIRST_CONTACT_ONLY <- isTRUE(as.logical(Sys.getenv("USE_FIRST_CONTACT_ONLY", "TRUE")))
-MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", if (LOCAL_QUICK) 400L else 10000L))
+MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", 0L))  # 0 = no cap; use all edges
 
 # Background KDE
 GRID_N <- as.integer(Sys.getenv("KDE_GRID_N", if (LOCAL_QUICK) 1024L else 4096L))
