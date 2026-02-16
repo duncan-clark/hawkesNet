@@ -958,16 +958,17 @@ PMF_mark_CS <- function(time,
       # use either node times or last node activity:
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(new_net)
-      }
-      if(mark_decay == 'node_entrance'){
+        # For activity decay, use the MOST RECENTLY active of the two endpoints
+        # so that an edge is viable as long as at least one endpoint is active.
+        # This breaks the cold-start feedback loop where stale nodes could never
+        # receive new edges.
+        diffs <- time - pmax(node_times[heads], node_times[tails])
+      } else {
+        # For node_entrance: decay from the head (lower-index / older) node's
+        # entrance time, matching the paper's specification: exp(-τ(t - t_i)).
         node_times <- new_net %v% 'time'
+        diffs <- time - node_times[heads]
       }
-      # Use the MOST RECENTLY active of the two endpoints so that an edge is
-      # viable as long as at least one endpoint is active.  Previously only the
-      # head (lower-index, typically older) node's time was used, which caused a
-      # feedback loop: stale nodes could never receive new edges because the
-      # decay killed their probability, keeping them stale forever.
-      diffs <- time - pmax(node_times[heads], node_times[tails])
       # --- Safety: sanitize diffs/factor before multiplying probs ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS: non-finite time diffs in density path; replacing with 0.")
@@ -1307,12 +1308,13 @@ PMF_mark_CS <- function(time,
       } else {
       if(mark_decay == 'activity'){
         node_times <- get_latest_times(mark_sample)
-      }
-      if(mark_decay == 'node_entrance'){
+        # For activity decay: most recently active of the two endpoints.
+        diffs <- time - pmax(node_times[heads], node_times[tails])
+      } else {
+        # For node_entrance: decay from head node's entrance time (paper spec).
         node_times <- mark_sample %v% 'time'
+        diffs <- time - node_times[heads]
       }
-      # Use the most recently active of the two endpoints (consistent with density path).
-      diffs <- time - pmax(node_times[heads], node_times[tails])
       # --- Safety: sanitize diffs/factor in generate_mark (suggestion 2 & 9) ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS (generate_mark): non-finite time diffs; replacing with 0.")

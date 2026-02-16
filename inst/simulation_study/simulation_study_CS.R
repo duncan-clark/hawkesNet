@@ -98,11 +98,13 @@ SEED <- 1267
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
-  # fixed_params = c("K", "mu") -> flat_par has:
-  #   beta_overall, beta_edges, node_lambda, CS_params1, CS_params2, CS_params3, CS_params4
-  # mu is fixed (consistent with hypertext where inhom bg absorbs mu).
-  # edges (CS_params1) is FREE for mark PMF interpretability.
-  p_scale <- c(beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+  # fixed_params = c("node_lambda") -> flat_par has:
+  #   mu, beta_overall, K, beta_edges, CS_params1, CS_params2, CS_params3, CS_params4
+  # node_lambda fixed: its MLE is just the sample mean of new-nodes-per-event,
+  # but when free it co-varies with the edges term in the multiplicative mark
+  # density.  mu and K are free — they only enter the ground intensity and
+  # should be identifiable from event times alone.
+  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
                CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
@@ -204,9 +206,9 @@ if(SIMULATE){
   cl_fit <- make_cluster(N_CORES_OUTER)
   clusterExport(cl_fit, c("N_CORES_INNER"))
   
-  # Init values: mu is fixed to true value (10) to resolve identification
-  # with node_lambda and edges. edges (CS_params1) is free for mark PMF
-  # interpretability (consistent with hypertext where mu is absorbed by inhom bg).
+  # Init values: node_lambda fixed to true value; mu and K free.
+  # node_lambda fixed to prevent co-variation with edges term.
+  # mu and K are identifiable from event times (ground intensity only).
   params_init <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
@@ -233,7 +235,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = c("K", "mu"),
+        fixed_params = c("node_lambda"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -347,14 +349,14 @@ if(RUN_CONSISTENCY){
         if(is.null(sim_res)) return(NULL)
         
         # B. Fit
-        # Initialize near true params + small noise for better convergence
-        # mu is fixed to true value — no noise added
+        # Initialize near true params + small noise for better convergence.
+        # node_lambda fixed to true value; mu and K free with noise.
         params_init <- list(
-          mu = params_true$mu,
+          mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
           beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
-          K = params_true$K,
+          K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
           beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
-          node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+          node_lambda = params_true$node_lambda,
           CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
         )
         # Ensure CS_params are finite
@@ -373,7 +375,7 @@ if(RUN_CONSISTENCY){
                               cache_intensity = TRUE,
                               combine_intensity = TRUE,
                               verbose = FALSE,
-                              fixed_params = c("K", "mu"),
+                              fixed_params = c("node_lambda"),
                               parscale = p_scale,
                               cores = N_CORES_INNER,
                               method = "Nelder-Mead")
