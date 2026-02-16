@@ -99,13 +99,11 @@ SEED <- 1267
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
-  # fixed_params = c("node_lambda") -> flat_par has:
-  #   mu, beta_overall, K, beta_edges, m, CS_params1, CS_params2, CS_params3, CS_params4
-  # node_lambda fixed: its MLE is just the sample mean of new-nodes-per-event,
-  # but when free it co-varies with the edges term in the multiplicative mark
-  # density.  mu and K are free — they only enter the ground intensity and
-  # should be identifiable from event times alone.
-  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, m = 0.1,
+  # fixed_params = c("K") -> flat_par has:
+  #   mu, beta_overall, beta_edges, node_lambda, m, CS_params1, CS_params2, CS_params3, CS_params4
+  # K is fixed as in the BA model (where K=1 usually).
+  # mu, beta_overall, beta_edges, node_lambda, and m are now all free.
+  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
                CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
@@ -225,7 +223,7 @@ if(SIMULATE){
     worker_id <- Sys.getpid()
     message(sprintf("  [Outer Worker %d] Starting fit for sim with %d events...", worker_id, length(x$events$t)))
     
-    fit <- tryCatch({
+      fit <- tryCatch({
       fit_hawkesNet(
         params_init = params_init,
         time_window = c(0, TIME),
@@ -237,7 +235,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = c("node_lambda"),
+        fixed_params = c("K"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -378,7 +376,7 @@ if(RUN_CONSISTENCY){
                               cache_intensity = TRUE,
                               combine_intensity = TRUE,
                               verbose = FALSE,
-                              fixed_params = c("node_lambda"),
+                              fixed_params = c("K"),
                               parscale = p_scale,
                               cores = N_CORES_INNER,
                               method = "Nelder-Mead")
