@@ -114,11 +114,9 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
   df[swap, c("from", "to")] <- df[swap, c("to", "from")]
   df <- df %>% distinct()
 
-  # Time: shift to start at 0 and convert to hours
+  # Time: already in hours and shifted to 0
   df$time <- as.numeric(df$time)
   df <- df[is.finite(df$time), ]
-  df$time <- df$time - min(df$time)
-  df$time <- df$time / 3600
   df <- df[order(df$time), , drop = FALSE]
 
   if (use_first_contact_only) {
@@ -508,13 +506,15 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
 # =============================================================================
 raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 df <- data.frame(
-  time = raw$V1 / 20,
+  time = raw$V1 / 20 / 3600,  # convert to hours immediately
   from = raw$V2,
   to   = raw$V3
 )
 
 set.seed(1)
-df$time <- df$time + rnorm(nrow(df), 0, 0.01)
+df$time <- df$time + rnorm(nrow(df), 0, 0.01 / 3600) # jitter in hours (0.01s)
+df$time <- df$time - min(df$time) # shift to 0
+df <- df[order(df$time), ] # ensure sorted
 
 # Build the FULL network (all days, no compression, no subsetting)
 obj_full <- make_hypertext_net(df, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
