@@ -342,7 +342,7 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
                           n_gof_outer = 0L, seed_events_gof = 20L) {
   cat("\n=== ", label, " ===\n")
   cat("  Network:", network.edgecount(net), "edges |", network.size(net), "nodes\n")
-  cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window[1], time_window[2]), "\n\n")
+  cat("  Time window:", sprintf("[%.3f, %.3f]", time_window[1], time_window[2]), "\n\n")
 
   # Fit
   cat("--- Fitting hawkesNet (", label, ") ---\n")
@@ -520,14 +520,17 @@ df <- df[order(df$time), ] # ensure sorted
 obj_full <- make_hypertext_net(df, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
 
 # Identify gap intervals in the raw edge times (before first-contact collapsing)
+# Normalize raw times to [0, 1] based on full window for gap identification
 all_edge_times_sorted <- sort(obj_full$edges$time)
-gap_intervals <- find_gap_intervals(all_edge_times_sorted, gap_threshold = GAP_THRESHOLD)
-cat("  Gap intervals found:", nrow(gap_intervals), "\n")
+full_range <- range(all_edge_times_sorted)
+norm_times <- (all_edge_times_sorted - full_range[1]) / (full_range[2] - full_range[1])
+gap_intervals <- find_gap_intervals(norm_times, gap_threshold = GAP_THRESHOLD / (full_range[2] - full_range[1]))
+cat("  Gap intervals found (normalized):", nrow(gap_intervals), "\n")
 if (nrow(gap_intervals) > 0) {
   for (g in seq_len(nrow(gap_intervals))) {
-    cat(sprintf("    Gap %d: [%.3f, %.3f] hours (duration %.1f h)\n",
+    cat(sprintf("    Gap %d: [%.4f, %.4f] (duration %.1f h)\n",
                 g, gap_intervals$start[g], gap_intervals$end[g],
-                gap_intervals$end[g] - gap_intervals$start[g]))
+                (gap_intervals$end[g] - gap_intervals$start[g]) * (full_range[2] - full_range[1])))
   }
 }
 
@@ -541,13 +544,13 @@ cat("######################################################################\n")
 # Subset edges to first session from the raw data, then rebuild network
 df_day1 <- subset_first_session(df, gap_threshold = GAP_THRESHOLD)
 obj_day1 <- make_hypertext_net(df_day1, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
-net_day1 <- obj_day1$net
+net_day1 <- normalize_times_01(obj_day1$net) # Normalize to [0, 1]
 
 times_day1 <- get_times(net_day1)$times
 time_window_day1 <- c(min(times_day1), max(times_day1))
 cat("  Day-1 network:", length(times_day1), "events |", network.size(net_day1), "nodes |",
     network.edgecount(net_day1), "edges\n")
-cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window_day1[1], time_window_day1[2]), "\n")
+cat("  Time window:", sprintf("[%.3f, %.3f]", time_window_day1[1], time_window_day1[2]), "\n")
 
 # Truncation for day-1
 n_nodes_day1 <- network.size(net_day1)
@@ -615,12 +618,12 @@ if (RUN_FULL_FIT) {
   cat("## FIT 2: Full data (mu=0 in overnight gaps)\n")
   cat("######################################################################\n")
 
-  net_full <- obj_full$net
+  net_full <- normalize_times_01(obj_full$net) # Normalize to [0, 1]
   times_full <- get_times(net_full)$times
   time_window_full <- c(min(times_full), max(times_full))
   cat("  Full network:", length(times_full), "events |", network.size(net_full), "nodes |",
       network.edgecount(net_full), "edges\n")
-  cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window_full[1], time_window_full[2]), "\n")
+  cat("  Time window:", sprintf("[%.3f, %.3f]", time_window_full[1], time_window_full[2]), "\n")
 
   # Truncation for full data
   n_nodes_full <- network.size(net_full)
