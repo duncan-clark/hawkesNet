@@ -199,8 +199,31 @@ cat("  Fit 4 value (neg-loglik):", fit4$fit$value, "\n")
 stopifnot(is.finite(fit4$fit$value))
 cat("  PASS: Fit 4 completed.\n")
 
-# ---- 8. Simulation comparison: all 4 fits ----
-cat("\n--- Simulation comparison (all 4 fits) ---\n")
+# ---- 8. Fit 5 — Non-simple day-1, activity, with m-parameter ----
+cat("\n--- Fit 5: Day-1 non-simple, activity + m-param (maxit=3) ---\n")
+m_init <- n_edges_ns / n_events_ns
+params_ns_m <- list(mu = n_events_ns, beta_overall = 0.3, K = 0.5,
+                    beta_edges = 0.3, node_lambda = 0.5, m = m_init,
+                    CS_params = c(-5, -3, rep(0, n_cs_ns - 2)))
+ps_ns_m <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5,
+              m = 0.5,
+              setNames(rep(0.1, n_cs_ns), paste0("CS_params", seq_len(n_cs_ns))))
+
+fit5 <- fit_hawkesNet(
+  params_init = params_ns_m, time_window = tw_ns, mark_filtration = net_ns,
+  PMF_mark = PMF_mark_CS, formula_RHS = FORMULA_RHS,
+  truncation = n_nodes_ns, mark_decay = "activity",
+  growth_only = FALSE, max_node_time = max(get_times(net_ns)$node_times),
+  method = "Nelder-Mead", maxit = 3, verbose = TRUE,
+  fixed_params = "K", parscale = ps_ns_m, cores = 1,
+  cache_intensity = TRUE, combine_intensity = TRUE
+)
+cat("  Fit 5 value (neg-loglik):", fit5$fit$value, "\n")
+stopifnot(is.finite(fit5$fit$value))
+cat("  PASS: Fit 5 completed.\n")
+
+# ---- 9. Simulation comparison: all 5 fits ----
+cat("\n--- Simulation comparison (all 5 fits) ---\n")
 
 sim_from_fit <- function(fit_obj, net_obs, inhom_bg, formula_rhs,
                          truncation, mark_decay, seed_events = 20L) {
@@ -287,10 +310,20 @@ sim4 <- tryCatch(
 )
 cat("done\n")
 
+# Fit 5: non-simple, activity + m-parameter
+cat("  Simulating Fit 5 ... ")
+sim5 <- tryCatch(
+  sim_from_fit(fit5, net_ns, no_inhom, FORMULA_RHS,
+               n_nodes_ns, "activity"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+cat("done\n")
+
 cat("\n--- Results ---\n")
-print_comparison("Fit 1  (simple, activity)",      sim1,  net_day1, times_d1)
-print_comparison("Fit 1b (non-simple, activity)",   sim1b, net_ns,   times_ns)
-print_comparison("Fit 3  (simple, node_entrance)",  sim3,  net_day1, times_d1)
-print_comparison("Fit 4  (non-simple, node_entrance)", sim4, net_ns, times_ns)
+print_comparison("Fit 1  (simple, activity)",        sim1,  net_day1, times_d1)
+print_comparison("Fit 1b (non-simple, activity)",    sim1b, net_ns,   times_ns)
+print_comparison("Fit 3  (simple, node_entrance)",   sim3,  net_day1, times_d1)
+print_comparison("Fit 4  (non-simple, node_entr.)",  sim4,  net_ns,   times_ns)
+print_comparison("Fit 5  (non-simple, activity+m)",  sim5,  net_ns,   times_ns)
 
 cat("\n=== ALL CHECKS PASSED ===\n")

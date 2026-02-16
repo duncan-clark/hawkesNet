@@ -1562,6 +1562,19 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     }
   }
 
+  # --- m-parameter (Poisson edge count): stack K_obs per event ---
+  # Detect if any event uses m-mode; assume uniform across events.
+  any_use_m <- any(vapply(seq_len(N), function(i) {
+    inp <- combined_inputs_list[[i]]
+    !is.null(inp) && isTRUE(inp$use_m)
+  }, FALSE))
+  K_obs_vec <- if (any_use_m) {
+    vapply(seq_len(N), function(i) {
+      inp <- combined_inputs_list[[i]]
+      if (is.null(inp) || degenerate[i]) 0L else as.integer(inp$K_obs)
+    }, 0L)
+  } else NULL
+
   # --- Free per-event data that is now stacked ---
   for (i in seq_len(N)) {
     combined_inputs_list[[i]]$change_stats <- NULL
@@ -1606,6 +1619,12 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     if (any(bad_lc)) log_contrib[bad_lc] <- 0
     cs_log <- c(0, cumsum(log_contrib))
     log_edge_sums <- cs_log[seg_end + 1L] - cs_log[seg_start + 1L]  # length N
+
+    # 3b. Poisson(K_obs; m) term when m-parameter is active
+    if (!is.null(K_obs_vec)) {
+      m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
+      log_edge_sums <- log_edge_sums + stats::dpois(K_obs_vec, m_p, log = TRUE)
+    }
 
     # 4. Node density: vectorized dpois (log = TRUE for stability)
     node_dens <- rep(0, N)

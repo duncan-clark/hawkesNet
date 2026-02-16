@@ -10,7 +10,7 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Five fits:
+## Six fits:
 ##   Fit 1  (primary)    — First session only (before first overnight gap).
 ##                          Clean single-session data, ~946 edges, ~100 nodes.
 ##                          Simple process: timestamps jittered so each event = 1 edge.
@@ -21,6 +21,9 @@
 ##   Fit 3  (NE simple)  — Same data as Fit 1 but mark_decay = "node_entrance".
 ##                          Avoids activity-decay cold-start feedback loop.
 ##   Fit 4  (NE non-sim) — Same data as Fit 1b but mark_decay = "node_entrance".
+##   Fit 5  (m-param)    — Same non-simple data as Fit 1b, mark_decay = "activity",
+##                          but adds Poisson(m) for number of edges per event.
+##                          CS probs act as sampling weights, m controls edge count.
 ##   Fit 2  (full)       — All three days, with mu forced to zero during overnight
 ##                          gaps (>1 h between events). The KDE background is estimated
 ##                          from active-period events only and zeroed out in gap intervals.
@@ -88,6 +91,10 @@ RUN_GOF_NONSIMPLE <- isTRUE(as.logical(Sys.getenv("RUN_GOF_NONSIMPLE", "FALSE"))
 RUN_NE_FITS <- isTRUE(as.logical(Sys.getenv("RUN_NE_FITS", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 RUN_GOF_NE <- isTRUE(as.logical(Sys.getenv("RUN_GOF_NE", "FALSE")))
 
+# Run Fit 5 (non-simple, activity, with m-parameter for Poisson edge count).
+RUN_M_FIT <- isTRUE(as.logical(Sys.getenv("RUN_M_FIT", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+RUN_GOF_M <- isTRUE(as.logical(Sys.getenv("RUN_GOF_M", "FALSE")))
+
 # Run Fit 2 (full data, mu=0 in gaps)? Off by default — enable with RUN_FULL_FIT=TRUE.
 RUN_FULL_FIT <- isTRUE(as.logical(Sys.getenv("RUN_FULL_FIT", "FALSE")))
 
@@ -112,8 +119,8 @@ cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
 cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "| gof_outer:", N_GOF_OUTER, "\n")
 cat("  MAX_ITER:", MAX_ITER, "\n")
 cat("  RUN_GOF_DAY1:", RUN_GOF_DAY1, "| RUN_GOF_FULL:", RUN_GOF_FULL, "| N_GOF:", N_GOF, "\n")
-cat("  RUN_FULL_FIT:", RUN_FULL_FIT, "| RUN_NONSIMPLE_FIT:", RUN_NONSIMPLE_FIT, "| RUN_NE_FITS:", RUN_NE_FITS, "\n")
-cat("  RUN_SIM_TEST:", RUN_SIM_TEST, "| RUN_GOF_NONSIMPLE:", RUN_GOF_NONSIMPLE, "| RUN_GOF_NE:", RUN_GOF_NE, "\n")
+cat("  RUN_FULL_FIT:", RUN_FULL_FIT, "| RUN_NONSIMPLE_FIT:", RUN_NONSIMPLE_FIT, "| RUN_NE_FITS:", RUN_NE_FITS, "| RUN_M_FIT:", RUN_M_FIT, "\n")
+cat("  RUN_SIM_TEST:", RUN_SIM_TEST, "| RUN_GOF_NONSIMPLE:", RUN_GOF_NONSIMPLE, "| RUN_GOF_NE:", RUN_GOF_NE, "| RUN_GOF_M:", RUN_GOF_M, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
 cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "| MAX_EDGES:", if (MAX_EDGES > 0) MAX_EDGES else "no cap", "\n\n")
 
@@ -820,6 +827,68 @@ if (RUN_NE_FITS) {
 }
 
 # =============================================================================
+# Fit 5: Day-1 non-simple, activity decay, with m-parameter (Poisson edge count)
+# =============================================================================
+# Uses the same non-simple data as Fit 1b but adds an m parameter so the number
+# of edges per event is Poisson(m) rather than emergent from independent
+# Bernoulli draws.  The CS probabilities act as sampling weights (which edges),
+# while m controls how many edges per event.
+# =============================================================================
+res_m_fit <- NULL
+params_init_m_fit <- NULL
+
+if (RUN_M_FIT && RUN_NONSIMPLE_FIT && !is.null(net_nonsimple)) {
+  cat("\n######################################################################\n")
+  cat("## FIT 5: Day-1 non-simple, activity decay, m-parameter\n")
+  cat("######################################################################\n")
+
+  verify_truncation(obj_ns_day1$edges, node_entry_time = net_nonsimple %v% "time",
+                    truncation = TRUNCATION_NONSIMPLE, mark_decay = MARK_DECAY)
+
+  exp_cs_m <- expected_params_PMF_mark_CS(net_nonsimple, FORMULA_RHS)
+  n_cs_m <- if (!is.na(exp_cs_m$CS_params_length)) exp_cs_m$CS_params_length else 3L
+
+  # Estimate initial m from observed edges per event
+  times_ns_m <- get_times(net_nonsimple)$times
+  n_events_m <- length(times_ns_m)
+  n_edges_m <- network.edgecount(net_nonsimple)
+  m_init <- n_edges_m / n_events_m
+  cat("  Initial m (edges/event):", round(m_init, 2), "\n")
+
+  mu_init_m <- n_events_m / (time_window_nonsimple[2] - time_window_nonsimple[1])
+  params_init_m_fit <- list(
+    mu = mu_init_m,
+    beta_overall = 0.3,
+    K = 0.5,
+    beta_edges = 0.3,
+    node_lambda = 0.5,
+    m = m_init,
+    CS_params = c(-5, -3, rep(0, n_cs_m - 2))
+  )
+
+  p_scale_m <- c(
+    mu = 1,
+    beta_overall = 0.1,
+    beta_edges = 0.1,
+    node_lambda = 0.5,
+    m = 0.5,
+    setNames(rep(0.1, n_cs_m), paste0("CS_params", seq_len(n_cs_m)))
+  )
+
+  res_m_fit <- run_fit_block(
+    net = net_nonsimple, inhom_bg = inhom_bg_nonsimple, time_window = time_window_nonsimple,
+    label = "Fit 5: Day-1 non-simple, activity, m-parameter",
+    params_init = params_init_m_fit, p_scale = p_scale_m,
+    formula_rhs = FORMULA_RHS, truncation = TRUNCATION_NONSIMPLE,
+    mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER, n_cores = N_CORES,
+    run_sim_test = RUN_SIM_TEST, n_sim_test = N_SIM_TEST,
+    run_gof = RUN_GOF_M, n_gof = N_GOF, n_cores_gof = N_CORES_GOF,
+    n_gof_outer = N_GOF_OUTER, seed_events_gof = SEED_EVENTS_GOF
+  )
+}
+
+# =============================================================================
 # Fit 2: Full data with mu=0 during gaps (optional)
 # =============================================================================
 res_full <- NULL
@@ -939,6 +1008,11 @@ save_list <- list(
   gof_ne_nonsimple      = if (!is.null(res_ne_nonsimple)) res_ne_nonsimple$gof else NULL,
   sim_test_ne_nonsimple = if (!is.null(res_ne_nonsimple)) res_ne_nonsimple$sim_test else NULL,
   params_init_ne_nonsimple = params_init_ne_nonsimple,
+  # Fit 5: day-1 non-simple, activity, m-parameter (same net/tw/trunc as Fit 1b)
+  fit_m      = if (!is.null(res_m_fit)) res_m_fit$fit else NULL,
+  gof_m      = if (!is.null(res_m_fit)) res_m_fit$gof else NULL,
+  sim_test_m = if (!is.null(res_m_fit)) res_m_fit$sim_test else NULL,
+  params_init_m = params_init_m_fit,
   # Shared metadata
   gap_intervals = gap_intervals,
   gap_threshold = GAP_THRESHOLD,
@@ -948,7 +1022,8 @@ save_list <- list(
   mark_decay_activity = "activity",
   RUN_FULL_FIT  = RUN_FULL_FIT,
   RUN_NONSIMPLE_FIT = RUN_NONSIMPLE_FIT,
-  RUN_NE_FITS = RUN_NE_FITS
+  RUN_NE_FITS = RUN_NE_FITS,
+  RUN_M_FIT = RUN_M_FIT
 )
 
 cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")

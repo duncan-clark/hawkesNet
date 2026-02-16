@@ -648,7 +648,9 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
     CS_params_length <- length(stats)
     CS_params_names <- names(stats)
   }, error = function(e) NULL)
-  list(required = required, CS_params_length = CS_params_length, CS_params_names = CS_params_names)
+  list(required = required,
+       optional = c("m", "vertex_categorical", "vertex_categorical_levels"),
+       CS_params_length = CS_params_length, CS_params_names = CS_params_names)
 }
 
 #' Validate parameters for the given mark PMF
@@ -856,6 +858,11 @@ PMF_mark_CS <- function(time,
     }
   }
   eps <- 1e-10  # used for probability clamping and safe log (CS safety)
+  # Optional m parameter: when present, number of edges per event ~ Poisson(m)
+  # and CS probabilities act as sampling weights (consistent with BA model).
+  use_m <- !is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0
+  m_val <- if (use_m) params$m else NULL
+
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
   }
@@ -1025,6 +1032,12 @@ PMF_mark_CS <- function(time,
         warning("PMF_mark_CS: non-finite probs in log_mark_density; using epsilon for log.")
       }
       log_mark_density <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE) + node_dens
+      # When m is specified, add Poisson(K_obs; m) term for number of edges
+      # (consistent with BA model density: Bernoulli product + Poisson count).
+      if (use_m) {
+        K_obs <- sum(in_mark, na.rm = TRUE)
+        log_mark_density <- log_mark_density + dpois(K_obs, m_val, log = TRUE)
+      }
       mark_density <- exp(log_mark_density)
     }
   }else{
@@ -1034,6 +1047,8 @@ PMF_mark_CS <- function(time,
   
   # Ensure node_dens is initialized (may not be set in degenerate/no-mark paths)
   if (!exists("node_dens", inherits = FALSE)) node_dens <- 0
+  # K_obs for Poisson(m) term in closure (only meaningful when use_m = TRUE)
+  if (!exists("K_obs", inherits = FALSE)) K_obs <- sum(in_mark, na.rm = TRUE)
   
   # log_density_func_light: full version with decay, vertex_categorical, safety clamping.
   # (Environment is rebound to a minimal env after definition.)
@@ -1061,6 +1076,11 @@ PMF_mark_CS <- function(time,
     
     if (anyNA(p)) return(NA_real_)
     log_edge_part <- sum(log(p[in_mark])) + sum(log1p(-p[!in_mark]))
+    # Poisson(K_obs; m) term when m-parameter is active
+    if (use_m) {
+      m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
+      log_edge_part <- log_edge_part + dpois(K_obs, m_p, log = TRUE)
+    }
     # --- Safety: handle dpois=0 or non-finite in closure (suggestion 8) ---
     node_dens <- if (!is.null(max_node_time) && time > max_node_time) {
       0
@@ -1121,6 +1141,8 @@ PMF_mark_CS <- function(time,
       time                            = time,
       max_node_time                   = max_node_time,
       degenerate_edges                = degenerate_edges,
+      use_m                           = use_m,
+      K_obs                           = K_obs,
       observed_categorical            = obs_cat,
       level_names_by_attr             = level_names_by_attr,
       expand_vertex_categorical_probs = expand_vertex_categorical_probs,
@@ -1149,6 +1171,8 @@ PMF_mark_CS <- function(time,
       time = time,
       max_node_time = max_node_time,
       degenerate_edges = degenerate_edges,
+      use_m = use_m,
+      K_obs = K_obs,
       observed_categorical = obs_cat,
       level_names_by_attr = level_names_by_attr
     )
@@ -1305,41 +1329,62 @@ PMF_mark_CS <- function(time,
       if (verbose_mark) {
         n_iso <- sum(sna::degree(mark_sample, gmode = "graph") == 0)
         median_diff <- median(diffs)
-        cat(sprintf("    [Mark] Cands: %d | E[edges]: %.2f | max_p: %.4e | mean_p: %.4e | med_diff: %.4f | isolates: %d/%d | new_nodes: %d\n", 
+        cat(sprintf("    [Mark] Cands: %d | E[edges]: %.2f | max_p: %.4e | mean_p: %.4e | med_diff: %.4f | isolates: %d/%d | new_nodes: %d | use_m: %s\n", 
                     length(probs), sum(probs), max(probs), mean(probs), median_diff,
-                    n_iso, mark_sample %n% "n", new_nodes))
+                    n_iso, mark_sample %n% "n", new_nodes, use_m))
       }
 
-      add <- runif(length(probs)) < probs
-      # --- Safety: no NA in add before add.edges (suggestion 5 & 9) ---
-      if (any(is.na(add))) {
-        warning("PMF_mark_CS (generate_mark): NA in edge add vector; treating as FALSE (do not add edge).")
-        add[is.na(add)] <- FALSE
+      if (use_m) {
+        # --- m-parameter mode: sample K ~ Poisson(m) edges using probs as weights ---
+        # Consistent with BA model: Poisson count + weighted sampling without replacement.
+        K_gen <- rpois(1, m_val)
+        K_gen <- min(K_gen, length(probs))
+        if (K_gen > 0 && length(probs) > 0) {
+          w <- probs / sum(probs)
+          w[!is.finite(w)] <- eps
+          w[w <= 0] <- eps
+          w <- w / sum(w)
+          sampled_idx <- sample(length(probs), size = K_gen, replace = FALSE, prob = w)
+          add.edges(mark_sample, heads[sampled_idx], tails[sampled_idx])
+          set.edge.attribute(mark_sample, "time", c(mark_sample %e% 'time', rep(time, K_gen)))
+          p_chosen <- pmax(probs[sampled_idx], eps)
+          log_edge_gen <- dpois(K_gen, m_val, log = TRUE) + sum(log(p_chosen), na.rm = TRUE)
+        } else {
+          log_edge_gen <- dpois(K_gen, m_val, log = TRUE)
+        }
+        dpois_val <- dpois(new_nodes - old_nodes, params$node_lambda)
+        if (!is.finite(dpois_val) || dpois_val <= 0) dpois_val <- 1e-300
+        log_multinomial_sample <- log_categorical_density(params, mark_sample, old_nodes, new_size, eps)$log_dens
+        log_mark_sample_density <- log_edge_gen + log(dpois_val) + log_multinomial_sample
+        mark_sample_density <- exp(log_mark_sample_density)
+      } else {
+        # --- Original Bernoulli mode: independent draw per candidate ---
+        add <- runif(length(probs)) < probs
+        if (any(is.na(add))) {
+          warning("PMF_mark_CS (generate_mark): NA in edge add vector; treating as FALSE.")
+          add[is.na(add)] <- FALSE
+        }
+        n_added_edges <- sum(add)
+        if (n_added_edges > 0) {
+          add.edges(mark_sample, heads[add], tails[add])
+          set.edge.attribute(mark_sample, "time", c(mark_sample %e% 'time', rep(time, n_added_edges)))
+        }
+        dpois_val <- dpois(new_nodes - old_nodes, params$node_lambda)
+        if (!is.finite(dpois_val) || dpois_val <= 0) {
+          warning("PMF_mark_CS (generate_mark): degenerate dpois for node count; using small positive value for density.")
+          dpois_val <- 1e-300
+        }
+        p_add <- pmax(probs[add], eps, na.rm = TRUE)
+        p_not <- pmax(1 - probs[!add], eps, na.rm = TRUE)
+        if (any(!is.finite(p_add)) || any(!is.finite(p_not))) {
+          warning("PMF_mark_CS (generate_mark): non-finite probs in log_mark_sample_density; using epsilon for log.")
+        }
+        log_multinomial_sample <- log_categorical_density(params, mark_sample, old_nodes, new_size, eps)$log_dens
+        mark_sample_density <- prod(p_add) * prod(p_not) * dpois_val * exp(log_multinomial_sample)
+        log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) +
+                                   sum(log(p_not), na.rm = TRUE) +
+                                   log(dpois_val) + log_multinomial_sample
       }
-      n_added_edges <- sum(add)
-      if (n_added_edges > 0) {
-        add.edges(mark_sample,
-                  heads[add],
-                  tails[add]
-        )
-        set.edge.attribute(mark_sample,"time",c(mark_sample %e% 'time',rep(time, n_added_edges)))
-      }
-      # --- Safety: safe log and dpois for sample density (suggestion 6 & 8) ---
-      dpois_val <- dpois(new_nodes-old_nodes, params$node_lambda)
-      if (!is.finite(dpois_val) || dpois_val <= 0) {
-        warning("PMF_mark_CS (generate_mark): degenerate dpois for node count; using small positive value for density.")
-        dpois_val <- 1e-300
-      }
-      p_add <- pmax(probs[add], eps, na.rm = TRUE)
-      p_not <- pmax(1 - probs[!add], eps, na.rm = TRUE)
-      if (any(!is.finite(p_add)) || any(!is.finite(p_not))) {
-        warning("PMF_mark_CS (generate_mark): non-finite probs in log_mark_sample_density; using epsilon for log.")
-      }
-      log_multinomial_sample <- log_categorical_density(params, mark_sample, old_nodes, new_size, eps)$log_dens
-      mark_sample_density <- prod(p_add) * prod(p_not) * dpois_val * exp(log_multinomial_sample)
-      log_mark_sample_density <- sum(log(p_add), na.rm = TRUE) +
-                                 sum(log(p_not), na.rm = TRUE) +
-                                 log(dpois_val) + log_multinomial_sample
       }
       }else{
         if(is.null(last_net)){
