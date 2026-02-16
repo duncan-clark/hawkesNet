@@ -10,14 +10,22 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Full run (default under SLURM): all edges (no cap), no truncation, N_GOF=100, MAX_ITER=5000, 100 cores.
+## Two fits:
+##   Fit 1 (primary) — First session only (before first overnight gap).
+##                      Clean single-session data, ~946 edges, ~100 nodes.
+##   Fit 2 (full)    — All three days, with mu forced to zero during overnight
+##                      gaps (>1 h between events). The KDE background is estimated
+##                      from active-period events only and zeroed out in gap intervals.
+##
+## Full run (default under SLURM): both fits, GOF for Fit 1 only.
 ## Cluster mode knobs:
-##   SLURM_CPUS_PER_TASK=32 MAX_ITER=5000 N_GOF=50 GOF_CORES=32 Rscript ...
+##   SLURM_CPUS_PER_TASK=100 MAX_ITER=5000 N_GOF=100 GOF_CORES=100
+##   RUN_GOF_FULL=TRUE  (to also run GOF on the full-data fit)
 ##
 ## Notes:
 ## - This models *edge formation* (simple graph): we collapse repeated contacts to first contact per dyad.
 ## - We do NOT use growth_only; transitivity is included via gwesp.
-## - Inhomogeneous background is estimated via KDE over the full time window (multi-day supported).
+## - Inhomogeneous background is estimated via KDE.
 ## =============================================================================
 
 library(hawkesNet)
@@ -33,9 +41,6 @@ if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) {
 }
 
 # Use the repo (most up-to-date) implementation even if the installed package is older.
-# This is helpful during development, but note: on macOS/Windows we use PSOCK workers for parallelism,
-# and PSOCK workers do NOT automatically see functions you sourced into the master session.
-# For robust parallel runs, prefer installing the package and leave USE_REPO_CODE=FALSE.
 USE_REPO_CODE <- isTRUE(as.logical(Sys.getenv("USE_REPO_CODE", "FALSE")))
 if (USE_REPO_CODE) {
   source(file.path(PKG_ROOT, "R", "utils.R"))
@@ -52,12 +57,9 @@ if (USE_REPO_CODE) {
 default_local_quick <- if (nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))) "FALSE" else "TRUE"
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", default_local_quick)))
 
-# Default to 7 cores even locally (override with SLURM_CPUS_PER_TASK / env var if desired).
 N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L))
 N_CORES <- max(1L, N_CORES)
 
-# If we're sourcing repo code in a PSOCK-only context (macOS/Windows/interactive), force serial
-# to avoid "could not find function ..." errors inside workers.
 if (USE_REPO_CODE) {
   os <- Sys.info()[["sysname"]]
   psock_only <- (os %in% c("Darwin", "Windows")) || interactive() || isTRUE(getOption("hawkesNet.force_psock", FALSE))
@@ -73,46 +75,55 @@ trunc_env <- Sys.getenv("TRUNCATION", "")
 TRUNCATION <- if (nzchar(trunc_env)) suppressWarnings(as.integer(trunc_env)) else NA_integer_
 if (length(TRUNCATION) != 1L || !is.finite(TRUNCATION)) TRUNCATION <- NA_integer_
 
-# GOF: proper run uses 100 sims (matches 100 cores); quick run skips or uses 2
-RUN_GOF <- isTRUE(as.logical(Sys.getenv("RUN_GOF", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+# GOF controls: separate flags for day-1 and full fits.
+# Day-1 GOF runs by default under SLURM; full GOF is opt-in.
+RUN_GOF_DAY1 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_DAY1",
+                        Sys.getenv("RUN_GOF", if (LOCAL_QUICK) "FALSE" else "TRUE"))))
+RUN_GOF_FULL <- isTRUE(as.logical(Sys.getenv("RUN_GOF_FULL", "FALSE")))
 N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
-# Optional quick simulation test from fitted values (before GOF). Skip when under SLURM (saves time).
-RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "FALSE")))
-N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
 N_GOF <- max(1L, N_GOF)
 N_CORES_GOF <- as.integer(Sys.getenv("GOF_CORES", N_CORES))
 N_CORES_GOF <- max(1L, min(N_CORES_GOF, N_GOF))
-# PSOCK outer workers for GOF (avoids fork deadlocks; faster on 100 cores)
 N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", if (N_CORES >= 32L) min(50L, N_CORES) else 0L))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
+RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "FALSE")))
+N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
+
+# Run Fit 2 (full data, mu=0 in gaps)? Default: TRUE under SLURM, FALSE locally.
+RUN_FULL_FIT <- isTRUE(as.logical(Sys.getenv("RUN_FULL_FIT", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+
 # Data shaping
 USE_FIRST_CONTACT_ONLY <- isTRUE(as.logical(Sys.getenv("USE_FIRST_CONTACT_ONLY", "TRUE")))
-MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", 0L))  # 0 = no cap; use all edges
+MAX_EDGES <- as.integer(Sys.getenv("MAX_EDGES", 0L))  # 0 = no cap
 
 # Background KDE
 GRID_N <- as.integer(Sys.getenv("KDE_GRID_N", if (LOCAL_QUICK) 1024L else 4096L))
-BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_))) # NA => default
+BW <- suppressWarnings(as.numeric(Sys.getenv("KDE_BW", NA_real_)))
 
-# Model specification (transitivity + degree).
-# Include "edges" as baseline for interpretability of other CS stats. Fix K for stability.
-# degree(0) penalizes degree-0 nodes (reduces excess isolates in simulations).
+# Gap threshold (hours) for identifying overnight breaks
+GAP_THRESHOLD <- 1.0
+
+# Model specification
 FORMULA_RHS <- Sys.getenv("FORMULA_RHS", "edges + degree(0) + gwdegree(0.1) + gwesp(0.1)")
-FORMULA_RHS_STAR_ESP <- "edges + degree(0) + star(c(2,3,4)) + esp(2:4)"  # Alternative: star+esp instead of gwdegree+gwesp
-FORMULA_RHS_DECAY05 <- "edges + degree(0) + gwdegree(0.5) + gwesp(0.5)"  # Larger decay = weaker penalty on fat tails
 MARK_DECAY <- Sys.getenv("MARK_DECAY", "activity")
 GROWTH_ONLY <- FALSE
 
 cat("=== Hypertext conference (modern) ===\n")
 cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
 cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "| gof_outer:", N_GOF_OUTER, "\n")
-cat("  MAX_ITER:", MAX_ITER, "| RUN_GOF:", RUN_GOF, "| N_GOF:", N_GOF, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
+cat("  MAX_ITER:", MAX_ITER, "\n")
+cat("  RUN_GOF_DAY1:", RUN_GOF_DAY1, "| RUN_GOF_FULL:", RUN_GOF_FULL, "| N_GOF:", N_GOF, "\n")
+cat("  RUN_FULL_FIT:", RUN_FULL_FIT, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
 cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "| MAX_EDGES:", if (MAX_EDGES > 0) MAX_EDGES else "no cap", "\n\n")
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Helpers
-# -----------------------------------------------------------------------------
+# =============================================================================
+
+#' Build a network object from hypertext edge data.
+#' No timeline compression — times are in hours from first event.
 make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L) {
   stopifnot(all(c("from", "to", "time") %in% names(df)))
 
@@ -121,11 +132,12 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
   df[swap, c("from", "to")] <- df[swap, c("to", "from")]
   df <- df %>% distinct()
 
-  # Time: shift to start at 0 and convert to hours (more stable than seconds)
+  # Time: shift to start at 0 and convert to hours
   df$time <- as.numeric(df$time)
   df <- df[is.finite(df$time), ]
   df$time <- df$time - min(df$time)
   df$time <- df$time / 3600
+  df <- df[order(df$time), , drop = FALSE]
 
   if (use_first_contact_only) {
     df <- df %>%
@@ -139,8 +151,7 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
     df <- df[seq_len(max_edges), , drop = FALSE]
   }
 
-  # Map vertex ids to 1..n in *entry-time* order so node_entrance truncation is meaningful.
-  # Entry time = first appearance in any edge.
+  # Map vertex ids to 1..n in *entry-time* order
   nodes_raw <- sort(unique(c(df$from, df$to)))
   entry_time_by_node <- vapply(nodes_raw, function(v) {
     min(df$time[df$from == v | df$to == v], na.rm = TRUE)
@@ -153,10 +164,8 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
   df$tail <- unname(id_map[as.character(df$from)])
   df$head <- unname(id_map[as.character(df$to)])
 
-  # Node "entry" times in ID order
   node_time <- as.numeric(entry_time_by_node)
 
-  # Build a simple undirected network
   el <- as.matrix(df[, c("tail", "head")])
   net <- network::network(el, matrix.type = "edgelist", directed = FALSE)
   network::set.edge.attribute(net, "time", df$time)
@@ -164,6 +173,82 @@ make_hypertext_net <- function(df, use_first_contact_only = TRUE, max_edges = 0L
   network::delete.vertex.attribute(net, "vertex.names")
 
   list(net = net, edges = df, nodes = nodes, id_map = id_map)
+}
+
+#' Identify gap intervals (overnight breaks) from event times.
+#' Returns a data.frame with columns: start, end (in hours).
+find_gap_intervals <- function(event_times, gap_threshold = 1.0) {
+  event_times <- sort(event_times)
+  gaps <- diff(event_times)
+  big <- which(gaps > gap_threshold)
+  if (length(big) == 0) return(data.frame(start = numeric(0), end = numeric(0)))
+  data.frame(
+    start = event_times[big],
+    end   = event_times[big + 1L]
+  )
+}
+
+#' Check whether a time falls inside any gap interval.
+in_gap <- function(t, gap_intervals) {
+  if (nrow(gap_intervals) == 0) return(rep(FALSE, length(t)))
+  out <- logical(length(t))
+  for (i in seq_len(nrow(gap_intervals))) {
+    out <- out | (t > gap_intervals$start[i] & t < gap_intervals$end[i])
+  }
+  out
+}
+
+#' Zero out the KDE background during gap intervals and recompute integral_bg.
+#'
+#' Takes the output of prepare_inhomogeneous_background() and a gap_intervals
+#' data.frame (from find_gap_intervals), zeroes the KDE rate in those intervals,
+#' and returns a modified inhom_bg with corrected mu_vec, integral_bg, mu_fun.
+zero_gaps_inhom_bg <- function(inhom_bg, gap_intervals) {
+  if (nrow(gap_intervals) == 0) return(inhom_bg)
+
+  mu_fit <- inhom_bg$mu_fit
+  grid   <- mu_fit$grid
+  mu_grid <- mu_fit$mu_grid
+
+  # Zero out grid points inside gaps
+  is_gap <- in_gap(grid, gap_intervals)
+  mu_grid_zeroed <- mu_grid
+  mu_grid_zeroed[is_gap] <- 0
+
+  # Rebuild mu_fun with zeroed grid
+  mu_fun_zeroed <- approxfun(grid, mu_grid_zeroed, rule = 2)
+
+  # Recompute integral_bg via trapezoidal rule on the zeroed grid
+  dx <- diff(grid)
+  area <- dx * (head(mu_grid_zeroed, -1) + tail(mu_grid_zeroed, -1)) / 2
+  integral_bg_zeroed <- sum(area)
+
+  # Recompute mu_vec at event times
+  mu_vec_zeroed <- mu_fun_zeroed(inhom_bg$times)
+  mu_vec_zeroed <- pmax(mu_vec_zeroed, 1e-12)
+
+  # Update mu_fit in-place
+  mu_fit_zeroed <- mu_fit
+  mu_fit_zeroed$mu_grid <- mu_grid_zeroed
+  mu_fit_zeroed$mu_fun  <- mu_fun_zeroed
+
+  list(
+    mu_vec      = mu_vec_zeroed,
+    integral_bg = integral_bg_zeroed,
+    times       = inhom_bg$times,
+    mu_fit      = mu_fit_zeroed,
+    Lambda_fun  = inhom_bg$Lambda_fun,  # note: Lambda_fun is not recomputed; use integral_bg_zeroed
+    gap_intervals = gap_intervals
+  )
+}
+
+#' Subset edges to the first session (before the first gap > gap_threshold).
+subset_first_session <- function(df, gap_threshold = 1.0) {
+  df <- df[order(df$time), , drop = FALSE]
+  gaps <- diff(df$time)
+  first_gap <- which(gaps > gap_threshold)[1]
+  if (is.na(first_gap)) return(df)  # no gaps — all data is one session
+  df[seq_len(first_gap), , drop = FALSE]
 }
 
 diagnose_truncation <- function(edges_df, node_entry_time,
@@ -178,27 +263,20 @@ diagnose_truncation <- function(edges_df, node_entry_time,
   edges_df <- edges_df[order(edges_df$time), , drop = FALSE]
   n_all <- length(node_entry_time)
 
-  # Edges that are *impossible regardless of truncation*: endpoint not yet present at its first-contact time.
-  # (Also catches inconsistent node-time assignment.)
   impossible_any <- edges_df$time < pmax(node_entry_time[edges_df$tail], node_entry_time[edges_df$head])
-  # In a simple graph, re-adding an existing edge is impossible under any truncation.
   u <- pmin(edges_df$tail, edges_df$head)
   v <- pmax(edges_df$tail, edges_df$head)
   edge_key <- u + n_all * v
   impossible_any <- impossible_any | duplicated(edge_key)
   n_impossible_any <- sum(impossible_any, na.rm = TRUE)
 
-  # For "activity" truncation: maintain last-activity times as we replay events.
   last_activity <- node_entry_time
   n_edges <- nrow(edges_df)
   n_impossible <- integer(length(trunc_grid))
   n_candidate_edges <- numeric(length(trunc_grid))
 
-  # Precompute, per edge, the number of present nodes at that time (entry time <= t)
-  # Since node IDs are entry-ordered, we can advance a pointer.
   entry_sorted <- node_entry_time
   if (!isTRUE(all(diff(entry_sorted) >= -1e-12))) {
-    # Safety: if entry times are not monotone, fall back to ranking by time
     entry_sorted <- sort(entry_sorted)
   }
   present_count_at_edge <- integer(n_edges)
@@ -209,54 +287,36 @@ diagnose_truncation <- function(edges_df, node_entry_time,
     present_count_at_edge[i] <- ptr
   }
 
-  # Helper: compute active set (IDs) for current time given truncation
   get_active_nodes <- function(n_present, truncation) {
     if (n_present <= 1L) return(integer(0))
     if (mark_decay == "node_entrance") {
       window_start <- max(1L, n_present - truncation + 1L)
       return(window_start:n_present)
     }
-    # activity: top-k by last_activity among present nodes; tie-break by id
     ids <- seq_len(n_present)
     ord <- order(last_activity[ids], ids, decreasing = TRUE)
     sort(ord[seq_len(min(truncation, n_present))])
   }
 
-  # Main pass for each truncation value.
-  # Optimized enough for this dataset size; avoids constructing networks or ERNM objects.
   for (k in seq_along(trunc_grid)) {
     tr <- as.integer(trunc_grid[k])
     if (!is.finite(tr) || tr < 2L) tr <- 2L
-
-    # Reset activity tracker for each truncation run.
     last_activity <- node_entry_time
     imp <- 0L
     cand_total <- 0
-
     for (i in seq_len(n_edges)) {
-      if (impossible_any[i]) {
-        imp <- imp + 1L
-        next
-      }
+      if (impossible_any[i]) { imp <- imp + 1L; next }
       n_present <- present_count_at_edge[i]
       active <- get_active_nodes(n_present, tr)
-
-      # Candidate edges count at this time (ignores existing-edge filtering; OK for rough scaling).
       cand_total <- cand_total + (length(active) * (length(active) - 1L) / 2)
-
       tail_i <- edges_df$tail[i]
       head_i <- edges_df$head[i]
-      if (!(tail_i %in% active && head_i %in% active)) {
-        imp <- imp + 1L
-      }
-
-      # Update activity after processing this edge (so "pre-edge" activity defines candidate set).
+      if (!(tail_i %in% active && head_i %in% active)) imp <- imp + 1L
       if (mark_decay == "activity") {
         last_activity[tail_i] <- edges_df$time[i]
         last_activity[head_i] <- edges_df$time[i]
       }
     }
-
     n_impossible[k] <- imp
     n_candidate_edges[k] <- cand_total
   }
@@ -274,8 +334,6 @@ diagnose_truncation <- function(edges_df, node_entry_time,
   )
 }
 
-#' Verify that the chosen truncation makes all observed edges possible.
-#' Stops with error if any edge would be impossible under the given truncation.
 verify_truncation <- function(edges_df, node_entry_time, truncation, mark_decay) {
   diag <- diagnose_truncation(edges_df, node_entry_time,
                               trunc_grid = as.integer(truncation),
@@ -293,430 +351,372 @@ verify_truncation <- function(edges_df, node_entry_time, truncation, mark_decay)
   invisible(TRUE)
 }
 
-# -----------------------------------------------------------------------------
+#' Run a fit + optional sim test + optional GOF.
+#' Returns a list with fit, sim_test, gof components.
+run_fit_block <- function(net, inhom_bg, time_window, label,
+                          params_init, p_scale,
+                          formula_rhs, truncation, mark_decay, growth_only,
+                          max_iter, n_cores,
+                          run_sim_test = FALSE, n_sim_test = 3L,
+                          run_gof = FALSE, n_gof = 100L, n_cores_gof = n_cores,
+                          n_gof_outer = 0L, seed_events_gof = 20L) {
+  cat("\n=== ", label, " ===\n")
+  cat("  Network:", network.edgecount(net), "edges |", network.size(net), "nodes\n")
+  cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window[1], time_window[2]), "\n\n")
+
+  # Fit
+  cat("--- Fitting hawkesNet ---\n")
+  fit <- fit_hawkesNet(
+    params_init = params_init,
+    time_window = time_window,
+    mark_filtration = net,
+    PMF_mark = PMF_mark_CS,
+    mu_vec = inhom_bg$mu_vec,
+    integral_bg = inhom_bg$integral_bg,
+    formula_RHS = formula_rhs,
+    truncation = truncation,
+    mark_decay = mark_decay,
+    growth_only = growth_only,
+    max_node_time = max(get_times(net)$node_times),
+    method = "Nelder-Mead",
+    maxit = max_iter,
+    reltol = 1e-8,
+    trace = 0,
+    verbose = TRUE,
+    fixed_params = c("mu", "K"),
+    parscale = p_scale,
+    cache_intensity = TRUE,
+    combine_intensity = TRUE,
+    cores = n_cores
+  )
+
+  if (!is.null(fit$fit_table)) {
+    cat("\n--- Fit results (", label, ") ---\n")
+    print(fit$fit_table, max = NULL)
+  }
+
+  # Optional sim test
+  sim_test_res <- NULL
+  if (run_sim_test && !is.null(fit$params)) {
+    cat("\n--- Simulation test (", label, ") ---\n")
+    pfit <- fit$params
+    seed_net_test <- NULL
+    seed_times_test <- NULL
+    if (seed_events_gof > 0) {
+      all_times <- get_times(net)$times
+      if (length(all_times) >= seed_events_gof) {
+        t_seed <- all_times[seed_events_gof]
+        seed_net_test <- filtration_to_net(net, t_seed, equals = TRUE)
+        seed_times_test <- all_times[1:seed_events_gof]
+        cat("  Seeding with first", seed_events_gof, "events (up to t =", round(t_seed, 4), ")\n")
+      }
+    }
+    sims_test <- vector("list", n_sim_test)
+    for (i in seq_len(n_sim_test)) {
+      sims_test[[i]] <- tryCatch({
+        sim_hawkesNet(
+          params = pfit,
+          time_window = time_window,
+          PMF_mark = PMF_mark_CS,
+          cond_intensity = cond_intensity,
+          formula_RHS = formula_rhs,
+          truncation = truncation,
+          mark_decay = mark_decay,
+          growth_only = growth_only,
+          max_node_time = max(get_times(net)$node_times),
+          hashed_edges = TRUE,
+          verbose = FALSE,
+          mu_multiplier = 5,
+          stop_on_full_network = FALSE,
+          inhom_bg = inhom_bg,
+          seed_net = seed_net_test,
+          seed_times = seed_times_test
+        )
+      }, error = function(e) {
+        list(net = NULL, events = list(t = numeric(0)), error = e$message)
+      })
+    }
+    n_obs <- network::network.size(net)
+    e_obs <- network::network.edgecount(net)
+    deg_obs <- sna::degree(net, gmode = "graph")
+    mean_deg_obs <- mean(deg_obs[deg_obs > 0], na.rm = TRUE)
+    if (is.na(mean_deg_obs) || !is.finite(mean_deg_obs)) mean_deg_obs <- 0
+    n_sim_ok <- sum(!sapply(sims_test, function(s) is.null(s$net)))
+    n_edges_sim <- vapply(sims_test, function(s) {
+      if (is.null(s$net)) NA_integer_ else network::network.edgecount(s$net)
+    }, integer(1))
+    n_nodes_sim <- vapply(sims_test, function(s) {
+      if (is.null(s$net)) NA_integer_ else network::network.size(s$net)
+    }, integer(1))
+    mean_deg_sim <- vapply(sims_test, function(s) {
+      if (is.null(s$net)) NA_real_
+      else {
+        d <- sna::degree(s$net, gmode = "graph")
+        m <- mean(d[d > 0], na.rm = TRUE)
+        if (is.na(m) || !is.finite(m)) 0 else m
+      }
+    }, numeric(1))
+    cat("  Observed:  n_edges =", e_obs, "| n_nodes =", n_obs, "| mean_deg(>0) =", round(mean_deg_obs, 2), "\n")
+    cat("  Simulated:", n_sim_ok, "/", n_sim_test, "succeeded\n")
+    if (n_sim_ok > 0) {
+      cat("    n_edges:  ", paste(na.omit(n_edges_sim), collapse = ", "), "\n")
+      cat("    n_nodes:  ", paste(na.omit(n_nodes_sim), collapse = ", "), "\n")
+      cat("    mean_deg: ", paste(round(na.omit(mean_deg_sim), 2), collapse = ", "), "\n")
+    }
+    sim_test_res <- list(sims = sims_test, n_obs = n_obs, e_obs = e_obs, mean_deg_obs = mean_deg_obs)
+  }
+
+  # Optional GOF
+  gof_res <- NULL
+  if (run_gof) {
+    cat("\n--- GOF (", label, ") ---\n")
+    gof_fun <- if (exists("gof", mode = "function")) get("gof", mode = "function") else hawkesNet::gof
+    gof_formals <- names(formals(gof_fun))
+    gof_args <- list(
+      fit = fit,
+      net_obs = net,
+      params_init = params_init,
+      PMF_mark = PMF_mark_CS,
+      cond_intensity = cond_intensity,
+      formula_RHS = formula_rhs,
+      time_window = time_window,
+      truncation = as.integer(truncation),
+      mark_decay = as.character(mark_decay),
+      growth_only = isTRUE(growth_only),
+      max_node_time = max(get_times(net)$node_times),
+      inhom_bg = inhom_bg,
+      n_sim = as.integer(n_gof),
+      cores = as.integer(n_cores_gof),
+      cores_outer = if (n_gof_outer > 0L) as.integer(n_gof_outer) else NULL,
+      max_deg = 30L,
+      k_esp = 30L,
+      degree = 0L,
+      esp = 0L,
+      mu_multiplier = 5,
+      seed_events = as.integer(seed_events_gof),
+      verbose = TRUE
+    )
+    gof_args <- gof_args[names(gof_args) %in% gof_formals]
+    gof_res <- do.call(gof_fun, gof_args)
+    if (!is.null(gof_res$plots) && requireNamespace("ggplot2", quietly = TRUE)) {
+      if (!is.null(gof_res$plots$degree_plot)) print(gof_res$plots$degree_plot)
+      if (!is.null(gof_res$plots$esp_plot)) print(gof_res$plots$esp_plot)
+      if (!is.null(gof_res$plots$geodist_plot)) print(gof_res$plots$geodist_plot)
+      if (!is.null(gof_res$plots$waiting_times_plot)) print(gof_res$plots$waiting_times_plot)
+    }
+  }
+
+  list(fit = fit, sim_test = sim_test_res, gof = gof_res)
+}
+
+# =============================================================================
 # Load data
-# -----------------------------------------------------------------------------
+# =============================================================================
 raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 df <- data.frame(
-  time = raw$V1 / 20,   # original timestamps are in 1/20 seconds
+  time = raw$V1 / 20,
   from = raw$V2,
   to   = raw$V3
 )
 
-# Small jitter to break ties (helps optimization / KDE)
 set.seed(1)
 df$time <- df$time + rnorm(nrow(df), 0, 0.01)
 
-obj <- make_hypertext_net(df, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
-net <- obj$net
+# Build the FULL network (all days, no compression, no subsetting)
+obj_full <- make_hypertext_net(df, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
 
-times <- get_times(net)$times
-time_window <- c(min(times), max(times))
-cat("  Network:", length(times), "event times | nodes:", network.size(net), "| edges:", network.edgecount(net), "\n")
-cat("  Time window (hours):", sprintf("[%.3f, %.3f]", time_window[1], time_window[2]), "\n\n")
-
-# -----------------------------------------------------------------------------
-# Choose truncation
-# -----------------------------------------------------------------------------
-# Hypertext: truncation = number of nodes (all nodes in candidate set at all times).
-n_nodes <- network.size(net)
-if (is.na(TRUNCATION)) {
-  TRUNCATION <- n_nodes
-  cat("  Using TRUNCATION =", TRUNCATION, "(= network size; all edges possible)\n\n")
-} else {
-  cat("  Using TRUNCATION (from env) =", TRUNCATION, "\n\n")
+# Identify gap intervals in the raw edge times (before first-contact collapsing)
+all_edge_times_sorted <- sort(obj_full$edges$time)
+gap_intervals <- find_gap_intervals(all_edge_times_sorted, gap_threshold = GAP_THRESHOLD)
+cat("  Gap intervals found:", nrow(gap_intervals), "\n")
+if (nrow(gap_intervals) > 0) {
+  for (g in seq_len(nrow(gap_intervals))) {
+    cat(sprintf("    Gap %d: [%.3f, %.3f] hours (duration %.1f h)\n",
+                g, gap_intervals$start[g], gap_intervals$end[g],
+                gap_intervals$end[g] - gap_intervals$start[g]))
+  }
 }
 
-# Verify: all edges must be possible under the chosen truncation
-verify_truncation(obj$edges, node_entry_time = net %v% "time",
-                  truncation = TRUNCATION, mark_decay = MARK_DECAY)
+# =============================================================================
+# Fit 1: First session only (before first overnight gap)
+# =============================================================================
+cat("\n######################################################################\n")
+cat("## FIT 1: First session only\n")
+cat("######################################################################\n")
 
-# -----------------------------------------------------------------------------
-# Estimate inhomogeneous background (KDE) over the full multi-day window
-# -----------------------------------------------------------------------------
-cat("--- Estimating inhomogeneous background (KDE) ---\n")
+# Subset edges to first session from the raw data, then rebuild network
+df_day1 <- subset_first_session(df, gap_threshold = GAP_THRESHOLD)
+obj_day1 <- make_hypertext_net(df_day1, use_first_contact_only = USE_FIRST_CONTACT_ONLY, max_edges = MAX_EDGES)
+net_day1 <- obj_day1$net
+
+times_day1 <- get_times(net_day1)$times
+time_window_day1 <- c(min(times_day1), max(times_day1))
+cat("  Day-1 network:", length(times_day1), "events |", network.size(net_day1), "nodes |",
+    network.edgecount(net_day1), "edges\n")
+cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window_day1[1], time_window_day1[2]), "\n")
+
+# Truncation for day-1
+n_nodes_day1 <- network.size(net_day1)
+TRUNCATION_DAY1 <- if (is.na(TRUNCATION)) n_nodes_day1 else TRUNCATION
+cat("  TRUNCATION:", TRUNCATION_DAY1, "\n")
+verify_truncation(obj_day1$edges, node_entry_time = net_day1 %v% "time",
+                  truncation = TRUNCATION_DAY1, mark_decay = MARK_DECAY)
+
+# KDE background for day-1
+cat("--- Estimating KDE background (day-1) ---\n")
 t_bg <- proc.time()
-inhom_bg <- prepare_inhomogeneous_background(
-  net,
-  time_attr = "time",
+inhom_bg_day1 <- prepare_inhomogeneous_background(
+  net_day1, time_attr = "time",
   bw = if (is.finite(BW)) BW else NULL,
   grid_n = GRID_N
 )
-cat("  KDE done in", round((proc.time() - t_bg)[3], 2), "s\n\n")
+cat("  KDE done in", round((proc.time() - t_bg)[3], 2), "s\n")
 
-# -----------------------------------------------------------------------------
-# Fit CS model (non-growth, includes transitivity)
-# -----------------------------------------------------------------------------
-cat("--- Fitting hawkesNet (CS, non-growth, transitivity) ---\n")
-exp_cs <- expected_params_PMF_mark_CS(net, FORMULA_RHS)
+# Model init
+exp_cs <- expected_params_PMF_mark_CS(net_day1, FORMULA_RHS)
 n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 3L
 cat("  CS_params length:", n_cs, "\n")
 
-mu_init <- inhom_bg$integral_bg / (time_window[2] - time_window[1])
-params_init <- list(
-  mu = mu_init,
+mu_init_day1 <- inhom_bg_day1$integral_bg / (time_window_day1[2] - time_window_day1[1])
+params_init_day1 <- list(
+  mu = mu_init_day1,
   beta_overall = 0.3,
   K = 0.5,
   beta_edges = 0.3,
   node_lambda = 0.1,
-  CS_params = c(-8, -5, rep(0, n_cs - 2))  # edges, degree(0), then gwdegree/gwesp
+  CS_params = c(-8, -5, rep(0, n_cs - 2))
 )
 
-p_scale <- c(
+p_scale_day1 <- c(
   beta_overall = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
 )
 
-fit <- fit_hawkesNet(
-  params_init = params_init,
-  time_window = time_window,
-  mark_filtration = net,
-  PMF_mark = PMF_mark_CS,
-  mu_vec = inhom_bg$mu_vec,
-  integral_bg = inhom_bg$integral_bg,
-  formula_RHS = FORMULA_RHS,
-  truncation = TRUNCATION,
-  mark_decay = MARK_DECAY,
-  growth_only = GROWTH_ONLY,
-  max_node_time = max(get_times(net)$node_times),
-  method = "Nelder-Mead",
-  maxit = MAX_ITER,
-  reltol = 1e-8,
-  trace = 0,
-  verbose = TRUE,
-  fixed_params = c("mu", "K"),  # mu absorbed by inhomogeneous background; K fixed for stability
-  parscale = p_scale,
-  cache_intensity = TRUE,
-  combine_intensity = TRUE,
-  cores = N_CORES
+res_day1 <- run_fit_block(
+  net = net_day1, inhom_bg = inhom_bg_day1, time_window = time_window_day1,
+  label = "Fit 1: First session",
+  params_init = params_init_day1, p_scale = p_scale_day1,
+  formula_rhs = FORMULA_RHS, truncation = TRUNCATION_DAY1,
+  mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
+  max_iter = MAX_ITER, n_cores = N_CORES,
+  run_sim_test = RUN_SIM_TEST, n_sim_test = N_SIM_TEST,
+  run_gof = RUN_GOF_DAY1, n_gof = N_GOF, n_cores_gof = N_CORES_GOF,
+  n_gof_outer = N_GOF_OUTER, seed_events_gof = SEED_EVENTS_GOF
 )
 
-if (!is.null(fit$fit_table)) {
-  cat("\n--- Fit results (gwdegree + gwesp) ---\n")
-  print(fit$fit_table, max = NULL)
-}
+# =============================================================================
+# Fit 2: Full data with mu=0 during gaps (optional)
+# =============================================================================
+res_full <- NULL
+inhom_bg_full <- NULL
+net_full <- NULL
+time_window_full <- NULL
+TRUNCATION_FULL <- NULL
 
-# -----------------------------------------------------------------------------
-# Fit alternative: star(c(2,3,4)) + esp(2:4) instead of gwdegree + gwesp
-# -----------------------------------------------------------------------------
-cat("\n--- Fitting hawkesNet (CS, star+esp variant) ---\n")
-exp_cs_alt <- expected_params_PMF_mark_CS(net, FORMULA_RHS_STAR_ESP)
-n_cs_alt <- if (!is.na(exp_cs_alt$CS_params_length)) exp_cs_alt$CS_params_length else 7L
-cat("  CS_params length:", n_cs_alt, "\n")
+if (RUN_FULL_FIT) {
+  cat("\n######################################################################\n")
+  cat("## FIT 2: Full data (mu=0 in overnight gaps)\n")
+  cat("######################################################################\n")
 
-params_init_star_esp <- list(
-  mu = mu_init,
-  beta_overall = 0.3,
-  K = 0.5,
-  beta_edges = 0.3,
-  node_lambda = 0.1,
-  CS_params = c(-8, -5, rep(0, n_cs_alt - 2))  # edges, degree(0), then star/esp
-)
+  net_full <- obj_full$net
+  times_full <- get_times(net_full)$times
+  time_window_full <- c(min(times_full), max(times_full))
+  cat("  Full network:", length(times_full), "events |", network.size(net_full), "nodes |",
+      network.edgecount(net_full), "edges\n")
+  cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window_full[1], time_window_full[2]), "\n")
 
-p_scale_star_esp <- c(
-  beta_overall = 0.1,
-  beta_edges = 0.1,
-  node_lambda = 0.5,
-  setNames(rep(0.1, n_cs_alt), paste0("CS_params", seq_len(n_cs_alt)))
-)
+  # Truncation for full data
+  n_nodes_full <- network.size(net_full)
+  TRUNCATION_FULL <- if (is.na(TRUNCATION)) n_nodes_full else TRUNCATION
+  cat("  TRUNCATION:", TRUNCATION_FULL, "\n")
+  verify_truncation(obj_full$edges, node_entry_time = net_full %v% "time",
+                    truncation = TRUNCATION_FULL, mark_decay = MARK_DECAY)
 
-fit_star_esp <- fit_hawkesNet(
-  params_init = params_init_star_esp,
-  time_window = time_window,
-  mark_filtration = net,
-  PMF_mark = PMF_mark_CS,
-  mu_vec = inhom_bg$mu_vec,
-  integral_bg = inhom_bg$integral_bg,
-  formula_RHS = FORMULA_RHS_STAR_ESP,
-  truncation = TRUNCATION,
-  mark_decay = MARK_DECAY,
-  growth_only = GROWTH_ONLY,
-  max_node_time = max(get_times(net)$node_times),
-  method = "Nelder-Mead",
-  maxit = MAX_ITER,
-  reltol = 1e-8,
-  trace = 0,
-  verbose = TRUE,
-  fixed_params = c("mu", "K"),
-  parscale = p_scale_star_esp,
-  cache_intensity = TRUE,
-  combine_intensity = TRUE,
-  cores = N_CORES
-)
-
-if (!is.null(fit_star_esp$fit_table)) {
-  cat("\n--- Fit results (star+esp) ---\n")
-  print(fit_star_esp$fit_table, max = NULL)
-}
-
-# -----------------------------------------------------------------------------
-# Fit alternative: decay=0.5 (larger decay parameter)
-# -----------------------------------------------------------------------------
-cat("\n--- Fitting hawkesNet (CS, decay=0.5) ---\n")
-exp_cs_decay <- expected_params_PMF_mark_CS(net, FORMULA_RHS_DECAY05)
-n_cs_decay <- if (!is.na(exp_cs_decay$CS_params_length)) exp_cs_decay$CS_params_length else 3L
-cat("  CS_params length:", n_cs_decay, "\n")
-
-params_init_decay05 <- list(
-  mu = mu_init,
-  beta_overall = 0.3,
-  K = 0.5,
-  beta_edges = 0.3,
-  node_lambda = 0.1,
-  CS_params = c(-8, -5, rep(0, n_cs_decay - 2))  # edges, degree(0), then gwdegree/gwesp
-)
-
-p_scale_decay05 <- c(
-  beta_overall = 0.1,
-  beta_edges = 0.1,
-  node_lambda = 0.5,
-  setNames(rep(0.1, n_cs_decay), paste0("CS_params", seq_len(n_cs_decay)))
-)
-
-fit_decay05 <- fit_hawkesNet(
-  params_init = params_init_decay05,
-  time_window = time_window,
-  mark_filtration = net,
-  PMF_mark = PMF_mark_CS,
-  mu_vec = inhom_bg$mu_vec,
-  integral_bg = inhom_bg$integral_bg,
-  formula_RHS = FORMULA_RHS_DECAY05,
-  truncation = TRUNCATION,
-  mark_decay = MARK_DECAY,
-  growth_only = GROWTH_ONLY,
-  max_node_time = max(get_times(net)$node_times),
-  method = "Nelder-Mead",
-  maxit = MAX_ITER,
-  reltol = 1e-8,
-  trace = 0,
-  verbose = TRUE,
-  fixed_params = c("mu", "K"),
-  parscale = p_scale_decay05,
-  cache_intensity = TRUE,
-  combine_intensity = TRUE,
-  cores = N_CORES
-)
-
-if (!is.null(fit_decay05$fit_table)) {
-  cat("\n--- Fit results (decay=0.5) ---\n")
-  print(fit_decay05$fit_table, max = NULL)
-}
-
-# -----------------------------------------------------------------------------
-# Optional: quick simulation test from fitted values (before GOF)
-# -----------------------------------------------------------------------------
-sim_test_res <- NULL
-if (RUN_SIM_TEST && !is.null(fit$params)) {
-  cat("\n--- Simulation test (fitted model sanity check) ---\n")
-  pfit <- fit$params
-  seed_net_test <- NULL
-  seed_times_test <- NULL
-  if (SEED_EVENTS_GOF > 0) {
-    all_times <- get_times(net)$times
-    if (length(all_times) >= SEED_EVENTS_GOF) {
-      t_seed <- all_times[SEED_EVENTS_GOF]
-      seed_net_test <- filtration_to_net(net, t_seed, equals = TRUE)
-      seed_times_test <- all_times[1:SEED_EVENTS_GOF]
-      cat("  Seeding with first", SEED_EVENTS_GOF, "events (up to t =", round(t_seed, 4), ")\n")
-    }
-  }
-  sims_test <- vector("list", N_SIM_TEST)
-  for (i in seq_len(N_SIM_TEST)) {
-    sims_test[[i]] <- tryCatch({
-      sim_hawkesNet(
-        params = pfit,
-        time_window = time_window,
-        PMF_mark = PMF_mark_CS,
-        cond_intensity = cond_intensity,
-        formula_RHS = FORMULA_RHS,
-        truncation = TRUNCATION,
-        mark_decay = MARK_DECAY,
-        growth_only = GROWTH_ONLY,
-        max_node_time = max(get_times(net)$node_times),
-        hashed_edges = TRUE,
-        verbose = FALSE,
-        mu_multiplier = 5,
-        stop_on_full_network = FALSE,
-        inhom_bg = inhom_bg,
-        seed_net = seed_net_test,
-        seed_times = seed_times_test
-      )
-    }, error = function(e) {
-      list(net = NULL, events = list(t = numeric(0)), error = e$message)
-    })
-  }
-  n_obs <- network::network.size(net)
-  e_obs <- network::network.edgecount(net)
-  deg_obs <- sna::degree(net, gmode = "graph")
-  mean_deg_obs <- mean(deg_obs[deg_obs > 0], na.rm = TRUE)
-  if (is.na(mean_deg_obs) || !is.finite(mean_deg_obs)) mean_deg_obs <- 0
-  n_sim_ok <- sum(!sapply(sims_test, function(s) is.null(s$net)))
-  n_edges_sim <- vapply(sims_test, function(s) {
-    if (is.null(s$net)) NA_integer_ else network::network.edgecount(s$net)
-  }, integer(1))
-  n_nodes_sim <- vapply(sims_test, function(s) {
-    if (is.null(s$net)) NA_integer_ else network::network.size(s$net)
-  }, integer(1))
-  mean_deg_sim <- vapply(sims_test, function(s) {
-    if (is.null(s$net)) NA_real_
-    else {
-      d <- sna::degree(s$net, gmode = "graph")
-      m <- mean(d[d > 0], na.rm = TRUE)
-      if (is.na(m) || !is.finite(m)) 0 else m
-    }
-  }, numeric(1))
-  cat("  Observed:  n_edges =", e_obs, "| n_nodes =", n_obs, "| mean_deg(>0) =", round(mean_deg_obs, 2), "\n")
-  cat("  Simulated:", n_sim_ok, "/", N_SIM_TEST, "succeeded\n")
-  if (n_sim_ok > 0) {
-    cat("    n_edges:  ", paste(na.omit(n_edges_sim), collapse = ", "), "\n")
-    cat("    n_nodes:  ", paste(na.omit(n_nodes_sim), collapse = ", "), "\n")
-    cat("    mean_deg: ", paste(round(na.omit(mean_deg_sim), 2), collapse = ", "), "\n")
-  }
-  sim_test_res <- list(sims = sims_test, n_obs = n_obs, e_obs = e_obs, mean_deg_obs = mean_deg_obs)
-}
-
-# -----------------------------------------------------------------------------
-# GOF (fast checks only)
-# -----------------------------------------------------------------------------
-gof_res <- NULL
-if (RUN_GOF) {
-  cat("\n--- GOF ---\n")
-  # Version-tolerant GOF call: older hawkesNet installs may not accept newer args
-  # (e.g., seed_events, growth_only). Also force-evaluate script-level symbols
-  # so PSOCK workers don't see unevaluated promises like `GROWTH_ONLY`.
-  gof_fun <- if (exists("gof", mode = "function")) get("gof", mode = "function") else hawkesNet::gof
-  gof_formals <- names(formals(gof_fun))
-  gof_args <- list(
-    fit = fit,
-    net_obs = net,
-    params_init = params_init,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS,
-    time_window = time_window,
-    truncation = as.integer(TRUNCATION),
-    mark_decay = as.character(MARK_DECAY),
-    growth_only = isTRUE(GROWTH_ONLY),
-    max_node_time = max(get_times(net)$node_times),
-    inhom_bg = inhom_bg,
-    n_sim = as.integer(N_GOF),
-    cores = as.integer(N_CORES_GOF),
-    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
-    max_deg = 30L,
-    k_esp = 30L,
-    degree = 0L,
-    esp = 0L,
-    mu_multiplier = 5,
-    seed_events = as.integer(SEED_EVENTS_GOF),
-    verbose = TRUE
+  # KDE background for full data, then zero out gaps
+  cat("--- Estimating KDE background (full, then zeroing gaps) ---\n")
+  t_bg <- proc.time()
+  inhom_bg_full_raw <- prepare_inhomogeneous_background(
+    net_full, time_attr = "time",
+    bw = if (is.finite(BW)) BW else NULL,
+    grid_n = GRID_N
   )
-  gof_args <- gof_args[names(gof_args) %in% gof_formals]
-  gof_res <- do.call(gof_fun, gof_args)
-  if (!is.null(gof_res$plots) && requireNamespace("ggplot2", quietly = TRUE)) {
-    if (!is.null(gof_res$plots$degree_plot)) print(gof_res$plots$degree_plot)
-    if (!is.null(gof_res$plots$esp_plot)) print(gof_res$plots$esp_plot)
-    if (!is.null(gof_res$plots$geodist_plot)) print(gof_res$plots$geodist_plot)
-    if (!is.null(gof_res$plots$waiting_times_plot)) print(gof_res$plots$waiting_times_plot)
-  }
-}
+  inhom_bg_full <- zero_gaps_inhom_bg(inhom_bg_full_raw, gap_intervals)
+  cat("  KDE + gap-zeroing done in", round((proc.time() - t_bg)[3], 2), "s\n")
+  cat("  integral_bg (raw):", round(inhom_bg_full_raw$integral_bg, 2),
+      "| integral_bg (gap-zeroed):", round(inhom_bg_full$integral_bg, 2), "\n")
 
-# -----------------------------------------------------------------------------
-# Save results (cluster_output when on SLURM, same structure as openalex)
-# -----------------------------------------------------------------------------
-# GOF for star+esp fit (same settings, degree/ESP up to 30)
-gof_star_esp <- NULL
-gof_decay05 <- NULL
-if (RUN_GOF && !is.null(fit_star_esp$fit)) {
-  cat("\n--- GOF (star+esp fit) ---\n")
-  gof_args_alt <- list(
-    fit = fit_star_esp,
-    net_obs = net,
-    params_init = params_init_star_esp,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS_STAR_ESP,
-    time_window = time_window,
-    truncation = as.integer(TRUNCATION),
-    mark_decay = as.character(MARK_DECAY),
-    growth_only = isTRUE(GROWTH_ONLY),
-    max_node_time = max(get_times(net)$node_times),
-    inhom_bg = inhom_bg,
-    n_sim = as.integer(N_GOF),
-    cores = as.integer(N_CORES_GOF),
-    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
-    max_deg = 30L,
-    k_esp = 30L,
-    degree = 0L,
-    esp = 0L,
-    mu_multiplier = 5,
-    seed_events = as.integer(SEED_EVENTS_GOF),
-    verbose = TRUE
+  # Model init (use same formula; may want different starting values)
+  exp_cs_full <- expected_params_PMF_mark_CS(net_full, FORMULA_RHS)
+  n_cs_full <- if (!is.na(exp_cs_full$CS_params_length)) exp_cs_full$CS_params_length else 3L
+
+  mu_init_full <- inhom_bg_full$integral_bg / (time_window_full[2] - time_window_full[1])
+  params_init_full <- list(
+    mu = mu_init_full,
+    beta_overall = 0.3,
+    K = 0.5,
+    beta_edges = 0.3,
+    node_lambda = 0.1,
+    CS_params = c(-8, -5, rep(0, n_cs_full - 2))
   )
-  gof_args_alt <- gof_args_alt[names(gof_args_alt) %in% gof_formals]
-  gof_star_esp <- do.call(gof_fun, gof_args_alt)
-}
 
-# GOF for decay=0.5 fit
-if (RUN_GOF && !is.null(fit_decay05$fit)) {
-  cat("\n--- GOF (decay=0.5 fit) ---\n")
-  gof_args_decay <- list(
-    fit = fit_decay05,
-    net_obs = net,
-    params_init = params_init_decay05,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = FORMULA_RHS_DECAY05,
-    time_window = time_window,
-    truncation = as.integer(TRUNCATION),
-    mark_decay = as.character(MARK_DECAY),
-    growth_only = isTRUE(GROWTH_ONLY),
-    max_node_time = max(get_times(net)$node_times),
-    inhom_bg = inhom_bg,
-    n_sim = as.integer(N_GOF),
-    cores = as.integer(N_CORES_GOF),
-    cores_outer = if (N_GOF_OUTER > 0L) as.integer(N_GOF_OUTER) else NULL,
-    max_deg = 30L,
-    k_esp = 30L,
-    degree = 0L,
-    esp = 0L,
-    mu_multiplier = 5,
-    seed_events = as.integer(SEED_EVENTS_GOF),
-    verbose = TRUE
+  p_scale_full <- c(
+    beta_overall = 0.1,
+    beta_edges = 0.1,
+    node_lambda = 0.5,
+    setNames(rep(0.1, n_cs_full), paste0("CS_params", seq_len(n_cs_full)))
   )
-  gof_args_decay <- gof_args_decay[names(gof_args_decay) %in% gof_formals]
-  gof_decay05 <- do.call(gof_fun, gof_args_decay)
+
+  res_full <- run_fit_block(
+    net = net_full, inhom_bg = inhom_bg_full, time_window = time_window_full,
+    label = "Fit 2: Full data (mu=0 in gaps)",
+    params_init = params_init_full, p_scale = p_scale_full,
+    formula_rhs = FORMULA_RHS, truncation = TRUNCATION_FULL,
+    mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER, n_cores = N_CORES,
+    run_sim_test = RUN_SIM_TEST, n_sim_test = N_SIM_TEST,
+    run_gof = RUN_GOF_FULL, n_gof = N_GOF, n_cores_gof = N_CORES_GOF,
+    n_gof_outer = N_GOF_OUTER, seed_events_gof = SEED_EVENTS_GOF
+  )
 }
 
+# =============================================================================
+# Save results
+# =============================================================================
 save_list <- list(
-  fit = fit,
-  fit_star_esp = fit_star_esp,
-  fit_decay05 = fit_decay05,
-  gof = gof_res,
-  gof_star_esp = gof_star_esp,
-  gof_decay05 = gof_decay05,
-  GOF = gof_res,  # alias for consistency with openalex
-  sim_test = sim_test_res,
-  net = net,
-  edges = obj$edges,
-  inhom_bg = inhom_bg,
-  params_init = params_init,
-  params_init_star_esp = params_init_star_esp,
-  params_init_decay05 = params_init_decay05,
-  formula_rhs = FORMULA_RHS,
-  formula_rhs_star_esp = FORMULA_RHS_STAR_ESP,
-  formula_rhs_decay05 = FORMULA_RHS_DECAY05,
-  truncation = TRUNCATION,
-  time_window = time_window,
-  N_GOF = N_GOF,
-  SEED_EVENTS_GOF = SEED_EVENTS_GOF
+  # Fit 1: first session
+  fit_day1      = res_day1$fit,
+  gof_day1      = res_day1$gof,
+  sim_test_day1 = res_day1$sim_test,
+  net_day1      = net_day1,
+  edges_day1    = obj_day1$edges,
+  inhom_bg_day1 = inhom_bg_day1,
+  params_init_day1 = params_init_day1,
+  time_window_day1 = time_window_day1,
+  truncation_day1  = TRUNCATION_DAY1,
+  # Fit 2: full data (mu=0 in gaps)
+  fit_full      = if (!is.null(res_full)) res_full$fit else NULL,
+  gof_full      = if (!is.null(res_full)) res_full$gof else NULL,
+  sim_test_full = if (!is.null(res_full)) res_full$sim_test else NULL,
+  net_full      = net_full,
+  edges_full    = obj_full$edges,
+  inhom_bg_full = inhom_bg_full,
+  params_init_full = if (exists("params_init_full")) params_init_full else NULL,
+  time_window_full = time_window_full,
+  truncation_full  = TRUNCATION_FULL,
+  # Shared metadata
+  gap_intervals = gap_intervals,
+  gap_threshold = GAP_THRESHOLD,
+  formula_rhs   = FORMULA_RHS,
+  N_GOF         = N_GOF,
+  SEED_EVENTS_GOF = SEED_EVENTS_GOF,
+  RUN_FULL_FIT  = RUN_FULL_FIT
 )
 
 cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
 rds_path_primary <- file.path(cluster_output_dir, "results_hypertext_full.RDS")
 
-# Use cluster_output when running under SLURM or when it exists
 use_cluster_output <- nzchar(Sys.getenv("SLURM_JOB_ID")) || dir.exists(cluster_output_dir)
 
 if (use_cluster_output) {
@@ -742,4 +742,3 @@ if (use_cluster_output) {
   cat("\nSaved:", out_path, "\n")
 }
 cat("Done.\n")
-

@@ -15,22 +15,22 @@ SIM_STUDY_PARAMS <- list(
 SIM_STUDY_FORMULA <- "edges + triangles + star(c(2,3))"
 SIM_STUDY_TRUNCATION <- 100
 
-# parscale: must match free flat_par names (CS_params1/edges is fixed)
+# parscale: must match free flat_par names (mu is fixed, edges is free)
 SIM_STUDY_PSCALE <- c(
-  mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-  CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
+  beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+  CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
 )
 
-# Main study init — edges (CS_params[1]) fixed to true value
+# Main study init — mu fixed to true value (consistent with hypertext inhom bg)
 SIM_STUDY_INIT <- list(
   mu = 10,
   beta_overall = 1,
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-6.7, 1, 0, 0)
+  CS_params = c(-7, 1, 0, 0)
 )
-SIM_STUDY_FIXED <- c("K", "CS_params1")
+SIM_STUDY_FIXED <- c("K", "mu")
 
 # Helper: simulate one network at a given time window
 sim_one <- function(time_window = c(0, 5), seed = 42) {
@@ -71,15 +71,15 @@ test_that("CS simulation (T=5) produces valid network with edges and nodes", {
 # =============================================================================
 # TEST 2: parscale mapping works with both CS_params and formula name conventions
 # =============================================================================
-test_that("parscale maps correctly to free flat_par (K and CS_params1 fixed)", {
+test_that("parscale maps correctly to free flat_par (K and mu fixed)", {
   sim <- sim_one(c(0, 5), seed = 42)
   skip_if(network::network.edgecount(sim$net) < 3, "Need edges for fit test")
 
-  # Flatten params_init as fit_hawkesNet does (remove K, then remove CS_params1)
+  # Flatten params_init as fit_hawkesNet does (remove K and mu since they're fixed)
   pi <- SIM_STUDY_INIT
   pi$K <- NULL
+  pi$mu <- NULL
   flat_par <- unlist(pi)
-  flat_par <- flat_par[!names(flat_par) %in% "CS_params1"]  # element-level fixed
   # Check that parscale[names(flat_par)] gives no NAs
   mapped <- SIM_STUDY_PSCALE[names(flat_par)]
   expect_true(all(!is.na(mapped)),
@@ -167,9 +167,9 @@ test_that("CS fit with main study config completes without error", {
   expect_true("fit" %in% names(fit))
   expect_true(all(is.finite(fit$fit$par)),
     info = paste("All params should be finite:", paste(round(fit$fit$par, 4), collapse = ", ")))
-  # K and CS_params1 (edges) should NOT be in fitted params (they're fixed)
+  # K and mu should NOT be in fitted params (they're fixed)
   expect_false("K" %in% names(fit$fit$par))
-  expect_false("CS_params1" %in% names(fit$fit$par))
+  expect_false("mu" %in% names(fit$fit$par))
 })
 
 # =============================================================================

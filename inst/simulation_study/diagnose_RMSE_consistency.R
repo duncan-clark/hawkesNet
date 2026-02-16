@@ -27,8 +27,8 @@ time_windows <- c(2, 4, 6, 10, 20)
 N_REPS <- 12L  # More reps for less noise
 TRUNCATION <- 100
 MAX_ITER <- 3000
-p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-             CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+p_scale <- c(beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
+             CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 params_true <- list(
   mu = 10,
@@ -85,14 +85,13 @@ run_one_simfit <- function(i, curr_time, use_near_true_init = TRUE) {
       K = params_true$K,
       beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
       node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
-      CS_params = c(params_true$CS_params[1],
-                    params_true$CS_params[-1] + rnorm(length(params_true$CS_params) - 1, 0, 0.5))
+      CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
     )
     params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
   } else {
     params_init <- list(
       mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, node_lambda = 1,
-      CS_params = c(-6.7, 0, 0, 0)
+      CS_params = c(-7, 0, 0, 0)
     )
   }
 
@@ -109,7 +108,7 @@ run_one_simfit <- function(i, curr_time, use_near_true_init = TRUE) {
                   cache_intensity = TRUE,
                   combine_intensity = TRUE,
                   verbose = FALSE,
-                  fixed_params = c("K", "CS_params1"),
+                  fixed_params = c("K", "mu"),
                   parscale = p_scale,
                   cores = 1L,
                   method = "Nelder-Mead")
@@ -305,8 +304,7 @@ run_one_trunc_realization <- function(i) {
       K = params_true$K,
       beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
       node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
-      CS_params = c(params_true$CS_params[1],
-                    params_true$CS_params[-1] + rnorm(3, 0, 0.5))
+      CS_params = params_true$CS_params + rnorm(4, 0, 0.5)
     )
     fit_t <- tryCatch({
       fit_hawkesNet(params_init = params_init,
@@ -321,7 +319,7 @@ run_one_trunc_realization <- function(i) {
                     cache_intensity = TRUE,
                     combine_intensity = TRUE,
                     verbose = FALSE,
-                    fixed_params = c("K", "CS_params1"),
+                    fixed_params = c("K", "mu"),
                     parscale = p_scale,
                     cores = 1L,
                     method = "Nelder-Mead")
