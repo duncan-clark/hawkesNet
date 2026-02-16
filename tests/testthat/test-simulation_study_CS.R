@@ -10,10 +10,10 @@ SIM_STUDY_PARAMS <- list(
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-6.7, 2, 0.1, -0.1)
+  CS_params = c(-7, 3, 0.1, -0.1)
 )
 SIM_STUDY_FORMULA <- "edges + triangles + star(c(2,3))"
-SIM_STUDY_TRUNCATION <- 100
+SIM_STUDY_TRUNCATION <- 500
 
 # parscale: must match free flat_par names (mu is fixed, edges is free)
 SIM_STUDY_PSCALE <- c(

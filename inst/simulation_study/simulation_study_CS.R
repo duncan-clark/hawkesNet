@@ -51,9 +51,9 @@ params <- list(mu = 10,
                K = 0.5,
                beta_edges = 1,
                node_lambda = 1,
-               CS_params = c(-8, 3, 0.1, -0.1)
+               CS_params = c(-7, 3, 0.1, -0.1)
                )
-TRUNCATION  <- 300
+TRUNCATION  <- 500
 SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- ON_SLURM          # skip explosive in interactive mode
@@ -298,7 +298,7 @@ if(RUN_CONSISTENCY){
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
-                      CS_params = c(-8, 3, 0.1, -0.1))
+                      CS_params = c(-7, 3, 0.1, -0.1))
 
     # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
     # BLAS threads pre-set to 1 in make_cluster() so forked grandchildren are safe.
@@ -548,7 +548,7 @@ if(RUN_EXPLOSIVE){
     K = 0.99,
     beta_edges = 0.1,
     node_lambda = 1,
-    CS_params = c(-8, 3, 0.1, -0.1)
+    CS_params = c(-7, 3, 0.1, -0.1)
   )
 
   # Compare with Stable Parameters - CS model
@@ -558,7 +558,7 @@ if(RUN_EXPLOSIVE){
     K = 0.5,
     beta_edges = 1.0,
     node_lambda = 1,
-    CS_params = c(-8, 3, 0.1, -0.1)
+    CS_params = c(-7, 3, 0.1, -0.1)
   )
 
   cat("Simulating Explosive Regime (CS model)...\n")

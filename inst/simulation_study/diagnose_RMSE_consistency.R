@@ -25,7 +25,7 @@ if (!file.exists(file.path(PKG_ROOT, "inst"))) {
 N_CORES <- 7L  # Use 7 of 8 cores
 time_windows <- c(2, 4, 6, 10, 20)
 N_REPS <- 12L  # More reps for less noise
-TRUNCATION <- 100
+TRUNCATION <- 500
 MAX_ITER <- 3000
 p_scale <- c(beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
              CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
@@ -36,7 +36,7 @@ params_true <- list(
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-6.7, 2, 0.1, -0.1)
+  CS_params = c(-7, 3, 0.1, -0.1)
 )
 
 # Map true values to fit par names (net optional for formula-name fallback)
