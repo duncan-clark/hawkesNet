@@ -347,7 +347,8 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
   cat("  Time window:", sprintf("[%.3f, %.3f] hours", time_window[1], time_window[2]), "\n\n")
 
   # Fit
-  cat("--- Fitting hawkesNet ---\n")
+  cat("--- Fitting hawkesNet (", label, ") ---\n")
+  t_fit <- proc.time()
   fit <- fit_hawkesNet(
     params_init = params_init,
     time_window = time_window,
@@ -363,7 +364,7 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
     method = "Nelder-Mead",
     maxit = max_iter,
     reltol = 1e-8,
-    trace = 0,
+    trace = 1,  # increased trace for more progress info
     verbose = TRUE,
     fixed_params = if (is.null(inhom_bg$mu_vec)) "K" else c("mu", "K"),
     parscale = p_scale,
@@ -371,6 +372,9 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
     combine_intensity = TRUE,
     cores = n_cores
   )
+  cat("  Fit completed in", round((proc.time() - t_fit)[3], 2), "s\n")
+  cat("  Final log-likelihood:", if (!is.null(fit$fit$value)) -fit$fit$value else "failed", "\n")
+  cat("  Convergence status:", fit$fit$convergence, "(0 = success)\n")
 
   if (!is.null(fit$fit_table)) {
     cat("\n--- Fit results (", label, ") ---\n")
@@ -452,6 +456,8 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
   gof_res <- NULL
   if (run_gof) {
     cat("\n--- GOF (", label, ") ---\n")
+    cat("  Running", n_gof, "simulations on", n_cores_gof, "cores...\n")
+    t_gof <- proc.time()
     gof_fun <- if (exists("gof", mode = "function")) get("gof", mode = "function") else hawkesNet::gof
     gof_formals <- names(formals(gof_fun))
     gof_args <- list(
@@ -485,6 +491,7 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
       cat("  GOF failed for ", label, ": ", conditionMessage(e), "\n")
       NULL
     })
+    cat("  GOF completed in", round((proc.time() - t_gof)[3], 2), "s\n")
     if (!is.null(gof_res$plots) && requireNamespace("ggplot2", quietly = TRUE)) {
       if (!is.null(gof_res$plots$degree_plot)) print(gof_res$plots$degree_plot)
       if (!is.null(gof_res$plots$esp_plot)) print(gof_res$plots$esp_plot)
@@ -729,4 +736,7 @@ if (use_cluster_output) {
   saveRDS(save_list, out_path)
   cat("\nSaved:", out_path, "\n")
 }
+cat("\n######################################################################\n")
+cat("## Hypertext study finished at", as.character(Sys.time()), "\n")
+cat("######################################################################\n")
 cat("Done.\n")
