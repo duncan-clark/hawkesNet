@@ -42,7 +42,7 @@ params_true <- list(
 # Map true values to fit par names (net optional for formula-name fallback)
 map_true_vals <- function(par_names, params, net = NULL) {
   true_vals <- setNames(numeric(length(par_names)), par_names)
-  true_vals["mu"] <- params$mu
+  if ("mu" %in% par_names) true_vals["mu"] <- params$mu
   true_vals["beta_overall"] <- params$beta_overall
   if ("K" %in% par_names) true_vals["K"] <- params$K
   true_vals["beta_edges"] <- params$beta_edges

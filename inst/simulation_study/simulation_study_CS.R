@@ -393,7 +393,7 @@ if(RUN_CONSISTENCY){
         # Map true values: unlist gives CS_params1,2,...; fit$par may use those or formula names
         par_names <- names(fit_res$fit$par)
         true_vals <- setNames(numeric(length(par_names)), par_names)
-        true_vals["mu"] <- params_true$mu
+        if ("mu" %in% par_names) true_vals["mu"] <- params_true$mu
         true_vals["beta_overall"] <- params_true$beta_overall
         if ("K" %in% par_names) true_vals["K"] <- params_true$K
         true_vals["beta_edges"] <- params_true$beta_edges
@@ -761,7 +761,7 @@ if(PAPER_OUTPUT){
       # Map true and init values
       true_vec <- setNames(numeric(length(par_names)), par_names)
       init_vec <- setNames(numeric(length(par_names)), par_names)
-      true_vec["mu"] <- params$mu
+      if ("mu" %in% par_names) true_vec["mu"] <- params$mu
       true_vec["beta_overall"] <- params$beta_overall
       if ("K" %in% par_names) true_vec["K"] <- params$K
       true_vec["beta_edges"] <- params$beta_edges
@@ -786,7 +786,7 @@ if(PAPER_OUTPUT){
       }
       
       # Map init values for scalar params (CS done above)
-      init_vec["mu"] <- params_init$mu
+      if ("mu" %in% par_names) init_vec["mu"] <- params_init$mu
       init_vec["beta_overall"] <- params_init$beta_overall
       if ("K" %in% par_names) init_vec["K"] <- params_init$K
       init_vec["beta_edges"] <- params_init$beta_edges
