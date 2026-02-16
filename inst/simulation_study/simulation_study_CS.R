@@ -382,13 +382,14 @@ if(RUN_CONSISTENCY){
         if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
         
         # Check if fit succeeded
+        par_bo_idx <- which(names(fit_res$fit$par) == "beta_overall")
         keep <- (!is.null(fit_res$fit) && 
                  length(fit_res$fit) > 0 && 
                  fit_res$fit$convergence == 0 &&
                  all(is.finite(fit_res$fit$par)) &&
                  !any(fit_res$fit$par > 100) && 
                  length(fit_res$fit$par) >= 2 &&
-                 fit_res$fit$par[2] <= 10)
+                 (length(par_bo_idx) == 0 || fit_res$fit$par[par_bo_idx] <= 10))
         
         # Map true values: unlist gives CS_params1,2,...; fit$par may use those or formula names
         par_names <- names(fit_res$fit$par)
@@ -463,55 +464,63 @@ if(RUN_CONSISTENCY){
     if (nrow(consistency_results) > 0) {
       prop_keep <- consistency_results %>%
         group_by(time_window, param) %>%
-        summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+        summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY, .groups = "drop")
       print(prop_keep)
       
-      # Calculate Bias and RMSE (converged fits only - non-converged inflate RMSE and break monotonicity)
-      summary_stats <- consistency_results %>%
-        filter(keep == TRUE) %>%
-        group_by(time_window, param) %>%
-        summarise(
-          mean_est = mean(estimate),
-          sd_est = sd(estimate),
-          rmse = sqrt(mean((estimate - true_value)^2)),
-          true_val = mean(true_value),
-          n_conv = n(),
-          .groups = "drop"
-        )
+      # Filter to converged fits only
+      converged_results <- consistency_results %>% filter(keep == TRUE)
       
-      print(summary_stats,n=100)
-      
-      # Plot 1: Boxplots of convergence (converged fits only)
-      p_cons <- ggplot(consistency_results %>% filter(keep == TRUE), aes(x = factor(time_window), y = estimate)) +
-        geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
-        geom_jitter(width = 0.2, alpha = 0.3) +
-        geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", size = 1) +
-        facet_wrap(~param, scales = "free_y") +
-        labs(title = "Parameter Consistency vs Time Window (T) - CS model",
-             subtitle = "Red dashed line indicates true parameter value",
-             x = "Time Window Length (T)",
-             y = "Parameter Estimate") +
-        theme_minimal()
-      
-      print(p_cons)
-      
-      # Plot 2: RMSE decay (The "Getting Better" plot)
-      p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
-        geom_line(size = 1) +
-        geom_point(size = 3) +
-        facet_wrap(~param, scales = "free_y") +
-        labs(title = "RMSE Decay as Data Increases (CS model)",
-             x = "Time Window Length (T)",
-             y = "Root Mean Squared Error") +
-        theme_bw()
-      
-      print(p_rmse)
+      if (nrow(converged_results) > 0) {
+        # Calculate Bias and RMSE (converged fits only - non-converged inflate RMSE and break monotonicity)
+        summary_stats <- converged_results %>%
+          group_by(time_window, param) %>%
+          summarise(
+            mean_est = mean(estimate),
+            sd_est = sd(estimate),
+            rmse = sqrt(mean((estimate - true_value)^2)),
+            true_val = mean(true_value),
+            n_conv = n(),
+            .groups = "drop"
+          )
+        
+        print(summary_stats, n = 100)
+        
+        # Plot 1: Boxplots of convergence (converged fits only)
+        p_cons <- ggplot(converged_results, aes(x = factor(time_window), y = estimate)) +
+          geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightblue") +
+          geom_jitter(width = 0.2, alpha = 0.3) +
+          geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", linewidth = 1) +
+          facet_wrap(~param, scales = "free_y") +
+          labs(title = "Parameter Consistency vs Time Window (T) - CS model",
+               subtitle = "Red dashed line indicates true parameter value",
+               x = "Time Window Length (T)",
+               y = "Parameter Estimate") +
+          theme_minimal()
+        
+        print(p_cons)
+        
+        # Plot 2: RMSE decay (The "Getting Better" plot)
+        p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
+          geom_line(linewidth = 1) +
+          geom_point(size = 3) +
+          facet_wrap(~param, scales = "free_y") +
+          labs(title = "RMSE Decay as Data Increases (CS model)",
+               x = "Time Window Length (T)",
+               y = "Root Mean Squared Error") +
+          theme_bw()
+        
+        print(p_rmse)
+      } else {
+        cat("  WARNING: No converged fits. Skipping consistency plots.\n")
+        summary_stats <- NULL
+        p_cons <- NULL
+        p_rmse <- NULL
+      }
     } else {
       cat("  WARNING: consistency_results is empty. Skipping consistency plots.\n")
       summary_stats <- NULL
       p_cons <- NULL
       p_rmse <- NULL
-      p_base <- NULL
     }
   }
 
