@@ -51,6 +51,7 @@ params <- list(mu = 10,
                K = 0.5,
                beta_edges = 1,
                node_lambda = 1,
+               m = 1,
                CS_params = c(-7, 3, 0.1, -0.1)
                )
 TRUNCATION  <- 500
@@ -99,12 +100,12 @@ SEED <- 1267
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
   # fixed_params = c("node_lambda") -> flat_par has:
-  #   mu, beta_overall, K, beta_edges, CS_params1, CS_params2, CS_params3, CS_params4
+  #   mu, beta_overall, K, beta_edges, m, CS_params1, CS_params2, CS_params3, CS_params4
   # node_lambda fixed: its MLE is just the sample mean of new-nodes-per-event,
   # but when free it co-varies with the edges term in the multiplicative mark
   # density.  mu and K are free — they only enter the ground intensity and
   # should be identifiable from event times alone.
-  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
+  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, m = 0.1,
                CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
@@ -214,6 +215,7 @@ if(SIMULATE){
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
+                      m = 1,
                       CS_params = c(-9, 2, 0, 0)
   )
   clusterExport(cl_fit, c("params_init", "p_scale", "TIME", "MAX_ITER", "TRUNCATION"))
@@ -357,6 +359,7 @@ if(RUN_CONSISTENCY){
           K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
           beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
           node_lambda = params_true$node_lambda,
+          m = max(0.1, params_true$m * exp(rnorm(1, 0, 0.2))),
           CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
         )
         # Ensure CS_params are finite
@@ -401,6 +404,7 @@ if(RUN_CONSISTENCY){
         if ("K" %in% par_names) true_vals["K"] <- params_true$K
         true_vals["beta_edges"] <- params_true$beta_edges
         true_vals["node_lambda"] <- params_true$node_lambda
+        if ("m" %in% par_names) true_vals["m"] <- params_true$m
         for (k in seq_along(params_true$CS_params)) {
           nm <- paste0("CS_params", k)
           if (nm %in% par_names) true_vals[nm] <- params_true$CS_params[k]
@@ -777,6 +781,7 @@ if(PAPER_OUTPUT){
       if ("K" %in% par_names) true_vec["K"] <- params$K
       true_vec["beta_edges"] <- params$beta_edges
       true_vec["node_lambda"] <- params$node_lambda
+      if ("m" %in% par_names) true_vec["m"] <- params$m
       # Map CS params: fit may use CS_params1,2,... or formula names (edges, triangles, star.2, star.3)
       exp_cs <- expected_params_PMF_mark_CS(sims[[1]]$net, "edges + triangles + star(c(2,3))")
       for (i in seq_along(params$CS_params)) {
@@ -802,6 +807,7 @@ if(PAPER_OUTPUT){
       if ("K" %in% par_names) init_vec["K"] <- params_init$K
       init_vec["beta_edges"] <- params_init$beta_edges
       init_vec["node_lambda"] <- params_init$node_lambda
+      if ("m" %in% par_names) init_vec["m"] <- params_init$m
       
       results <- data.frame(
         mean = colMeans(estims),
