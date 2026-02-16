@@ -41,15 +41,7 @@ if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) {
 }
 
 # Use the repo (most up-to-date) implementation even if the installed package is older.
-USE_REPO_CODE <- isTRUE(as.logical(Sys.getenv("USE_REPO_CODE", "FALSE")))
-if (USE_REPO_CODE) {
-  source(file.path(PKG_ROOT, "R", "utils.R"))
-  source(file.path(PKG_ROOT, "R", "kde_background.R"))
-  source(file.path(PKG_ROOT, "R", "temporal_hawkes.R"))
-  source(file.path(PKG_ROOT, "R", "gof.R"))
-  source(file.path(PKG_ROOT, "R", "mark_PMF.R"))
-  source(file.path(PKG_ROOT, "R", "hawkesNet.R"))
-}
+# (Removed USE_REPO_CODE block - always use installed package)
 
 # -----------------------------------------------------------------------------
 # Config
@@ -59,16 +51,6 @@ LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", default_local_quick))
 
 N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L))
 N_CORES <- max(1L, N_CORES)
-
-if (USE_REPO_CODE) {
-  os <- Sys.info()[["sysname"]]
-  psock_only <- (os %in% c("Darwin", "Windows")) || interactive() || isTRUE(getOption("hawkesNet.force_psock", FALSE))
-  if (psock_only && N_CORES > 1L) {
-    message("NOTE: USE_REPO_CODE=TRUE under PSOCK; forcing N_CORES=1 for worker consistency. ",
-            "Install hawkesNet and set USE_REPO_CODE=FALSE to use multiple cores.")
-    N_CORES <- 1L
-  }
-}
 
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 trunc_env <- Sys.getenv("TRUNCATION", "")
@@ -383,7 +365,7 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
     reltol = 1e-8,
     trace = 0,
     verbose = TRUE,
-    fixed_params = c("mu", "K"),
+    fixed_params = if (is.null(inhom_bg$mu_vec)) "K" else c("mu", "K"),
     parscale = p_scale,
     cache_intensity = TRUE,
     combine_intensity = TRUE,
@@ -563,21 +545,21 @@ verify_truncation(obj_day1$edges, node_entry_time = net_day1 %v% "time",
                   truncation = TRUNCATION_DAY1, mark_decay = MARK_DECAY)
 
 # KDE background for day-1
-cat("--- Estimating KDE background (day-1) ---\n")
-t_bg <- proc.time()
-inhom_bg_day1 <- prepare_inhomogeneous_background(
-  net_day1, time_attr = "time",
-  bw = if (is.finite(BW)) BW else NULL,
-  grid_n = GRID_N
+cat("--- Using homogeneous background (day-1) ---\n")
+inhom_bg_day1 <- list(
+  mu_vec = NULL,
+  integral_bg = NULL,
+  times = times_day1,
+  mu_fit = NULL,
+  Lambda_fun = NULL
 )
-cat("  KDE done in", round((proc.time() - t_bg)[3], 2), "s\n")
 
 # Model init
 exp_cs <- expected_params_PMF_mark_CS(net_day1, FORMULA_RHS)
 n_cs <- if (!is.na(exp_cs$CS_params_length)) exp_cs$CS_params_length else 3L
 cat("  CS_params length:", n_cs, "\n")
 
-mu_init_day1 <- inhom_bg_day1$integral_bg / (time_window_day1[2] - time_window_day1[1])
+mu_init_day1 <- length(times_day1) / (time_window_day1[2] - time_window_day1[1])
 params_init_day1 <- list(
   mu = mu_init_day1,
   beta_overall = 0.3,
@@ -587,8 +569,9 @@ params_init_day1 <- list(
   CS_params = c(-8, -5, rep(0, n_cs - 2))
 )
 
-p_scale_day1 <- c(
-  beta_overall = 0.1,
+  p_scale_day1 <- c(
+    mu = 1,
+    beta_overall = 0.1,
   beta_edges = 0.1,
   node_lambda = 0.5,
   setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
