@@ -955,7 +955,12 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'node_entrance'){
         node_times <- new_net %v% 'time'
       }
-      diffs <- time - node_times[heads]
+      # Use the MOST RECENTLY active of the two endpoints so that an edge is
+      # viable as long as at least one endpoint is active.  Previously only the
+      # head (lower-index, typically older) node's time was used, which caused a
+      # feedback loop: stale nodes could never receive new edges because the
+      # decay killed their probability, keeping them stale forever.
+      diffs <- time - pmax(node_times[heads], node_times[tails])
       # --- Safety: sanitize diffs/factor before multiplying probs ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS: non-finite time diffs in density path; replacing with 0.")
@@ -1282,11 +1287,8 @@ PMF_mark_CS <- function(time,
       if(mark_decay == 'node_entrance'){
         node_times <- mark_sample %v% 'time'
       }
-      # Use same diffs formula as the density path: event_time - head_node_time.
-      # (Previously used tail_time - head_time, which diverges for edges between
-      # two existing nodes and makes generation inconsistent with the likelihood.)
-      # Note: node_times is either node entrance or latest activity depending on mark_decay.
-      diffs <- time - node_times[heads]
+      # Use the most recently active of the two endpoints (consistent with density path).
+      diffs <- time - pmax(node_times[heads], node_times[tails])
       # --- Safety: sanitize diffs/factor in generate_mark (suggestion 2 & 9) ---
       if (any(!is.finite(diffs))) {
         warning("PMF_mark_CS (generate_mark): non-finite time diffs; replacing with 0.")

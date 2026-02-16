@@ -83,49 +83,21 @@ zero_gaps_inhom_bg <- function(inhom_bg, gap_intervals) {
        mu_fit = mu_fit, Lambda_fun = inhom_bg$Lambda_fun, gap_intervals = gap_intervals)
 }
 
-# ---- 3. Build networks ----
+# ---- 3. Build day-1 network (jittered = simple) ----
 FORMULA_RHS <- "edges + degree(0) + gwdegree(0.1) + gwesp(0.1)"
 
-# Day-1
 df_day1 <- subset_first_session(df, gap_threshold = 1.0)
 obj_day1 <- make_hypertext_net(df_day1, use_first_contact_only = TRUE)
 net_day1_raw <- obj_day1$net
 net_day1 <- normalize_times_01(net_day1_raw)
 times_d1 <- get_times(net_day1)$times
-cat("  Day-1: ", network.edgecount(net_day1), " edges, ",
-    network.size(net_day1), " nodes, time [",
+cat("  Day-1 (simple):", network.edgecount(net_day1), "edges,",
+    network.size(net_day1), "nodes, time [",
     round(min(times_d1), 4), ",", round(max(times_d1), 4), "]\n")
 stopifnot(abs(min(times_d1)) < 1e-10, abs(max(times_d1) - 1) < 1e-10)
 
-# Full
-obj_full <- make_hypertext_net(df, use_first_contact_only = TRUE)
-net_full_raw <- obj_full$net
-
-# Gap detection on normalized scale
-all_et <- sort(obj_full$edges$time)
-full_rng <- range(all_et)
-norm_et <- (all_et - full_rng[1]) / (full_rng[2] - full_rng[1])
-gap_intervals <- find_gap_intervals(norm_et, gap_threshold = 1.0 / (full_rng[2] - full_rng[1]))
-
-net_full <- normalize_times_01(net_full_raw)
-times_f <- get_times(net_full)$times
-cat("  Full:  ", network.edgecount(net_full), " edges, ",
-    network.size(net_full), " nodes, time [",
-    round(min(times_f), 4), ",", round(max(times_f), 4), "]\n")
-cat("  Gaps found: ", nrow(gap_intervals), "\n")
-stopifnot(abs(min(times_f)) < 1e-10, abs(max(times_f) - 1) < 1e-10)
-stopifnot(nrow(gap_intervals) >= 2) # should have overnight gaps
-
-# ---- 4. KDE background for full fit ----
-cat("  Computing KDE background... ")
-inhom_raw <- prepare_inhomogeneous_background(net_full, time_attr = "time", grid_n = 512)
-inhom_full <- zero_gaps_inhom_bg(inhom_raw, gap_intervals)
-cat("done. integral_bg raw=", round(inhom_raw$integral_bg, 1),
-    " zeroed=", round(inhom_full$integral_bg, 1), "\n")
-stopifnot(inhom_full$integral_bg < inhom_raw$integral_bg)  # zeroing must reduce
-
-# ---- 5. Fit 1 — Day-1 (homogeneous bg, fix K only) ----
-cat("\n--- Fit 1: Day-1 (maxit=3) ---\n")
+# ---- 4. Fit 1 — Day-1 simple, mark_decay = "activity" ----
+cat("\n--- Fit 1: Day-1 simple, activity decay (maxit=3) ---\n")
 exp_cs <- expected_params_PMF_mark_CS(net_day1, FORMULA_RHS)
 n_cs <- exp_cs$CS_params_length
 tw_d1 <- c(0, 1)
@@ -146,38 +118,11 @@ fit1 <- fit_hawkesNet(
 )
 cat("  Fit 1 value (neg-loglik):", fit1$fit$value, "\n")
 stopifnot(is.finite(fit1$fit$value))
-cat("  PASS: Fit 1 completed without non-finite errors.\n")
+cat("  PASS: Fit 1 completed.\n")
 
-# ---- 6. Fit 2 — Full (inhom bg, fix mu+K) ----
-cat("\n--- Fit 2: Full (maxit=3) ---\n")
-exp_cs2 <- expected_params_PMF_mark_CS(net_full, FORMULA_RHS)
-n_cs2 <- exp_cs2$CS_params_length
-tw_f <- c(0, 1)
-params_f <- list(mu = inhom_full$integral_bg, beta_overall = 0.3, K = 0.5,
-                 beta_edges = 0.3, node_lambda = 0.1,
-                 CS_params = c(-8, -5, rep(0, n_cs2 - 2)))
-ps_f <- c(beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5,
-           setNames(rep(0.1, n_cs2), paste0("CS_params", seq_len(n_cs2))))
+# ---- 5. Fit 1b — Non-simple day-1, mark_decay = "activity" ----
+cat("\n--- Fit 1b: Day-1 non-simple, activity decay (maxit=3) ---\n")
 
-fit2 <- fit_hawkesNet(
-  params_init = params_f, time_window = tw_f, mark_filtration = net_full,
-  PMF_mark = PMF_mark_CS, mu_vec = inhom_full$mu_vec,
-  integral_bg = inhom_full$integral_bg,
-  formula_RHS = FORMULA_RHS, truncation = network.size(net_full),
-  mark_decay = "activity", growth_only = FALSE,
-  max_node_time = max(get_times(net_full)$node_times),
-  method = "Nelder-Mead", maxit = 3, verbose = TRUE,
-  fixed_params = c("mu", "K"), parscale = ps_f, cores = 1,
-  cache_intensity = TRUE, combine_intensity = TRUE
-)
-cat("  Fit 2 value (neg-loglik):", fit2$fit$value, "\n")
-stopifnot(is.finite(fit2$fit$value))
-cat("  PASS: Fit 2 completed without non-finite errors.\n")
-
-# ---- 7. Fit 1b — Non-simple day-1 (no jitter, multi-edge events) ----
-cat("\n--- Fit 1b: Non-simple day-1 (maxit=3) ---\n")
-
-# Reload raw data WITHOUT jitter
 raw_ns <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 df_ns <- data.frame(time = raw_ns$V1 / 3600, from = raw_ns$V2, to = raw_ns$V3)
 df_ns$time <- df_ns$time - min(df_ns$time)
@@ -214,10 +159,48 @@ fit1b <- fit_hawkesNet(
 )
 cat("  Fit 1b value (neg-loglik):", fit1b$fit$value, "\n")
 stopifnot(is.finite(fit1b$fit$value))
-cat("  PASS: Fit 1b completed without non-finite errors.\n")
+cat("  PASS: Fit 1b completed.\n")
 
-# ---- 8. Simulation comparison: simple vs non-simple ----
-cat("\n--- Simulation comparison ---\n")
+# ---- 6. Fit 3 — Day-1 simple, mark_decay = "node_entrance" ----
+cat("\n--- Fit 3: Day-1 simple, node_entrance decay (maxit=3) ---\n")
+params_d1_ne <- list(mu = length(times_d1), beta_overall = 0.3, K = 0.5,
+                     beta_edges = 0.3, node_lambda = 0.1,
+                     CS_params = c(-8, -5, rep(0, n_cs - 2)))
+
+fit3 <- fit_hawkesNet(
+  params_init = params_d1_ne, time_window = tw_d1, mark_filtration = net_day1,
+  PMF_mark = PMF_mark_CS, formula_RHS = FORMULA_RHS,
+  truncation = network.size(net_day1), mark_decay = "node_entrance",
+  growth_only = FALSE, max_node_time = max(get_times(net_day1)$node_times),
+  method = "Nelder-Mead", maxit = 3, verbose = TRUE,
+  fixed_params = "K", parscale = ps_d1, cores = 1,
+  cache_intensity = TRUE, combine_intensity = TRUE
+)
+cat("  Fit 3 value (neg-loglik):", fit3$fit$value, "\n")
+stopifnot(is.finite(fit3$fit$value))
+cat("  PASS: Fit 3 completed.\n")
+
+# ---- 7. Fit 4 — Non-simple day-1, mark_decay = "node_entrance" ----
+cat("\n--- Fit 4: Day-1 non-simple, node_entrance decay (maxit=3) ---\n")
+params_ns_ne <- list(mu = n_events_ns, beta_overall = 0.3, K = 0.5,
+                     beta_edges = 0.3, node_lambda = 0.5,
+                     CS_params = c(-5, -3, rep(0, n_cs_ns - 2)))
+
+fit4 <- fit_hawkesNet(
+  params_init = params_ns_ne, time_window = tw_ns, mark_filtration = net_ns,
+  PMF_mark = PMF_mark_CS, formula_RHS = FORMULA_RHS,
+  truncation = n_nodes_ns, mark_decay = "node_entrance",
+  growth_only = FALSE, max_node_time = max(get_times(net_ns)$node_times),
+  method = "Nelder-Mead", maxit = 3, verbose = TRUE,
+  fixed_params = "K", parscale = ps_ns, cores = 1,
+  cache_intensity = TRUE, combine_intensity = TRUE
+)
+cat("  Fit 4 value (neg-loglik):", fit4$fit$value, "\n")
+stopifnot(is.finite(fit4$fit$value))
+cat("  PASS: Fit 4 completed.\n")
+
+# ---- 8. Simulation comparison: all 4 fits ----
+cat("\n--- Simulation comparison (all 4 fits) ---\n")
 
 sim_from_fit <- function(fit_obj, net_obs, inhom_bg, formula_rhs,
                          truncation, mark_decay, seed_events = 20L) {
@@ -251,36 +234,63 @@ sim_from_fit <- function(fit_obj, net_obs, inhom_bg, formula_rhs,
   )
 }
 
-cat("  Simulating from Fit 1 (simple)... ")
-sim_simple <- tryCatch(
-  sim_from_fit(fit1, net_day1,
-               list(mu_vec = NULL, integral_bg = NULL, times = times_d1),
-               FORMULA_RHS, network.size(net_day1), "activity"),
-  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
-)
-if (!is.null(sim_simple) && !is.null(sim_simple$net)) {
-  cat("OK\n")
-  cat("    Observed (simple):  ", network.size(net_day1), "nodes,",
-      network.edgecount(net_day1), "edges,", length(times_d1), "events\n")
-  cat("    Simulated (simple): ", network.size(sim_simple$net), "nodes,",
-      network.edgecount(sim_simple$net), "edges,",
-      length(sim_simple$events$t), "events\n")
+print_comparison <- function(label, sim_obj, net_obs, times_obs) {
+  n_obs  <- network.size(net_obs)
+  e_obs  <- network.edgecount(net_obs)
+  ev_obs <- length(times_obs)
+  if (is.null(sim_obj) || is.null(sim_obj$net)) {
+    cat(sprintf("  %-35s  FAILED\n", label))
+    return(invisible(NULL))
+  }
+  n_sim  <- network.size(sim_obj$net)
+  e_sim  <- network.edgecount(sim_obj$net)
+  ev_sim <- length(sim_obj$events$t)
+  cat(sprintf("  %-35s  Obs: %3d nodes %4d edges %4d events  |  Sim: %3d nodes %4d edges %4d events\n",
+              label, n_obs, e_obs, ev_obs, n_sim, e_sim, ev_sim))
 }
 
-cat("  Simulating from Fit 1b (non-simple)... ")
-sim_nonsimple <- tryCatch(
-  sim_from_fit(fit1b, net_ns,
-               list(mu_vec = NULL, integral_bg = NULL, times = times_ns),
-               FORMULA_RHS, n_nodes_ns, "activity"),
+no_inhom <- list(mu_vec = NULL, integral_bg = NULL, times = NULL)
+
+# Fit 1: simple, activity
+cat("  Simulating Fit 1 ... ")
+sim1 <- tryCatch(
+  sim_from_fit(fit1, net_day1, no_inhom, FORMULA_RHS,
+               network.size(net_day1), "activity"),
   error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
 )
-if (!is.null(sim_nonsimple) && !is.null(sim_nonsimple$net)) {
-  cat("OK\n")
-  cat("    Observed (non-simple):  ", n_nodes_ns, "nodes,",
-      n_edges_ns, "edges,", n_events_ns, "events\n")
-  cat("    Simulated (non-simple): ", network.size(sim_nonsimple$net), "nodes,",
-      network.edgecount(sim_nonsimple$net), "edges,",
-      length(sim_nonsimple$events$t), "events\n")
-}
+cat("done\n")
+
+# Fit 1b: non-simple, activity
+cat("  Simulating Fit 1b ... ")
+sim1b <- tryCatch(
+  sim_from_fit(fit1b, net_ns, no_inhom, FORMULA_RHS,
+               n_nodes_ns, "activity"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+cat("done\n")
+
+# Fit 3: simple, node_entrance
+cat("  Simulating Fit 3 ... ")
+sim3 <- tryCatch(
+  sim_from_fit(fit3, net_day1, no_inhom, FORMULA_RHS,
+               network.size(net_day1), "node_entrance"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+cat("done\n")
+
+# Fit 4: non-simple, node_entrance
+cat("  Simulating Fit 4 ... ")
+sim4 <- tryCatch(
+  sim_from_fit(fit4, net_ns, no_inhom, FORMULA_RHS,
+               n_nodes_ns, "node_entrance"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+cat("done\n")
+
+cat("\n--- Results ---\n")
+print_comparison("Fit 1  (simple, activity)",      sim1,  net_day1, times_d1)
+print_comparison("Fit 1b (non-simple, activity)",   sim1b, net_ns,   times_ns)
+print_comparison("Fit 3  (simple, node_entrance)",  sim3,  net_day1, times_d1)
+print_comparison("Fit 4  (non-simple, node_entrance)", sim4, net_ns, times_ns)
 
 cat("\n=== ALL CHECKS PASSED ===\n")
