@@ -174,4 +174,113 @@ cat("  Fit 2 value (neg-loglik):", fit2$fit$value, "\n")
 stopifnot(is.finite(fit2$fit$value))
 cat("  PASS: Fit 2 completed without non-finite errors.\n")
 
+# ---- 7. Fit 1b — Non-simple day-1 (no jitter, multi-edge events) ----
+cat("\n--- Fit 1b: Non-simple day-1 (maxit=3) ---\n")
+
+# Reload raw data WITHOUT jitter
+raw_ns <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
+df_ns <- data.frame(time = raw_ns$V1 / 3600, from = raw_ns$V2, to = raw_ns$V3)
+df_ns$time <- df_ns$time - min(df_ns$time)
+df_ns <- df_ns[order(df_ns$time), ]
+
+df_ns_day1 <- subset_first_session(df_ns, gap_threshold = 1.0)
+obj_ns <- make_hypertext_net(df_ns_day1, use_first_contact_only = TRUE)
+net_ns <- normalize_times_01(obj_ns$net)
+times_ns <- get_times(net_ns)$times
+n_events_ns <- length(times_ns)
+n_edges_ns <- network.edgecount(net_ns)
+n_nodes_ns <- network.size(net_ns)
+cat("  Non-simple day-1:", n_events_ns, "events |",
+    n_nodes_ns, "nodes |", n_edges_ns, "edges\n")
+cat("  Edges per event (mean):", round(n_edges_ns / n_events_ns, 2), "\n")
+
+exp_cs_ns <- expected_params_PMF_mark_CS(net_ns, FORMULA_RHS)
+n_cs_ns <- exp_cs_ns$CS_params_length
+tw_ns <- c(0, 1)
+params_ns <- list(mu = n_events_ns, beta_overall = 0.3, K = 0.5,
+                  beta_edges = 0.3, node_lambda = 0.5,
+                  CS_params = c(-5, -3, rep(0, n_cs_ns - 2)))
+ps_ns <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5,
+            setNames(rep(0.1, n_cs_ns), paste0("CS_params", seq_len(n_cs_ns))))
+
+fit1b <- fit_hawkesNet(
+  params_init = params_ns, time_window = tw_ns, mark_filtration = net_ns,
+  PMF_mark = PMF_mark_CS, formula_RHS = FORMULA_RHS,
+  truncation = n_nodes_ns, mark_decay = "activity",
+  growth_only = FALSE, max_node_time = max(get_times(net_ns)$node_times),
+  method = "Nelder-Mead", maxit = 3, verbose = TRUE,
+  fixed_params = "K", parscale = ps_ns, cores = 1,
+  cache_intensity = TRUE, combine_intensity = TRUE
+)
+cat("  Fit 1b value (neg-loglik):", fit1b$fit$value, "\n")
+stopifnot(is.finite(fit1b$fit$value))
+cat("  PASS: Fit 1b completed without non-finite errors.\n")
+
+# ---- 8. Simulation comparison: simple vs non-simple ----
+cat("\n--- Simulation comparison ---\n")
+
+sim_from_fit <- function(fit_obj, net_obs, inhom_bg, formula_rhs,
+                         truncation, mark_decay, seed_events = 20L) {
+  pfit <- fit_obj$params
+  tw <- c(0, 1)
+  seed_net <- NULL
+  seed_times <- NULL
+  all_times <- get_times(net_obs)$times
+  if (length(all_times) >= seed_events) {
+    t_seed <- all_times[seed_events]
+    seed_net <- filtration_to_net(net_obs, t_seed, equals = TRUE)
+    seed_times <- all_times[1:seed_events]
+  }
+  sim_hawkesNet(
+    params = pfit,
+    time_window = tw,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = formula_rhs,
+    truncation = truncation,
+    mark_decay = mark_decay,
+    growth_only = FALSE,
+    max_node_time = Inf,
+    hashed_edges = TRUE,
+    verbose = FALSE,
+    mu_multiplier = 5,
+    stop_on_full_network = FALSE,
+    inhom_bg = inhom_bg,
+    seed_net = seed_net,
+    seed_times = seed_times
+  )
+}
+
+cat("  Simulating from Fit 1 (simple)... ")
+sim_simple <- tryCatch(
+  sim_from_fit(fit1, net_day1,
+               list(mu_vec = NULL, integral_bg = NULL, times = times_d1),
+               FORMULA_RHS, network.size(net_day1), "activity"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+if (!is.null(sim_simple) && !is.null(sim_simple$net)) {
+  cat("OK\n")
+  cat("    Observed (simple):  ", network.size(net_day1), "nodes,",
+      network.edgecount(net_day1), "edges,", length(times_d1), "events\n")
+  cat("    Simulated (simple): ", network.size(sim_simple$net), "nodes,",
+      network.edgecount(sim_simple$net), "edges,",
+      length(sim_simple$events$t), "events\n")
+}
+
+cat("  Simulating from Fit 1b (non-simple)... ")
+sim_nonsimple <- tryCatch(
+  sim_from_fit(fit1b, net_ns,
+               list(mu_vec = NULL, integral_bg = NULL, times = times_ns),
+               FORMULA_RHS, n_nodes_ns, "activity"),
+  error = function(e) { cat("FAILED:", e$message, "\n"); NULL }
+)
+if (!is.null(sim_nonsimple) && !is.null(sim_nonsimple$net)) {
+  cat("OK\n")
+  cat("    Observed (non-simple):  ", n_nodes_ns, "nodes,",
+      n_edges_ns, "edges,", n_events_ns, "events\n")
+  cat("    Simulated (non-simple): ", network.size(sim_nonsimple$net), "nodes,",
+      network.edgecount(sim_nonsimple$net), "edges,",
+      length(sim_nonsimple$events$t), "events\n")
+}
+
 cat("\n=== ALL CHECKS PASSED ===\n")

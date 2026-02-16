@@ -10,12 +10,16 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Two fits:
-##   Fit 1 (primary) — First session only (before first overnight gap).
-##                      Clean single-session data, ~946 edges, ~100 nodes.
-##   Fit 2 (full)    — All three days, with mu forced to zero during overnight
-##                      gaps (>1 h between events). The KDE background is estimated
-##                      from active-period events only and zeroed out in gap intervals.
+## Three fits:
+##   Fit 1  (primary)    — First session only (before first overnight gap).
+##                          Clean single-session data, ~946 edges, ~100 nodes.
+##                          Simple process: timestamps jittered so each event = 1 edge.
+##   Fit 1b (non-simple) — Same first session, but WITHOUT jitter.  Simultaneous
+##                          contacts become a single event with multiple edges,
+##                          producing a richer mark per event.
+##   Fit 2  (full)       — All three days, with mu forced to zero during overnight
+##                          gaps (>1 h between events). The KDE background is estimated
+##                          from active-period events only and zeroed out in gap intervals.
 ##
 ## Full run (default under SLURM): both fits, GOF for Fit 1 only.
 ## Cluster mode knobs:
@@ -72,6 +76,10 @@ SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 RUN_SIM_TEST <- isTRUE(as.logical(Sys.getenv("RUN_SIM_TEST", if (LOCAL_QUICK) "TRUE" else "FALSE")))
 N_SIM_TEST <- as.integer(Sys.getenv("N_SIM_TEST", 3L))
 
+# Run Fit 1b (non-simple day-1, multi-edge events)? Default: TRUE under SLURM, FALSE locally.
+RUN_NONSIMPLE_FIT <- isTRUE(as.logical(Sys.getenv("RUN_NONSIMPLE_FIT", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+RUN_GOF_NONSIMPLE <- isTRUE(as.logical(Sys.getenv("RUN_GOF_NONSIMPLE", "FALSE")))
+
 # Run Fit 2 (full data, mu=0 in gaps)? Default: TRUE under SLURM, FALSE locally.
 RUN_FULL_FIT <- isTRUE(as.logical(Sys.getenv("RUN_FULL_FIT", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 
@@ -96,7 +104,8 @@ cat("  LOCAL_QUICK:", LOCAL_QUICK, "\n")
 cat("  cores (fit):", N_CORES, "| cores (gof):", N_CORES_GOF, "| gof_outer:", N_GOF_OUTER, "\n")
 cat("  MAX_ITER:", MAX_ITER, "\n")
 cat("  RUN_GOF_DAY1:", RUN_GOF_DAY1, "| RUN_GOF_FULL:", RUN_GOF_FULL, "| N_GOF:", N_GOF, "\n")
-cat("  RUN_FULL_FIT:", RUN_FULL_FIT, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
+cat("  RUN_FULL_FIT:", RUN_FULL_FIT, "| RUN_NONSIMPLE_FIT:", RUN_NONSIMPLE_FIT, "| RUN_SIM_TEST:", RUN_SIM_TEST, "\n")
+cat("  RUN_GOF_NONSIMPLE:", RUN_GOF_NONSIMPLE, "\n")
 cat("  FORMULA_RHS:", FORMULA_RHS, "\n")
 cat("  USE_FIRST_CONTACT_ONLY:", USE_FIRST_CONTACT_ONLY, "| MAX_EDGES:", if (MAX_EDGES > 0) MAX_EDGES else "no cap", "\n\n")
 
@@ -605,6 +614,100 @@ res_day1 <- run_fit_block(
 )
 
 # =============================================================================
+# Fit 1b: Non-simple day-1 (multi-edge events, no jitter)
+# =============================================================================
+# The simple (jittered) model treats every edge as its own event, which forces
+# the mark PMF into a sparse Bernoulli regime (~1 edge per ~4000 candidates).
+# The non-simple model preserves the original 20-second resolution so that
+# simultaneous contacts become a single event with multiple edges, yielding a
+# richer mark per event and more informative edge probabilities.
+# =============================================================================
+res_nonsimple <- NULL
+net_nonsimple <- NULL
+inhom_bg_nonsimple <- NULL
+time_window_nonsimple <- NULL
+TRUNCATION_NONSIMPLE <- NULL
+obj_ns_day1 <- NULL
+params_init_nonsimple <- NULL
+
+if (RUN_NONSIMPLE_FIT) {
+  cat("\n######################################################################\n")
+  cat("## FIT 1b: Non-simple day-1 (multi-edge events, no jitter)\n")
+  cat("######################################################################\n")
+
+  # Reload raw data WITHOUT jitter so simultaneous contacts share a timestamp
+  raw_ns <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
+  df_ns <- data.frame(
+    time = raw_ns$V1 / 3600,
+    from = raw_ns$V2,
+    to   = raw_ns$V3
+  )
+  df_ns$time <- df_ns$time - min(df_ns$time)
+  df_ns <- df_ns[order(df_ns$time), ]
+
+  df_ns_day1 <- subset_first_session(df_ns, gap_threshold = GAP_THRESHOLD)
+  obj_ns_day1 <- make_hypertext_net(df_ns_day1, use_first_contact_only = TRUE, max_edges = MAX_EDGES)
+  net_nonsimple <- normalize_times_01(obj_ns_day1$net)
+
+  times_ns <- get_times(net_nonsimple)$times
+  time_window_nonsimple <- c(min(times_ns), max(times_ns))
+  n_events_ns <- length(times_ns)
+  n_edges_ns <- network.edgecount(net_nonsimple)
+  n_nodes_ns <- network.size(net_nonsimple)
+  cat("  Non-simple day-1 network:", n_events_ns, "events |",
+      n_nodes_ns, "nodes |", n_edges_ns, "edges\n")
+  cat("  Edges per event (mean):", round(n_edges_ns / n_events_ns, 2), "\n")
+  cat("  Time window:", sprintf("[%.3f, %.3f]", time_window_nonsimple[1], time_window_nonsimple[2]), "\n")
+
+  # Truncation
+  TRUNCATION_NONSIMPLE <- if (is.na(TRUNCATION)) n_nodes_ns else TRUNCATION
+  cat("  TRUNCATION:", TRUNCATION_NONSIMPLE, "\n")
+  verify_truncation(obj_ns_day1$edges, node_entry_time = net_nonsimple %v% "time",
+                    truncation = TRUNCATION_NONSIMPLE, mark_decay = MARK_DECAY)
+
+  # Homogeneous background (same as day-1 simple)
+  inhom_bg_nonsimple <- list(
+    mu_vec = NULL, integral_bg = NULL, times = times_ns,
+    mu_fit = NULL, Lambda_fun = NULL
+  )
+
+  # Model init
+  exp_cs_ns <- expected_params_PMF_mark_CS(net_nonsimple, FORMULA_RHS)
+  n_cs_ns <- if (!is.na(exp_cs_ns$CS_params_length)) exp_cs_ns$CS_params_length else 3L
+  cat("  CS_params length:", n_cs_ns, "\n")
+
+  mu_init_ns <- n_events_ns / (time_window_nonsimple[2] - time_window_nonsimple[1])
+  params_init_nonsimple <- list(
+    mu = mu_init_ns,
+    beta_overall = 0.3,
+    K = 0.5,
+    beta_edges = 0.3,
+    node_lambda = 0.5,
+    CS_params = c(-5, -3, rep(0, n_cs_ns - 2))
+  )
+
+  p_scale_ns <- c(
+    mu = 1,
+    beta_overall = 0.1,
+    beta_edges = 0.1,
+    node_lambda = 0.5,
+    setNames(rep(0.1, n_cs_ns), paste0("CS_params", seq_len(n_cs_ns)))
+  )
+
+  res_nonsimple <- run_fit_block(
+    net = net_nonsimple, inhom_bg = inhom_bg_nonsimple, time_window = time_window_nonsimple,
+    label = "Fit 1b: Non-simple day-1",
+    params_init = params_init_nonsimple, p_scale = p_scale_ns,
+    formula_rhs = FORMULA_RHS, truncation = TRUNCATION_NONSIMPLE,
+    mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER, n_cores = N_CORES,
+    run_sim_test = RUN_SIM_TEST, n_sim_test = N_SIM_TEST,
+    run_gof = RUN_GOF_NONSIMPLE, n_gof = N_GOF, n_cores_gof = N_CORES_GOF,
+    n_gof_outer = N_GOF_OUTER, seed_events_gof = SEED_EVENTS_GOF
+  )
+}
+
+# =============================================================================
 # Fit 2: Full data with mu=0 during gaps (optional)
 # =============================================================================
 res_full <- NULL
@@ -683,7 +786,7 @@ if (RUN_FULL_FIT) {
 # Save results
 # =============================================================================
 save_list <- list(
-  # Fit 1: first session
+  # Fit 1: first session (simple, jittered)
   fit_day1      = res_day1$fit,
   gof_day1      = res_day1$gof,
   sim_test_day1 = res_day1$sim_test,
@@ -693,6 +796,16 @@ save_list <- list(
   params_init_day1 = params_init_day1,
   time_window_day1 = time_window_day1,
   truncation_day1  = TRUNCATION_DAY1,
+  # Fit 1b: first session (non-simple, no jitter, multi-edge events)
+  fit_nonsimple      = if (!is.null(res_nonsimple)) res_nonsimple$fit else NULL,
+  gof_nonsimple      = if (!is.null(res_nonsimple)) res_nonsimple$gof else NULL,
+  sim_test_nonsimple = if (!is.null(res_nonsimple)) res_nonsimple$sim_test else NULL,
+  net_nonsimple      = net_nonsimple,
+  edges_nonsimple    = if (!is.null(obj_ns_day1)) obj_ns_day1$edges else NULL,
+  inhom_bg_nonsimple = inhom_bg_nonsimple,
+  params_init_nonsimple = params_init_nonsimple,
+  time_window_nonsimple = time_window_nonsimple,
+  truncation_nonsimple  = TRUNCATION_NONSIMPLE,
   # Fit 2: full data (mu=0 in gaps)
   fit_full      = if (!is.null(res_full)) res_full$fit else NULL,
   gof_full      = if (!is.null(res_full)) res_full$gof else NULL,
@@ -709,7 +822,8 @@ save_list <- list(
   formula_rhs   = FORMULA_RHS,
   N_GOF         = N_GOF,
   SEED_EVENTS_GOF = SEED_EVENTS_GOF,
-  RUN_FULL_FIT  = RUN_FULL_FIT
+  RUN_FULL_FIT  = RUN_FULL_FIT,
+  RUN_NONSIMPLE_FIT = RUN_NONSIMPLE_FIT
 )
 
 cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
