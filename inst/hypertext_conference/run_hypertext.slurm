@@ -4,11 +4,11 @@
 #SBATCH --error=cluster_output/hypertext_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=100
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=64G
 
 # Hypertext 2009 conference: hawkesNet two-fit study.
-# 100 cores: fit uses all for intensity cache; GOF runs 100 sims in parallel.
+# 32 cores: fit uses all for intensity cache; GOF runs 20 sims in parallel.
 #
 # Fit 1 (primary): first session only (before first overnight gap).
 # Fit 2 (full):    all three days, with mu=0 during overnight gaps.
@@ -17,9 +17,9 @@
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run defaults: truncation=n_nodes, N_GOF=100, MAX_ITER=5000.
+# Full run defaults: truncation=n_nodes, N_GOF=20, MAX_ITER=5000.
 # Optional env (set before sbatch or in script):
-#   MAX_ITER=5000  N_GOF=100  GOF_CORES=100  RUN_GOF_FULL=TRUE
+#   MAX_ITER=5000  N_GOF=20  GOF_CORES=32  RUN_GOF_FULL=TRUE
 
 mkdir -p cluster_output
 
@@ -48,6 +48,7 @@ echo "Git status:"
 git status --short || echo "Not a git repository or git not available"
 
 echo "=========================================="
+export N_GOF=20
 Rscript inst/hypertext_conference/hypertext_conference_modern_fit.R
 
 echo "=========================================="
