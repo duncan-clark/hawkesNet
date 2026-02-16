@@ -232,7 +232,7 @@ sim_hawkesNet <- function(params,
       mu_max <- params$mu  # Fallback to params$mu if mu_fun fails
     }
     lambda <- mu_multiplier * mu_max
-    if (verbose) {
+    if (verbose == 1) {
       cat("Using inhomogeneous background: mu_max =", mu_max, "for thinning bound\n")
     }
   } else {
@@ -290,7 +290,7 @@ sim_hawkesNet <- function(params,
     mark_density_buf <- numeric(n_bg)
     accept_probs_buf <- numeric(n_bg)
     
-    if (verbose) {
+    if (verbose == 1) {
       cat(sprintf("Conditional simulation: seeded with %d nodes, %d edges, %d events. Starting at t=%.4f\n",
                   network::network.size(current_net), network::network.edgecount(current_net),
                   length(seed_times), t_last_accepted))
@@ -441,15 +441,38 @@ sim_hawkesNet <- function(params,
     accept_probs_buf[n_proposed] <- accept
 
     # if we accept the point add it in
-    if(verbose && (n_proposed %% 10 == 0)){
+    if(verbose == 1 && (n_proposed %% 10 == 0)){
       n_new_nodes <- (net %n% "n") - (if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n')
       n_new_edges <- network::network.edgecount(net) - (if(is.null(current_net %v% 'n')) 0 else network::network.edgecount(current_net))
       n_cands <- if(!is.null(mark_sample$edge_probs)) length(mark_sample$edge_probs) else 0
       cat(sprintf("[Sim] Prop %d: nodes=%d (+%d), new_edges=%d/%d cands, accept_prob=%.4f\n", 
                   n_proposed, net %n% "n", n_new_nodes, n_new_edges, n_cands, accept))
     }
+    
+    # verbose=2: report every 100 proposals or 5% of time window
+    if(verbose == 2){
+      should_report <- (n_proposed %% 100 == 0)
+      if(!should_report){
+        # check if we crossed a 5% threshold
+        t_range <- time_window[2] - time_window[1]
+        if(t_range > 0){
+          prev_t_rel <- (t_last_accepted - time_window[1]) / t_range
+          curr_t_rel <- (current_event$time - time_window[1]) / t_range
+          if(floor(curr_t_rel * 20) > floor(prev_t_rel * 20)){
+            should_report <- TRUE
+          }
+        }
+      }
+      if(should_report){
+        cat(sprintf("[Sim] Prop %d | t=%.4f (%.0f%%) | nodes=%d, edges=%d, accepted=%d\n",
+                    n_proposed, current_event$time, 
+                    100 * (current_event$time - time_window[1]) / (time_window[2] - time_window[1]),
+                    net %n% "n", network::network.edgecount(net), n_accepted))
+      }
+    }
+
     if(runif(1) < accept){
-      if(verbose){
+      if(verbose == 1){
         cat(sprintf("[Sim] ACCEPTED at t=%.4f (nodes: %d -> %d, edges: %d -> %d)\n",
                     current_event$time, 
                     if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n', net %n% 'n',
@@ -467,7 +490,7 @@ sim_hawkesNet <- function(params,
         mark_density_buf[n_mark_dens] <- mark_sample$mark_density
       }
     }
-    if(verbose && (n_proposed %% 10 == 0)){
+    if(verbose == 1 && (n_proposed %% 10 == 0)){
       cat(sprintf("[Sim] t=%.4f, iter_time=%.2fs\n", 
                   current_event$time, (proc.time()-t)[3]))
     }
@@ -498,7 +521,7 @@ sim_hawkesNet <- function(params,
       n_violations, n_proposed, max_accept, lambda, mu_multiplier,
       n_accepted, n_proposed))
   }
-  if (verbose) {
+  if (verbose >= 1) {
     cat(sprintf("\n=== Simulation Complete ===\n"))
     cat(sprintf("  Proposed: %d\n", n_proposed))
     cat(sprintf("  Accepted: %d\n", n_accepted))

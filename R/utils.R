@@ -464,13 +464,25 @@ get_latest_times <- function(nw) {
   n <- network.size(nw)
   best <- rep(-Inf, n)
   
-  # Treat NA times as -Inf so they don't win
-  t2 <- times
-  t2[is.na(t2)] <- -Inf
-  
-  # One vectorized pass
-  best[el[, 1]] <- pmax(best[el[, 1]], t2)
-  best[el[, 2]] <- pmax(best[el[, 2]], t2)
+  if (nrow(el) > 0L) {
+    # Treat NA times as -Inf so they don't win
+    t2 <- times
+    t2[is.na(t2)] <- -Inf
+    
+    # Correct per-node max using a loop to avoid the R vectorized-subscript-
+    # assignment bug: when a node appears in multiple edges, `best[dup_idx] <-
+    # pmax(best[dup_idx], vals)` keeps only the *last* write per duplicate
+    # index, not the true max.  This caused activity times to be underestimated
+    # for high-degree nodes, inflating diffs and over-decaying edge
+    # probabilities during both fitting and simulation.
+    for (k in seq_len(nrow(el))) {
+      i <- el[k, 1L]
+      j <- el[k, 2L]
+      tk <- t2[k]
+      if (tk > best[i]) best[i] <- tk
+      if (tk > best[j]) best[j] <- tk
+    }
+  }
   
   # Convert untouched nodes to NA
   best[is.infinite(best)] <- NA_real_

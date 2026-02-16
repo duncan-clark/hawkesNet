@@ -1301,8 +1301,11 @@ PMF_mark_CS <- function(time,
       
       verbose_mark <- if ("verbose" %in% names(dot_list)) dot_list$verbose else FALSE
       if (verbose_mark) {
-        cat(sprintf("    [Mark] Cands: %d, Mean prob: %.4e, Max prob: %.4e, Expected edges: %.2f\n", 
-                    length(probs), mean(probs), max(probs), sum(probs)))
+        n_iso <- sum(sna::degree(mark_sample, gmode = "graph") == 0)
+        median_diff <- median(diffs)
+        cat(sprintf("    [Mark] Cands: %d | E[edges]: %.2f | max_p: %.4e | mean_p: %.4e | med_diff: %.4f | isolates: %d/%d | new_nodes: %d\n", 
+                    length(probs), sum(probs), max(probs), mean(probs), median_diff,
+                    n_iso, mark_sample %n% "n", new_nodes))
       }
 
       add <- runif(length(probs)) < probs
