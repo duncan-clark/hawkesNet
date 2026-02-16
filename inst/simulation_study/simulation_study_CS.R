@@ -99,11 +99,9 @@ SEED <- 1267
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
-  # fixed_params = c("K") -> flat_par has:
-  #   mu, beta_overall, beta_edges, node_lambda, m, CS_params1, CS_params2, CS_params3, CS_params4
-  # K is fixed as in the BA model (where K=1 usually).
-  # mu, beta_overall, beta_edges, node_lambda, and m are now all free.
-  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
+  # No parameters are fixed. flat_par has:
+  #   mu, beta_overall, K, beta_edges, node_lambda, m, CS_params1, CS_params2, CS_params3, CS_params4
+  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
                CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
@@ -235,7 +233,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = c("K"),
+        fixed_params = NULL,
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -376,7 +374,7 @@ if(RUN_CONSISTENCY){
                               cache_intensity = TRUE,
                               combine_intensity = TRUE,
                               verbose = FALSE,
-                              fixed_params = c("K"),
+                              fixed_params = NULL,
                               parscale = p_scale,
                               cores = N_CORES_INNER,
                               method = "Nelder-Mead")
