@@ -479,7 +479,12 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
       verbose = TRUE
     )
     gof_args <- gof_args[names(gof_args) %in% gof_formals]
-    gof_res <- do.call(gof_fun, gof_args)
+    gof_res <- tryCatch({
+      do.call(gof_fun, gof_args)
+    }, error = function(e) {
+      cat("  GOF failed for ", label, ": ", conditionMessage(e), "\n")
+      NULL
+    })
     if (!is.null(gof_res$plots) && requireNamespace("ggplot2", quietly = TRUE)) {
       if (!is.null(gof_res$plots$degree_plot)) print(gof_res$plots$degree_plot)
       if (!is.null(gof_res$plots$esp_plot)) print(gof_res$plots$esp_plot)
