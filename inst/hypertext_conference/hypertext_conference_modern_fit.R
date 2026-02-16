@@ -70,8 +70,7 @@ if (length(TRUNCATION) != 1L || !is.finite(TRUNCATION)) TRUNCATION <- NA_integer
 
 # GOF controls: separate flags for day-1 and full fits.
 # All GOF off by default — turn on explicitly when needed.
-RUN_GOF_DAY1 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_DAY1",
-                        Sys.getenv("RUN_GOF", "FALSE"))))
+RUN_GOF_DAY1 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_DAY1", "FALSE")))
 RUN_GOF_FULL <- isTRUE(as.logical(Sys.getenv("RUN_GOF_FULL", "FALSE")))
 N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
 N_GOF <- max(1L, N_GOF)
@@ -93,7 +92,7 @@ RUN_GOF_NE <- isTRUE(as.logical(Sys.getenv("RUN_GOF_NE", "FALSE")))
 
 # Run Fit 5 (non-simple, activity, with m-parameter for Poisson edge count).
 RUN_M_FIT <- isTRUE(as.logical(Sys.getenv("RUN_M_FIT", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-RUN_GOF_M <- isTRUE(as.logical(Sys.getenv("RUN_GOF_M", "FALSE")))
+RUN_GOF_M <- isTRUE(as.logical(Sys.getenv("RUN_GOF_M", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 
 # Run Fit 2 (full data, mu=0 in gaps)? Off by default — enable with RUN_FULL_FIT=TRUE.
 RUN_FULL_FIT <- isTRUE(as.logical(Sys.getenv("RUN_FULL_FIT", "FALSE")))
