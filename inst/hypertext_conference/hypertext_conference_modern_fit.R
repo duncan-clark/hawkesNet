@@ -506,7 +506,7 @@ run_fit_block <- function(net, inhom_bg, time_window, label,
 # =============================================================================
 raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 df <- data.frame(
-  time = raw$V1 / 20 / 3600,  # convert to hours immediately
+  time = raw$V1 / 3600,  # convert to hours immediately (V1 is in seconds)
   from = raw$V2,
   to   = raw$V3
 )
