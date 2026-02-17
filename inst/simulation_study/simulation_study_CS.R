@@ -164,12 +164,18 @@ if(SIMULATE){
     library(ernm)
     library(network)
     library(data.table)
+    # Ensure RhpcBLASctl is used to set threads to 1 in simulation workers too
+    if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+      RhpcBLASctl::blas_set_num_threads(1L)
+      RhpcBLASctl::omp_set_num_threads(1L)
+    }
   })
   clusterExport(cl_sim, c("params", "TIME", "TRUNCATION", "SEED"))
   
   set.seed(SEED)
   sims <- parLapply(cl=cl_sim, 1:N_SIMS, function(x){
-    tryCatch({
+    t_start <- proc.time()
+    res <- tryCatch({
       sim_hawkesNet(params = params,
                     time_window = c(0, TIME),
                     PMF_mark = PMF_mark_CS,
@@ -186,6 +192,12 @@ if(SIMULATE){
       message("Error in sim_hawkesNet: ", e$message)
       return(NULL)
     })
+    t_end <- proc.time()
+    if (!is.null(res)) {
+      message(sprintf("  [Sim Worker %d] Rep %d complete in %.1f s (events=%d)", 
+                      Sys.getpid(), x, (t_end - t_start)[3], length(res$events$t)))
+    }
+    return(res)
   })
   stopCluster(cl_sim)
   cat("Simulation took:", round((proc.time() - t)[3], 1), "s\n")
@@ -339,6 +351,11 @@ if(RUN_CONSISTENCY){
       t_simfit <- proc.time()
       res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
         worker_id <- Sys.getpid()
+        # Set BLAS threads to 1 inside the worker before starting
+        if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+          RhpcBLASctl::blas_set_num_threads(1L)
+          RhpcBLASctl::omp_set_num_threads(1L)
+        }
         t_start_pair <- proc.time()
         
         # A. Simulate
