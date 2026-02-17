@@ -65,29 +65,25 @@ cat(sprintf("Mode: %s | TIME=%d | N_SIMS=%d | N_CORES=%d | MAX_ITER=%d\n",
 
 if (nzchar(Sys.getenv("CORES_OVERRIDE"))) {
   N_CORES <- as.numeric(Sys.getenv("CORES_OVERRIDE"))
-} else if (N_CORES == 128L && nzchar(Sys.getenv("USE_256_WHEN_128"))) {
-  # Cluster gave 256 when you requested 128 (squeue shows 256); use them.
-  N_CORES <- 256L
-  cat("Request was 128; using 256 (USE_256_WHEN_128 set; typical when squeue shows 256)\n")
 }
-# Core allocation: 128 -> 16 outer x 8 inner; 256 -> 16 outer x 16 inner.
-# We prioritize inner cores now because the intensity cache is the bottleneck.
-# R < 4.4.0 has a socket limit of 128. We cap outer workers at 64 to be safe.
+
+# --- Core allocation strategy ---
+# Simulation is single-threaded: use all cores as outer workers (phase 1).
+# Fitting has two phases:
+#   (a) Intensity cache build: uses inner cores (mclapply fork). This is ~5-30s.
+#   (b) Optimization (optim): single-threaded. This is the majority of runtime.
+# Therefore, fitting benefits most from many outer workers with modest inner cores.
+# Too many PSOCK workers create overhead and memory bloat. Sweet spot: ~25 outer.
 CORES_OUTER_ENV <- Sys.getenv("CORES_OUTER", "")
 if (nzchar(CORES_OUTER_ENV)) {
   N_CORES_OUTER <- as.numeric(CORES_OUTER_ENV)
   N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
-} else if (N_CORES >= 128L) {
-  # Use fewer outer workers but many more inner cores for intensity cache speedup
-  N_CORES_OUTER <- 16L 
-  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
-  cat("Using high-core mode:", N_CORES_OUTER, "outer workers x", N_CORES_INNER, "inner =", N_CORES_OUTER * N_CORES_INNER, "total\n")
 } else {
-  N_CORES_INNER <- as.numeric(Sys.getenv("CORES_INNER", 8)) # Default to 8 inner
-  N_CORES_OUTER <- max(1L, floor(N_CORES / N_CORES_INNER))
+  # Default: 25 outer workers, each with ~5 inner cores (for 128-core machine)
+  N_CORES_OUTER <- min(25L, N_CORES)
+  N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
 }
-# Final safety cap for R socket limits (128 total)
-# Each PSOCK worker with outfile="" uses 2 connections.
+# Cap outer workers at 60 for R socket limits (128 connections)
 N_CORES_OUTER <- min(N_CORES_OUTER, 60L)
 N_CORES_INNER <- max(1L, floor(N_CORES / N_CORES_OUTER))
 
@@ -105,70 +101,47 @@ SEED <- 1267
                CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
-  # PSOCK cluster: each worker runs one sim or one fit at a time.
-  # outfile="" ensures worker stdout/stderr are forwarded to the master (visible in .out/.err).
   cl <- makeCluster(n_workers, outfile = "")
-  registerDoParallel(cl)
-  # export libraries to cluster:
   clusterEvalQ(cl, {
-    library(spatstat)
-    library(ggplot2)
-    library(dplyr)
-    library(tidyr)
-    library(data.table)
-    library(pbapply)
-    library(parallel)
-    library(doParallel)
-    library(R.utils)
-    library(ernm)
-    library(network)
-    library(sna)
-    library(hash)
-    library(hawkesNet)
-    # Ensure plogis is available (needed by PMF_mark_CS closures when serialized to inner workers)
+    suppressPackageStartupMessages({
+      library(hawkesNet)
+      library(ernm)
+      library(network)
+      library(sna)
+      library(data.table)
+      library(hash)
+    })
     plogis <- stats::plogis
-    # CRITICAL: Pre-set BLAS/OpenMP threads to 1 in each PSOCK worker.
-    # When fit_hawkesNet uses inner parallelism (mclapply fork), forked
-    # grandchildren inherit the worker's thread state. If BLAS is multi-threaded,
-    # the fork deadlocks. Setting threads=1 here prevents that.
     if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
       RhpcBLASctl::blas_set_num_threads(1L)
       RhpcBLASctl::omp_set_num_threads(1L)
     }
     Sys.setenv(OMP_NUM_THREADS = "1", MKL_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
   })
-  clusterExport(cl, c("params",
-                      "TIME",
-                      "TRUNCATION",
-                      "SEED",
-                      "MAX_ITER"
-                      ))
+  clusterExport(cl, c("params", "TIME", "TRUNCATION", "SEED", "MAX_ITER"))
   return(cl)
 }
 
 if(SIMULATE){
-  # 1. Simulation Step: Use ALL available cores for outer workers (capped at 120 for R socket limit)
-  # Simulation is single-threaded, so nested parallelism is not needed here.
+  # 1. Simulation Step: Each sim is single-threaded (~150s at T=50).
+  # Use N_CORES workers (capped at 60 for R socket safety).
   t <- proc.time()
-  # R < 4.4.0 has a limit of 128 total connections. PSOCK workers use 1 each.
-  # We cap at 120 to leave room for files/stdout/etc.
-  # NeSI scheduling/memory: too many PSOCK workers can bloat memory.
-  # Default to a larger pool for simulation phase if many cores are available.
-  N_SIM_WORKERS <- as.numeric(Sys.getenv("SIM_WORKERS", if (N_CORES >= 128L) 120L else min(N_CORES, 32L)))
-  N_SIM_WORKERS <- max(1L, min(N_SIM_WORKERS, N_CORES, 120L)) # Hard cap at 120 for R socket limits
+  N_SIM_WORKERS <- as.numeric(Sys.getenv("SIM_WORKERS", min(N_CORES, 60L)))
+  N_SIM_WORKERS <- max(1L, min(N_SIM_WORKERS, 60L))
   cat("Commencing simulation using", N_SIM_WORKERS, "parallel workers...\n")
-  cl_sim <- makeCluster(N_SIM_WORKERS)
-  registerDoParallel(cl_sim)
+  cl_sim <- makeCluster(N_SIM_WORKERS, outfile = "")
   clusterEvalQ(cl_sim, {
-    library(hawkesNet)
-    library(ernm)
-    library(network)
-    library(data.table)
-    # Ensure RhpcBLASctl is used to set threads to 1 in simulation workers too
+    suppressPackageStartupMessages({
+      library(hawkesNet)
+      library(ernm)
+      library(network)
+      library(data.table)
+    })
     if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
       RhpcBLASctl::blas_set_num_threads(1L)
       RhpcBLASctl::omp_set_num_threads(1L)
     }
+    Sys.setenv(OMP_NUM_THREADS = "1", MKL_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
   })
   clusterExport(cl_sim, c("params", "TIME", "TRUNCATION", "SEED"))
   
@@ -316,9 +289,8 @@ if(RUN_CONSISTENCY){
                       CS_params = c(-7, 3, 0.1, -0.1))
 
     # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
-    # For consistency study, we try to run all N_SIMS_CONSISTENCY in parallel
-    # if cores allow, to maximize throughput.
-    N_CONS_OUTER <- min(N_SIMS_CONSISTENCY, 120L, N_CORES)
+    # Each worker does sim + fit sequentially. Use same allocation as main study.
+    N_CONS_OUTER <- min(N_SIMS_CONSISTENCY, N_CORES_OUTER, 60L)
     N_CONS_INNER <- max(1L, floor(N_CORES / N_CONS_OUTER))
     
     t_consistency_total <- proc.time()
@@ -351,11 +323,6 @@ if(RUN_CONSISTENCY){
       t_simfit <- proc.time()
       res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
         worker_id <- Sys.getpid()
-        # Set BLAS threads to 1 inside the worker before starting
-        if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
-          RhpcBLASctl::blas_set_num_threads(1L)
-          RhpcBLASctl::omp_set_num_threads(1L)
-        }
         t_start_pair <- proc.time()
         
         # A. Simulate

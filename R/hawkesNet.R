@@ -500,7 +500,7 @@ sim_hawkesNet <- function(params,
     list_index <- 1
   }
   t1 <- proc.time() - t1
-  print(paste0("simulation took ",round(t1[3],2)," seconds"))
+  message("simulation took ", round(t1[3], 2), " seconds")
   # Trim pre-allocated buffers to actual size
   events <- list(
     n = n_accepted,
@@ -632,14 +632,6 @@ loglik_hawkesNet = function(params,
     extra_args[c("cores", "combine_intensity",
                  "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i){
-      # Log start of task in child
-      # Only log for a subset of tasks to avoid flooding
-      should_log <- (i == 1L || i == length(times) || (i %% 50 == 0))
-      if (should_log) {
-        cat(sprintf("  [intens_func] Task %d/%d starting (pid %d) at %s\n", 
-                    i, length(times), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
-      }
-      
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
       model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
         createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
@@ -666,11 +658,6 @@ loglik_hawkesNet = function(params,
           extra_args)
         intensity <- do.call(cond_intensity, call_args)
         out <- list(result = intensity$result, func = intensity$func)
-      }
-      
-      if (should_log) {
-        cat(sprintf("  [intens_func] Task %d/%d complete (pid %d) at %s\n", 
-                    i, length(times), Sys.getpid(), format(Sys.time(), "%H:%M:%S")), file = stderr())
       }
       out
     }
