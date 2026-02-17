@@ -8,6 +8,7 @@
 #SBATCH --mem=128G
 
 # Hypertext 2009 conference: hawkesNet paper fits (4 models).
+# Day 1 simple/non-simple + Full conference inhom simple/non-simple.
 # 100 cores: fit uses all for intensity cache; GOF runs 100 sims in parallel (50 outer).
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):

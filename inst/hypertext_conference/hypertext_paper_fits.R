@@ -1,13 +1,13 @@
 ## =============================================================================
-## Hypertext 2009 conference: Cleaned Paper Results Script
+## Hypertext 2009 conference: Paper Results Script
 ## =============================================================================
-## This script performs 4 specific m-parameter fits:
-##   1. GWESP(0.5) + GWDegree(0.5) | Activity Decay
-##   2. GWESP(0.5) + GWDegree(0.5) | Node Entrance Decay
-##   3. Triangles + Star(c(2,3))   | Activity Decay
-##   4. Triangles + Star(c(2,3))   | Node Entrance Decay
+## 4 fits using triangles + star(c(2,3)):
+##   1. Day 1 — simple (growth_only = TRUE)
+##   2. Day 1 — non-simple (growth_only = FALSE)
+##   3. Full conference — inhomogeneous background, simple
+##   4. Full conference — inhomogeneous background, non-simple
 ##
-## No truncation is used. All fits include GOF.
+## No truncation. No fixed params. GOF for all fits.
 ## =============================================================================
 
 library(hawkesNet)
@@ -24,27 +24,34 @@ LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", "FALSE")))
 N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 100L))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 100L else 5000L))
 N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
-N_CORES_GOF <- as.integer(Sys.getenv("GOF_CORES", N_CORES))
-# Outer parallelism for GOF: distribute simulations across workers.
-# PSOCK limit is 128; we use 50 outer workers to be safe and efficient.
-N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", if (N_CORES >= 100L) 50L else 0L))
+N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER",
+                                      if (N_CORES >= 100L) 50L else 0L))
+
+FORMULA_RHS <- "triangles + star(c(2,3)) + degree(0)"
+MARK_DECAY <- "node_entrance"
+GROWTH_ONLY <- FALSE
 
 # Paths
-PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) Sys.getenv("SLURM_SUBMIT_DIR") else getwd()
+PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) {
+  Sys.getenv("SLURM_SUBMIT_DIR")
+} else {
+  getwd()
+}
 OUTPUT_DIR <- file.path(PKG_ROOT, "cluster_output")
 dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+cat(sprintf("Config: N_CORES=%d | MAX_ITER=%d | N_GOF=%d | GOF_OUTER=%d\n",
+            N_CORES, MAX_ITER, N_GOF, N_GOF_OUTER))
 
 # =============================================================================
 # Helpers
 # =============================================================================
 
 make_hypertext_net <- function(df) {
-  # Undirected: canonical ordering (from < to) and drop duplicates
   swap <- df$from > df$to
   df[swap, c("from", "to")] <- df[swap, c("to", "from")]
   df <- df %>% distinct() %>% arrange(time)
 
-  # Map vertex ids to 1..n in entry-time order
   nodes_raw <- sort(unique(c(df$from, df$to)))
   entry_time_by_node <- vapply(nodes_raw, function(v) {
     min(df$time[df$from == v | df$to == v], na.rm = TRUE)
@@ -77,87 +84,165 @@ subset_first_session <- function(df, gap_threshold = 1.0) {
 # =============================================================================
 # Data Loading
 # =============================================================================
-raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
-df_ns <- data.frame(
+cat("\n=== Loading Data ===\n")
+raw <- read.table(system.file("extdata", "ht09_contact_list.dat",
+                               package = "hawkesNet"))
+df_all <- data.frame(
   time = raw$V1 / 3600,
   from = raw$V2,
   to   = raw$V3
 )
-df_ns$time <- df_ns$time - min(df_ns$time)
-df_ns <- df_ns[order(df_ns$time), ]
+df_all$time <- df_all$time - min(df_all$time)
+df_all <- df_all[order(df_all$time), ]
 
-# Use first session only for clean results
-df_day1 <- subset_first_session(df_ns)
-obj_ns <- make_hypertext_net(df_day1)
-net <- normalize_times_01(obj_ns$net)
-times <- get_times(net)$times
-time_window <- c(min(times), max(times))
+# --- Day 1 network ---
+df_day1 <- subset_first_session(df_all)
+obj_day1 <- make_hypertext_net(df_day1)
+net_day1 <- normalize_times_01(obj_day1$net)
+times_day1 <- get_times(net_day1)$times
+tw_day1 <- c(min(times_day1), max(times_day1))
+cat(sprintf("Day 1: %d nodes, %d edges, %d events, T=[%.4f, %.4f]\n",
+            network.size(net_day1), network.edgecount(net_day1),
+            length(times_day1), tw_day1[1], tw_day1[2]))
 
-# No truncation
-TRUNCATION <- network.size(net)
+# --- Full conference network ---
+obj_full <- make_hypertext_net(df_all)
+net_full <- normalize_times_01(obj_full$net)
+times_full <- get_times(net_full)$times
+tw_full <- c(min(times_full), max(times_full))
+cat(sprintf("Full:  %d nodes, %d edges, %d events, T=[%.4f, %.4f]\n",
+            network.size(net_full), network.edgecount(net_full),
+            length(times_full), tw_full[1], tw_full[2]))
+
+# --- Inhomogeneous background for full conference ---
+cat("Estimating inhomogeneous background (KDE) for full conference...\n")
+inhom_bg <- prepare_inhomogeneous_background(net_full)
+cat(sprintf("  KDE bandwidth: %.4f | integral_bg: %.2f\n",
+            inhom_bg$mu_fit$bw, inhom_bg$integral_bg))
 
 # =============================================================================
 # Fitting Logic
 # =============================================================================
 
-run_paper_fit <- function(formula_rhs, mark_decay, label) {
-  cat("\n>>> Running Fit:", label, "<<<\n")
-  
-  exp_cs <- expected_params_PMF_mark_CS(net, formula_rhs)
+run_fit <- function(net, time_window, growth_only, label,
+                    mu_vec = NULL, integral_bg = NULL) {
+  cat(sprintf("\n>>> Fit: %s (growth_only=%s) <<<\n", label, growth_only))
+
+  exp_cs <- expected_params_PMF_mark_CS(net, FORMULA_RHS)
   n_cs <- exp_cs$CS_params_length
-  
-  # Initial m from data
-  m_init <- network.edgecount(net) / length(times)
-  
+  n_events <- length(get_times(net)$times)
+  TRUNC <- network.size(net)
+
+  m_init <- network.edgecount(net) / n_events
+
   params_init <- list(
-    mu = length(times) / (time_window[2] - time_window[1]),
+    mu = n_events / (time_window[2] - time_window[1]),
     beta_overall = 0.3,
     K = 0.5,
     beta_edges = 0.3,
     node_lambda = 0.5,
     m = m_init,
-    CS_params = c(-5, -3, rep(0, n_cs - 2))
+    CS_params = c(-5, rep(0, n_cs - 1))
   )
-  
+
   p_scale <- c(
-    mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.5,
+    mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
+    node_lambda = 0.5, m = 0.5,
     setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
   )
-  
-  fit <- fit_hawkesNet(
-    params_init = params_init,
-    time_window = time_window,
-    mark_filtration = net,
-    PMF_mark = PMF_mark_CS,
-    formula_RHS = formula_rhs,
-    truncation = TRUNCATION,
-    mark_decay = mark_decay,
-    growth_only = FALSE,
-    maxit = MAX_ITER,
-    fixed_params = NULL, # m-parameter model: all params free
-    parscale = p_scale,
-    cores = N_CORES,
-    cache_intensity = TRUE,
-    combine_intensity = TRUE,
-    verbose = TRUE
-  )
-  
-  gof_res <- gof(
-    fit = fit,
-    net_obs = net,
-    params_init = params_init,
-    PMF_mark = PMF_mark_CS,
-    cond_intensity = cond_intensity,
-    formula_RHS = formula_rhs,
-    time_window = time_window,
-    truncation = TRUNCATION,
-    mark_decay = mark_decay,
-    n_sim = N_GOF,
-    cores_outer = N_GOF_OUTER,
-    verbose = TRUE
-  )
-  
-  list(fit = fit, gof = gof_res, label = label)
+
+  use_inhom <- !is.null(mu_vec)
+
+  t_fit_start <- proc.time()
+  fit <- tryCatch({
+    if (use_inhom) {
+      fit_hawkesNet_inhom(
+        params_init = params_init,
+        time_window = time_window,
+        mark_filtration = net,
+        PMF_mark = PMF_mark_CS,
+        mu_vec = mu_vec,
+        integral_bg = integral_bg,
+        maxit = MAX_ITER,
+        fixed_params = NULL,
+        parscale = p_scale,
+        cores = N_CORES,
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        verbose = TRUE,
+        formula_RHS = FORMULA_RHS,
+        truncation = TRUNC,
+        mark_decay = MARK_DECAY,
+        growth_only = growth_only
+      )
+    } else {
+      fit_hawkesNet(
+        params_init = params_init,
+        time_window = time_window,
+        mark_filtration = net,
+        PMF_mark = PMF_mark_CS,
+        formula_RHS = FORMULA_RHS,
+        truncation = TRUNC,
+        mark_decay = MARK_DECAY,
+        growth_only = growth_only,
+        maxit = MAX_ITER,
+        fixed_params = NULL,
+        parscale = p_scale,
+        cores = N_CORES,
+        cache_intensity = TRUE,
+        combine_intensity = TRUE,
+        verbose = TRUE
+      )
+    }
+  }, error = function(e) {
+    cat(sprintf("  FIT FAILED: %s\n", e$message))
+    NULL
+  })
+  t_fit <- (proc.time() - t_fit_start)[3]
+  cat(sprintf("  Fit time: %.1f s\n", t_fit))
+
+  if (!is.null(fit) && !is.null(fit$fit_table)) {
+    cat("  Fit table:\n")
+    print(fit$fit_table)
+  }
+
+  # GOF
+  cat(sprintf("  Running GOF (%d sims, %d outer workers)...\n", N_GOF, N_GOF_OUTER))
+  t_gof_start <- proc.time()
+  gof_res <- tryCatch({
+    gof_args <- list(
+      fit = fit,
+      net_obs = net,
+      params_init = params_init,
+      PMF_mark = PMF_mark_CS,
+      cond_intensity = cond_intensity,
+      formula_RHS = FORMULA_RHS,
+      time_window = time_window,
+      truncation = TRUNC,
+      mark_decay = MARK_DECAY,
+      growth_only = growth_only,
+      n_sim = N_GOF,
+      cores_outer = N_GOF_OUTER,
+      verbose = TRUE
+    )
+    if (use_inhom) {
+      gof_args$inhom_bg <- list(
+        mu_vec = mu_vec,
+        integral_bg = integral_bg,
+        mu_fit = inhom_bg$mu_fit,
+        Lambda_fun = inhom_bg$Lambda_fun
+      )
+    }
+    do.call(gof, gof_args)
+  }, error = function(e) {
+    cat(sprintf("  GOF FAILED: %s\n", e$message))
+    NULL
+  })
+  t_gof <- (proc.time() - t_gof_start)[3]
+  cat(sprintf("  GOF time: %.1f s\n", t_gof))
+
+  list(fit = fit, gof = gof_res, label = label,
+       time_fit = t_fit, time_gof = t_gof)
 }
 
 # =============================================================================
@@ -166,32 +251,32 @@ run_paper_fit <- function(formula_rhs, mark_decay, label) {
 
 results <- list()
 
-# 1. GWESP + GWDegree | Activity
-results$gw_activity <- run_paper_fit(
-  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE)",
-  mark_decay = "activity",
-  label = "GW-Activity"
+# 1. Day 1 — simple (growth_only = FALSE)
+results$day1_simple <- run_fit(
+  net_day1, tw_day1, growth_only = GROWTH_ONLY,
+  label = "Day1-Simple"
 )
 
-# 2. GWESP + GWDegree | Node Entrance
-results$gw_ne <- run_paper_fit(
-  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE)",
-  mark_decay = "node_entrance",
-  label = "GW-NodeEntrance"
+# 2. Day 1 — non-simple (growth_only = FALSE)
+results$day1_nonsimple <- run_fit(
+  net_day1, tw_day1, growth_only = GROWTH_ONLY,
+  label = "Day1-NonSimple"
 )
 
-# 3. Triangles + Star | Activity
-results$tri_activity <- run_paper_fit(
-  formula_rhs = "triangles + star(c(2,3))",
-  mark_decay = "activity",
-  label = "Tri-Activity"
+# 3. Full conference — inhomogeneous, simple
+results$full_simple <- run_fit(
+  net_full, tw_full, growth_only = GROWTH_ONLY,
+  label = "Full-Inhom-Simple",
+  mu_vec = inhom_bg$mu_vec,
+  integral_bg = inhom_bg$integral_bg
 )
 
-# 4. Triangles + Star | Node Entrance
-results$tri_ne <- run_paper_fit(
-  formula_rhs = "triangles + star(c(2,3))",
-  mark_decay = "node_entrance",
-  label = "Tri-NodeEntrance"
+# 4. Full conference — inhomogeneous, non-simple
+results$full_nonsimple <- run_fit(
+  net_full, tw_full, growth_only = GROWTH_ONLY,
+  label = "Full-Inhom-NonSimple",
+  mu_vec = inhom_bg$mu_vec,
+  integral_bg = inhom_bg$integral_bg
 )
 
 # =============================================================================
@@ -203,15 +288,22 @@ cat("######################################################################\n")
 
 # 1. Summary Table
 summary_table <- do.call(rbind, lapply(results, function(res) {
+  if (is.null(res$fit) || is.null(res$fit$fit_table)) return(NULL)
   tab <- res$fit$fit_table
   tab$model <- res$label
   tab
 }))
-write.csv(summary_table, file.path(OUTPUT_DIR, "paper_fit_summary.csv"), row.names = FALSE)
+if (!is.null(summary_table)) {
+  write.csv(summary_table, file.path(OUTPUT_DIR, "paper_fit_summary.csv"),
+            row.names = FALSE)
+  cat("\nFit Summary:\n")
+  print(summary_table)
+}
 
 # 2. GOF Plots
 for (name in names(results)) {
   res <- results[[name]]
+  if (is.null(res$gof) || is.null(res$gof$plots)) next
   if (!is.null(res$gof$plots$waiting_times_plot)) {
     ggsave(
       filename = file.path(OUTPUT_DIR, paste0("gof_wait_", name, ".pdf")),
@@ -228,6 +320,7 @@ for (name in names(results)) {
   }
 }
 
+# 3. Save full results
 saveRDS(results, file.path(OUTPUT_DIR, "paper_results_full.RDS"))
 
 cat("\nDone. Results saved to:", OUTPUT_DIR, "\n")
