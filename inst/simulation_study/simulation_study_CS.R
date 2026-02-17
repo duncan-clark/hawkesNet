@@ -304,17 +304,22 @@ if(RUN_CONSISTENCY){
                       CS_params = c(-7, 3, 0.1, -0.1))
 
     # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
-    # BLAS threads pre-set to 1 in make_cluster() so forked grandchildren are safe.
+    # For consistency study, we try to run all N_SIMS_CONSISTENCY in parallel
+    # if cores allow, to maximize throughput.
+    N_CONS_OUTER <- min(N_SIMS_CONSISTENCY, 120L, N_CORES)
+    N_CONS_INNER <- max(1L, floor(N_CORES / N_CONS_OUTER))
+    
     t_consistency_total <- proc.time()
     cat("=== Consistency Study (CS) ===\n")
     cat("  Time windows:", paste(time_windows, collapse = ", "), "\n")
     cat("  N_SIMS per window:", N_SIMS_CONSISTENCY, "\n")
-    cat("  Core allocation:", N_CORES_OUTER, "outer x", N_CORES_INNER, "inner =",
-        N_CORES_OUTER * N_CORES_INNER, "total (of", N_CORES, "available)\n")
+    cat("  Core allocation:", N_CONS_OUTER, "outer workers x", N_CONS_INNER, "inner =",
+        N_CONS_OUTER * N_CONS_INNER, "total (of", N_CORES, "available)\n")
     cat("Setting up cluster...\n")
     t_cluster <- proc.time()
-    cl <- make_cluster(N_CORES_OUTER)
-    clusterExport(cl, c("params_true", "TRUNCATION", "N_CORES_INNER", "MAX_ITER", "p_scale"))
+    cl <- make_cluster(N_CONS_OUTER)
+    clusterExport(cl, c("params_true", "TRUNCATION", "N_CONS_INNER", "MAX_ITER", "p_scale"))
+    # (Inside the loop, workers will use N_CONS_INNER for fitting)
     cat("  Cluster setup:", round((proc.time() - t_cluster)[3], 1), "s\n")
     
     # Storage for results
@@ -329,8 +334,8 @@ if(RUN_CONSISTENCY){
       clusterExport(cl, "curr_time", envir = environment())
       
       # Parallel Simulation & Fitting Loop
-      cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CORES_OUTER, "parallel x",
-          N_CORES_INNER, "inner cores...\n")
+      cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CONS_OUTER, "parallel x",
+          N_CONS_INNER, "inner cores...\n")
       t_simfit <- proc.time()
       res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
         worker_id <- Sys.getpid()
@@ -384,7 +389,7 @@ if(RUN_CONSISTENCY){
                               trace = 0,
                               fixed_params = NULL,
                               parscale = p_scale,
-                              cores = N_CORES_INNER,
+                              cores = N_CONS_INNER,
                               method = "Nelder-Mead")
       }, error = function(e) return(NULL))
         
