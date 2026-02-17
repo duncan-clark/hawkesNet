@@ -269,14 +269,14 @@ results$day1_tri_nonsimple <- run_fit(
 # 3. Day 1 — GWESP + GWDegree + Degree(0)
 results$day1_gw_simple <- run_fit(
   net_day1, tw_day1, 
-  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE) + degree(0)",
+  formula_rhs = "gwesp(0.5) + gwdegree(0.5) + degree(0)",
   label = "Day1-GW-Simple"
 )
 
 # 4. Day 1 — GWESP + GWDegree + Degree(0) [Placeholder for non-simple]
 results$day1_gw_nonsimple <- run_fit(
   net_day1, tw_day1, 
-  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE) + degree(0)",
+  formula_rhs = "gwesp(0.5) + gwdegree(0.5) + degree(0)",
   label = "Day1-GW-NonSimple"
 )
 
