@@ -2,14 +2,14 @@
 ## Hypertext 2009 conference: Paper Results Script
 ## =============================================================================
 ## 6 fits total:
-##   1. Day 1 — triangles + star(c(2,3)) + degree(0)
-##   2. Day 1 — triangles + star(c(2,3)) + degree(0) [Non-Simple placeholder]
-##   3. Day 1 — gwesp(0.5) + gwdegree(0.5) + degree(0)
-##   4. Day 1 — gwesp(0.5) + gwdegree(0.5) + degree(0) [Non-Simple placeholder]
-##   5. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0)
-##   6. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0) [Non-Simple placeholder]
+##   1. Day 1 — edges + triangles + star(c(2,3)) + degree(0)
+##   2. Day 1 — edges + triangles + star(c(2,3)) + degree(0) [Non-Simple]
+##   3. Day 1 — edges + gwesp(0.5) + gwdegree(0.5) + degree(0)
+##   4. Day 1 — edges + gwesp(0.5) + gwdegree(0.5) + degree(0) [Non-Simple]
+##   5. Full conference — inhom, edges + triangles + star(c(2,3)) + degree(0)
+##   6. Full conference — inhom, edges + triangles + star(c(2,3)) + degree(0) [Non-Simple]
 ##
-## All fits: growth_only = FALSE, no truncation, all CS params free, include GOF.
+## All fits: growth_only = FALSE, edges (CS_params1) fixed at -5, include GOF.
 ## =============================================================================
 
 library(hawkesNet)
@@ -129,7 +129,10 @@ run_fit <- function(net, time_window, formula_rhs, label,
                     mu_vec = NULL, integral_bg = NULL) {
   cat(sprintf("\n>>> Fit: %s <<<\n", label))
 
-  exp_cs <- expected_params_PMF_mark_CS(net, formula_rhs)
+  # Prepend "edges +" so CS_params1 = edges (fixed at -5 for identifiability)
+  full_formula <- paste0("edges + ", formula_rhs)
+
+  exp_cs <- expected_params_PMF_mark_CS(net, full_formula)
   n_cs <- exp_cs$CS_params_length
   n_events <- length(get_times(net)$times)
   TRUNC <- network.size(net)
@@ -146,10 +149,11 @@ run_fit <- function(net, time_window, formula_rhs, label,
     CS_params = c(-5, rep(0, n_cs - 1))
   )
 
+  # p_scale for free params only (CS_params1 = edges is fixed)
   p_scale <- c(
     mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
     node_lambda = 0.5, m = 0.5,
-    setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
+    setNames(rep(0.1, n_cs - 1), paste0("CS_params", seq_len(n_cs)[-1]))
   )
 
   use_inhom <- !is.null(mu_vec)
@@ -165,13 +169,13 @@ run_fit <- function(net, time_window, formula_rhs, label,
         mu_vec = mu_vec,
         integral_bg = integral_bg,
         maxit = MAX_ITER,
-        fixed_params = NULL,
+        fixed_params = c("CS_params1"),
         parscale = p_scale,
         cores = N_CORES,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
         verbose = TRUE,
-        formula_RHS = formula_rhs,
+        formula_RHS = full_formula,
         truncation = TRUNC,
         mark_decay = MARK_DECAY,
         growth_only = GROWTH_ONLY
@@ -182,12 +186,12 @@ run_fit <- function(net, time_window, formula_rhs, label,
         time_window = time_window,
         mark_filtration = net,
         PMF_mark = PMF_mark_CS,
-        formula_RHS = formula_rhs,
+        formula_RHS = full_formula,
         truncation = TRUNC,
         mark_decay = MARK_DECAY,
         growth_only = GROWTH_ONLY,
         maxit = MAX_ITER,
-        fixed_params = NULL,
+        fixed_params = c("CS_params1"),
         parscale = p_scale,
         cores = N_CORES,
         cache_intensity = TRUE,
@@ -217,7 +221,7 @@ run_fit <- function(net, time_window, formula_rhs, label,
       params_init = params_init,
       PMF_mark = PMF_mark_CS,
       cond_intensity = cond_intensity,
-      formula_RHS = formula_rhs,
+      formula_RHS = full_formula,
       time_window = time_window,
       truncation = TRUNC,
       mark_decay = MARK_DECAY,
