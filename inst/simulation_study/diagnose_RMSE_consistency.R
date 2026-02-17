@@ -25,10 +25,10 @@ if (!file.exists(file.path(PKG_ROOT, "inst"))) {
 N_CORES <- 7L  # Use 7 of 8 cores
 time_windows <- c(2, 4, 6, 10, 20)
 N_REPS <- 12L  # More reps for less noise
-TRUNCATION <- 500
+TRUNCATION <- 100
 MAX_ITER <- 3000
-p_scale <- c(beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-             CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
+             CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 params_true <- list(
   mu = 10,
@@ -36,6 +36,7 @@ params_true <- list(
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
+  m = 1,
   CS_params = c(-7, 3, 0.1, -0.1)
 )
 
@@ -80,17 +81,18 @@ run_one_simfit <- function(i, curr_time, use_near_true_init = TRUE) {
 
   if (use_near_true_init) {
     params_init <- list(
-      mu = params_true$mu,
+      mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
       beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
-      K = params_true$K,
+      K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
       beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
       node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+      m = max(0.1, params_true$m * exp(rnorm(1, 0, 0.2))),
       CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
     )
     params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
   } else {
     params_init <- list(
-      mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, node_lambda = 1,
+      mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, node_lambda = 1, m = 1,
       CS_params = c(-7, 0, 0, 0)
     )
   }
@@ -108,7 +110,7 @@ run_one_simfit <- function(i, curr_time, use_near_true_init = TRUE) {
                   cache_intensity = TRUE,
                   combine_intensity = TRUE,
                   verbose = FALSE,
-                  fixed_params = c("K", "mu"),
+                  fixed_params = c("CS_params1"),
                   parscale = p_scale,
                   cores = 1L,
                   method = "Nelder-Mead")
@@ -299,11 +301,12 @@ run_one_trunc_realization <- function(i) {
     n_evt <- length(get_times(net_t)$times)
     if (n_evt < 5) next
     params_init <- list(
-      mu = params_true$mu * exp(rnorm(1, 0, 0.2)),
+      mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
       beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
-      K = params_true$K,
+      K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
       beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
       node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+      m = max(0.1, params_true$m * exp(rnorm(1, 0, 0.2))),
       CS_params = params_true$CS_params + rnorm(4, 0, 0.5)
     )
     fit_t <- tryCatch({
@@ -319,7 +322,7 @@ run_one_trunc_realization <- function(i) {
                     cache_intensity = TRUE,
                     combine_intensity = TRUE,
                     verbose = FALSE,
-                    fixed_params = c("K", "mu"),
+                    fixed_params = c("CS_params1"),
                     parscale = p_scale,
                     cores = 1L,
                     method = "Nelder-Mead")

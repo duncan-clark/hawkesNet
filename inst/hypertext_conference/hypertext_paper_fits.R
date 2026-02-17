@@ -120,7 +120,7 @@ run_paper_fit <- function(formula_rhs, mark_decay, label) {
   )
   
   p_scale <- c(
-    mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.5,
+    mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.5,
     setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
   )
   
@@ -134,7 +134,7 @@ run_paper_fit <- function(formula_rhs, mark_decay, label) {
     mark_decay = mark_decay,
     growth_only = FALSE,
     maxit = MAX_ITER,
-    fixed_params = c("mu", "K"), # Fixed mu for homogeneous day-1, K=0.5
+    fixed_params = NULL, # m-parameter model: all params free
     parscale = p_scale,
     cores = N_CORES,
     cache_intensity = TRUE,

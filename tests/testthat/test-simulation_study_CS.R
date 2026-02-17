@@ -10,27 +10,29 @@ SIM_STUDY_PARAMS <- list(
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
+  m = 1,
   CS_params = c(-7, 3, 0.1, -0.1)
 )
 SIM_STUDY_FORMULA <- "edges + triangles + star(c(2,3))"
-SIM_STUDY_TRUNCATION <- 500
+SIM_STUDY_TRUNCATION <- 100
 
-# parscale: must match free flat_par names (mu is fixed, edges is free)
+# parscale: must match free flat_par names (CS_params1 edges is fixed)
 SIM_STUDY_PSCALE <- c(
-  beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-  CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
+  mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
+  CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1
 )
 
-# Main study init — mu fixed to true value (consistent with hypertext inhom bg)
+# Main study init — CS_params1 (edges) fixed since likelihood is flat
 SIM_STUDY_INIT <- list(
   mu = 10,
   beta_overall = 1,
   K = 0.5,
   beta_edges = 1,
   node_lambda = 1,
-  CS_params = c(-7, 1, 0, 0)
+  m = 1,
+  CS_params = c(-7, 2, 0, 0)
 )
-SIM_STUDY_FIXED <- c("K", "mu")
+SIM_STUDY_FIXED <- c("CS_params1")
 
 # Helper: simulate one network at a given time window
 sim_one <- function(time_window = c(0, 5), seed = 42) {
@@ -71,15 +73,14 @@ test_that("CS simulation (T=5) produces valid network with edges and nodes", {
 # =============================================================================
 # TEST 2: parscale mapping works with both CS_params and formula name conventions
 # =============================================================================
-test_that("parscale maps correctly to free flat_par (K and mu fixed)", {
+test_that("parscale maps correctly to free flat_par (CS_params1 fixed)", {
   sim <- sim_one(c(0, 5), seed = 42)
   skip_if(network::network.edgecount(sim$net) < 3, "Need edges for fit test")
 
-  # Flatten params_init as fit_hawkesNet does (remove K and mu since they're fixed)
+  # Flatten params_init as fit_hawkesNet does (remove CS_params1 since it's fixed)
   pi <- SIM_STUDY_INIT
-  pi$K <- NULL
-  pi$mu <- NULL
   flat_par <- unlist(pi)
+  flat_par <- flat_par[names(flat_par) != "CS_params1"]
   # Check that parscale[names(flat_par)] gives no NAs
   mapped <- SIM_STUDY_PSCALE[names(flat_par)]
   expect_true(all(!is.na(mapped)),
@@ -167,9 +168,8 @@ test_that("CS fit with main study config completes without error", {
   expect_true("fit" %in% names(fit))
   expect_true(all(is.finite(fit$fit$par)),
     info = paste("All params should be finite:", paste(round(fit$fit$par, 4), collapse = ", ")))
-  # K and mu should NOT be in fitted params (they're fixed)
-  expect_false("K" %in% names(fit$fit$par))
-  expect_false("mu" %in% names(fit$fit$par))
+  # CS_params1 (edges) should NOT be in fitted params (it's fixed)
+  expect_false("CS_params1" %in% names(fit$fit$par))
 })
 
 # =============================================================================
@@ -220,11 +220,12 @@ test_that("CS fit with consistency-study config (near-true init) converges", {
 
   set.seed(99)
   params_init_near <- list(
-    mu = SIM_STUDY_PARAMS$mu,
+    mu = max(0.1, SIM_STUDY_PARAMS$mu * exp(rnorm(1, 0, 0.2))),
     beta_overall = max(0.1, SIM_STUDY_PARAMS$beta_overall * exp(rnorm(1, 0, 0.2))),
-    K = SIM_STUDY_PARAMS$K,
+    K = min(0.99, max(0.01, SIM_STUDY_PARAMS$K * exp(rnorm(1, 0, 0.2)))),
     beta_edges = max(0.1, SIM_STUDY_PARAMS$beta_edges * exp(rnorm(1, 0, 0.2))),
     node_lambda = max(0.1, SIM_STUDY_PARAMS$node_lambda * exp(rnorm(1, 0, 0.2))),
+    m = max(0.1, SIM_STUDY_PARAMS$m * exp(rnorm(1, 0, 0.2))),
     CS_params = SIM_STUDY_PARAMS$CS_params + rnorm(4, 0, 0.5)
   )
 
@@ -314,11 +315,12 @@ test_that("Both main and consistency inits give finite fits at T=10", {
   # Consistency study init (near-true)
   set.seed(7)
   params_init_cons <- list(
-    mu = SIM_STUDY_PARAMS$mu,
+    mu = max(0.1, SIM_STUDY_PARAMS$mu * exp(rnorm(1, 0, 0.2))),
     beta_overall = max(0.1, SIM_STUDY_PARAMS$beta_overall * exp(rnorm(1, 0, 0.2))),
-    K = SIM_STUDY_PARAMS$K,
+    K = min(0.99, max(0.01, SIM_STUDY_PARAMS$K * exp(rnorm(1, 0, 0.2)))),
     beta_edges = max(0.1, SIM_STUDY_PARAMS$beta_edges * exp(rnorm(1, 0, 0.2))),
     node_lambda = max(0.1, SIM_STUDY_PARAMS$node_lambda * exp(rnorm(1, 0, 0.2))),
+    m = max(0.1, SIM_STUDY_PARAMS$m * exp(rnorm(1, 0, 0.2))),
     CS_params = SIM_STUDY_PARAMS$CS_params + rnorm(4, 0, 0.5)
   )
 

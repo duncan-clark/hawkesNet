@@ -54,7 +54,7 @@ params <- list(mu = 10,
                m = 1,
                CS_params = c(-7, 3, 0.1, -0.1)
                )
-TRUNCATION  <- 500
+TRUNCATION  <- 100
 SIMULATE <- TRUE
 PAPER_OUTPUT <- TRUE
 RUN_EXPLOSIVE <- ON_SLURM          # skip explosive in interactive mode
@@ -99,10 +99,10 @@ SEED <- 1267
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
-  # No parameters are fixed. flat_par has:
-  #   mu, beta_overall, K, beta_edges, node_lambda, m, CS_params1, CS_params2, CS_params3, CS_params4
+  # CS_params1 (edges) is fixed. flat_par has:
+  #   mu, beta_overall, K, beta_edges, node_lambda, m, CS_params2, CS_params3, CS_params4
   p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
-               CS_params1 = 1, CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
+               CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
   # PSOCK cluster: each worker runs one sim or one fit at a time.
@@ -203,16 +203,15 @@ if(SIMULATE){
   cl_fit <- make_cluster(N_CORES_OUTER)
   clusterExport(cl_fit, c("N_CORES_INNER"))
   
-  # Init values: node_lambda fixed to true value; mu and K free.
-  # node_lambda fixed to prevent co-variation with edges term.
-  # mu and K are identifiable from event times (ground intensity only).
+  # Init values: CS_params1 (edges) fixed at true value since likelihood is flat
+  # in this direction. All other params free.
   params_init <- list(mu = 10,
                       beta_overall = 1,
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
                       m = 1,
-                      CS_params = c(-9, 2, 0, 0)
+                      CS_params = c(-7, 2, 0, 0)
   )
   clusterExport(cl_fit, c("params_init", "p_scale", "TIME", "MAX_ITER", "TRUNCATION"))
   
@@ -235,7 +234,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = NULL,
+        fixed_params = c("CS_params1"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -301,6 +300,7 @@ if(RUN_CONSISTENCY){
                       K = 0.5,
                       beta_edges = 1,
                       node_lambda = 1,
+                      m = 1,
                       CS_params = c(-7, 3, 0.1, -0.1))
 
     # Setup Cluster — nested parallelism (PSOCK outer x fork inner).
@@ -360,13 +360,13 @@ if(RUN_CONSISTENCY){
         
         # B. Fit
         # Initialize near true params + small noise for better convergence.
-        # node_lambda fixed to true value; mu and K free with noise.
+        # CS_params1 (edges) is fixed; all other params free with noise.
         params_init <- list(
           mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
           beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
           K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
           beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
-          node_lambda = params_true$node_lambda,
+          node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
           m = max(0.1, params_true$m * exp(rnorm(1, 0, 0.2))),
           CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
         )
@@ -387,7 +387,7 @@ if(RUN_CONSISTENCY){
                               combine_intensity = TRUE,
                               verbose = FALSE,
                               trace = 0,
-                              fixed_params = NULL,
+                              fixed_params = c("CS_params1"),
                               parscale = p_scale,
                               cores = N_CONS_INNER,
                               method = "Nelder-Mead")
