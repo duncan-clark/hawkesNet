@@ -219,16 +219,18 @@ if(SIMULATE){
   t1 <- proc.time()
   fits <- parLapply(cl=cl_fit, sims, function(x){
     worker_id <- Sys.getpid()
-    message(sprintf("  [Outer Worker %d] Starting fit for sim with %d events...", worker_id, length(x$events$t)))
+    n_events <- length(x$events$t)
+    message(sprintf("  [Outer Worker %d] Starting fit for sim with %d events...", worker_id, n_events))
+    t_start <- proc.time()
     
-      fit <- tryCatch({
+    fit <- tryCatch({
       fit_hawkesNet(
         params_init = params_init,
         time_window = c(0, TIME),
         mark_filtration = x$net,
         PMF_mark = PMF_mark_CS,
         formula_RHS = "edges + triangles + star(c(2,3))",
-        trace = 1,
+        trace = 0,
         maxit = MAX_ITER,
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
@@ -239,16 +241,19 @@ if(SIMULATE){
         cores = N_CORES_INNER,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
-        verbose = TRUE
+        verbose = FALSE
       )
     }, error = function(e) {
       message(sprintf("  [Outer Worker %d] ERROR: %s", worker_id, e$message))
       return(e$message)
     })
     
+    t_end <- proc.time()
+    elapsed <- (t_end - t_start)[3]
+    
     if (is.list(fit)) {
-      message(sprintf("  [Outer Worker %d] Fit complete (convergence=%d, iterations=%d)", 
-                      worker_id, fit$fit$convergence, fit$fit$counts[1]))
+      message(sprintf("  [Outer Worker %d] Fit complete in %.1f s (events=%d, conv=%d, iters=%d, ll=%.2f)", 
+                      worker_id, elapsed, n_events, fit$fit$convergence, fit$fit$counts[1], -fit$fit$value))
       if (!is.null(fit$intens_funcs)) fit$intens_funcs <- NULL
     }
     return(fit)
@@ -328,6 +333,8 @@ if(RUN_CONSISTENCY){
           N_CORES_INNER, "inner cores...\n")
       t_simfit <- proc.time()
       res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
+        worker_id <- Sys.getpid()
+        t_start_pair <- proc.time()
         
         # A. Simulate
         sim_res <- tryCatch({
@@ -374,6 +381,7 @@ if(RUN_CONSISTENCY){
                               cache_intensity = TRUE,
                               combine_intensity = TRUE,
                               verbose = FALSE,
+                              trace = 0,
                               fixed_params = NULL,
                               parscale = p_scale,
                               cores = N_CORES_INNER,
@@ -381,6 +389,11 @@ if(RUN_CONSISTENCY){
       }, error = function(e) return(NULL))
         
         if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
+        
+        t_end_pair <- proc.time()
+        elapsed_pair <- (t_end_pair - t_start_pair)[3]
+        message(sprintf("  [Consistency Worker %d] T=%.1f Rep %d complete in %.1f s (events=%d, conv=%d)", 
+                        worker_id, curr_time, i, elapsed_pair, length(sim_res$events$t), fit_res$fit$convergence))
         
         # Check if fit succeeded
         par_bo_idx <- which(names(fit_res$fit$par) == "beta_overall")
