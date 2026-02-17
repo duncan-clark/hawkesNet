@@ -1,13 +1,15 @@
 ## =============================================================================
 ## Hypertext 2009 conference: Paper Results Script
 ## =============================================================================
-## 4 fits using triangles + star(c(2,3)):
-##   1. Day 1 — simple (growth_only = TRUE)
-##   2. Day 1 — non-simple (growth_only = FALSE)
-##   3. Full conference — inhomogeneous background, simple
-##   4. Full conference — inhomogeneous background, non-simple
+## 6 fits total:
+##   1. Day 1 — triangles + star(c(2,3)) + degree(0)
+##   2. Day 1 — triangles + star(c(2,3)) + degree(0) [Non-Simple placeholder]
+##   3. Day 1 — gwesp(0.5) + gwdegree(0.5) + degree(0)
+##   4. Day 1 — gwesp(0.5) + gwdegree(0.5) + degree(0) [Non-Simple placeholder]
+##   5. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0)
+##   6. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0) [Non-Simple placeholder]
 ##
-## No truncation. No fixed params. GOF for all fits.
+## All fits: growth_only = FALSE, no truncation, no fixed params, include GOF.
 ## =============================================================================
 
 library(hawkesNet)
@@ -27,7 +29,6 @@ N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
 N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER",
                                       if (N_CORES >= 100L) 100L else 0L))
 
-FORMULA_RHS <- "triangles + star(c(2,3)) + degree(0)"
 MARK_DECAY <- "node_entrance"
 GROWTH_ONLY <- FALSE
 
@@ -124,11 +125,11 @@ cat(sprintf("  KDE bandwidth: %.4f | integral_bg: %.2f\n",
 # Fitting Logic
 # =============================================================================
 
-run_fit <- function(net, time_window, growth_only, label,
+run_fit <- function(net, time_window, formula_rhs, label,
                     mu_vec = NULL, integral_bg = NULL) {
-  cat(sprintf("\n>>> Fit: %s (growth_only=%s) <<<\n", label, growth_only))
+  cat(sprintf("\n>>> Fit: %s <<<\n", label))
 
-  exp_cs <- expected_params_PMF_mark_CS(net, FORMULA_RHS)
+  exp_cs <- expected_params_PMF_mark_CS(net, formula_rhs)
   n_cs <- exp_cs$CS_params_length
   n_events <- length(get_times(net)$times)
   TRUNC <- network.size(net)
@@ -170,10 +171,10 @@ run_fit <- function(net, time_window, growth_only, label,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
         verbose = TRUE,
-        formula_RHS = FORMULA_RHS,
+        formula_RHS = formula_rhs,
         truncation = TRUNC,
         mark_decay = MARK_DECAY,
-        growth_only = growth_only
+        growth_only = GROWTH_ONLY
       )
     } else {
       fit_hawkesNet(
@@ -181,10 +182,10 @@ run_fit <- function(net, time_window, growth_only, label,
         time_window = time_window,
         mark_filtration = net,
         PMF_mark = PMF_mark_CS,
-        formula_RHS = FORMULA_RHS,
+        formula_RHS = formula_rhs,
         truncation = TRUNC,
         mark_decay = MARK_DECAY,
-        growth_only = growth_only,
+        growth_only = GROWTH_ONLY,
         maxit = MAX_ITER,
         fixed_params = NULL,
         parscale = p_scale,
@@ -216,11 +217,11 @@ run_fit <- function(net, time_window, growth_only, label,
       params_init = params_init,
       PMF_mark = PMF_mark_CS,
       cond_intensity = cond_intensity,
-      formula_RHS = FORMULA_RHS,
+      formula_RHS = formula_rhs,
       time_window = time_window,
       truncation = TRUNC,
       mark_decay = MARK_DECAY,
-      growth_only = growth_only,
+      growth_only = GROWTH_ONLY,
       n_sim = N_GOF,
       cores_outer = N_GOF_OUTER,
       verbose = TRUE
@@ -246,35 +247,53 @@ run_fit <- function(net, time_window, growth_only, label,
 }
 
 # =============================================================================
-# Execute 4 Fits
+# Execute 6 Fits
 # =============================================================================
 
 results <- list()
 
-# 1. Day 1 — simple (growth_only = FALSE)
-results$day1_simple <- run_fit(
-  net_day1, tw_day1, growth_only = GROWTH_ONLY,
-  label = "Day1-Simple"
+# 1. Day 1 — Triangles + Star + Degree(0)
+results$day1_tri_simple <- run_fit(
+  net_day1, tw_day1, 
+  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
+  label = "Day1-Tri-Simple"
 )
 
-# 2. Day 1 — non-simple (growth_only = FALSE)
-results$day1_nonsimple <- run_fit(
-  net_day1, tw_day1, growth_only = GROWTH_ONLY,
-  label = "Day1-NonSimple"
+# 2. Day 1 — Triangles + Star + Degree(0) [Placeholder for non-simple]
+results$day1_tri_nonsimple <- run_fit(
+  net_day1, tw_day1, 
+  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
+  label = "Day1-Tri-NonSimple"
 )
 
-# 3. Full conference — inhomogeneous, simple
-results$full_simple <- run_fit(
-  net_full, tw_full, growth_only = GROWTH_ONLY,
-  label = "Full-Inhom-Simple",
+# 3. Day 1 — GWESP + GWDegree + Degree(0)
+results$day1_gw_simple <- run_fit(
+  net_day1, tw_day1, 
+  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE) + degree(0)",
+  label = "Day1-GW-Simple"
+)
+
+# 4. Day 1 — GWESP + GWDegree + Degree(0) [Placeholder for non-simple]
+results$day1_gw_nonsimple <- run_fit(
+  net_day1, tw_day1, 
+  formula_rhs = "gwesp(0.5, fixed=TRUE) + gwdegree(0.5, fixed=TRUE) + degree(0)",
+  label = "Day1-GW-NonSimple"
+)
+
+# 5. Full conference — Inhomogeneous, Triangles + Star + Degree(0)
+results$full_tri_simple <- run_fit(
+  net_full, tw_full, 
+  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
+  label = "Full-Inhom-Tri-Simple",
   mu_vec = inhom_bg$mu_vec,
   integral_bg = inhom_bg$integral_bg
 )
 
-# 4. Full conference — inhomogeneous, non-simple
-results$full_nonsimple <- run_fit(
-  net_full, tw_full, growth_only = GROWTH_ONLY,
-  label = "Full-Inhom-NonSimple",
+# 6. Full conference — Inhomogeneous, Triangles + Star + Degree(0) [Non-Simple]
+results$full_tri_nonsimple <- run_fit(
+  net_full, tw_full, 
+  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
+  label = "Full-Inhom-Tri-NonSimple",
   mu_vec = inhom_bg$mu_vec,
   integral_bg = inhom_bg$integral_bg
 )
