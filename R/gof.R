@@ -1109,7 +1109,7 @@ create_gof_plots <- function(GOF_results) {
     )
   }
   
-  # Waiting times plot (2-column format: observed in one column, simulated in another, row by row)
+  # Waiting times plot (Boxplots of waiting times by statistic and type)
   if (!is.null(GOF_results$wait_obs) && !is.null(GOF_results$wait_sim) && 
       length(GOF_results$wait_sim) > 0 && length(GOF_results$wait_obs) > 0) {
     # Extract waiting times for each statistic
@@ -1124,56 +1124,56 @@ create_gof_plots <- function(GOF_results) {
       obs_wait <- GOF_results$wait_obs[[i]]
       if (is.null(obs_wait)) obs_wait <- numeric(0)
       
-      sim_wait <- unlist(lapply(GOF_results$wait_sim, function(x) {
-        if (is.list(x) && stat_name %in% names(x) && length(x[[stat_name]]) > 0) {
+      # For simulated, we want to keep the individual simulation IDs to allow boxplots
+      # if we had multiple simulations. However, wait_sim is a list of lists.
+      # Let's flatten it but keep the simulation ID.
+      sim_wait_df <- do.call(rbind, lapply(seq_along(GOF_results$wait_sim), function(sim_id) {
+        x <- GOF_results$wait_sim[[sim_id]]
+        vals <- if (is.list(x) && stat_name %in% names(x)) {
           x[[stat_name]]
-        } else if (is.list(x) && i <= length(x) && length(x[[i]]) > 0) {
+        } else if (is.list(x) && i <= length(x)) {
           x[[i]]
         } else {
           NULL
         }
+        if (length(vals) > 0) {
+          data.frame(waiting_time = vals, sim_id = sim_id)
+        } else {
+          NULL
+        }
       }))
-      if (is.null(sim_wait)) sim_wait <- numeric(0)
       
-      if (length(obs_wait) > 0 || length(sim_wait) > 0) {
-        # Create separate data frames for observed and simulated
-        df_obs <- data.frame(
-          waiting_time = obs_wait,
-          type = "Observed",
-          statistic = stat_name
-        )
-        df_sim <- data.frame(
-          waiting_time = sim_wait,
-          type = "Simulated",
-          statistic = stat_name
-        )
-        df_wait_list[[stat_name]] <- list(obs = df_obs, sim = df_sim)
+      if (length(obs_wait) > 0 || (!is.null(sim_wait_df) && nrow(sim_wait_df) > 0)) {
+        if (length(obs_wait) > 0) {
+          df_obs <- data.frame(
+            waiting_time = obs_wait,
+            type = "Observed",
+            statistic = stat_name
+          )
+          df_wait_list[[paste0(stat_name, "_obs")]] <- df_obs
+        }
+        if (!is.null(sim_wait_df) && nrow(sim_wait_df) > 0) {
+          df_sim <- data.frame(
+            waiting_time = sim_wait_df$waiting_time,
+            type = "Simulated",
+            statistic = stat_name
+          )
+          df_wait_list[[paste0(stat_name, "_sim")]] <- df_sim
+        }
       }
     }
     
     if (length(df_wait_list) > 0) {
-      # Combine all observed and simulated separately
-      df_obs_all <- do.call(rbind, lapply(df_wait_list, function(x) x$obs))
-      df_sim_all <- do.call(rbind, lapply(df_wait_list, function(x) x$sim))
+      df_wait <- do.call(rbind, df_wait_list)
       
-      # Create combined data frame with type and statistic
-      df_wait <- rbind(df_obs_all, df_sim_all)
-      
-      # Common x-axis range so all panels use the same waiting-time scale
-      x_range <- range(df_wait$waiting_time, na.rm = TRUE, finite = TRUE)
-      if (diff(x_range) < .Machine$double.eps) x_range <- x_range + c(-0.5, 0.5)
-      # facet_wrap so each panel (statistic x type) has its own y-scale; otherwise Observed
-      # density spike compresses Simulated in the same row when using facet_grid.
-      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = waiting_time, fill = type)) +
-        ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density)),
-                                alpha = 0.7, bins = 30, position = "identity") +
+      plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = type, y = waiting_time, fill = type)) +
+        ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
         ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
-        ggplot2::facet_wrap(ggplot2::vars(statistic, type), scales = "free_y", ncol = 2L) +
-        ggplot2::coord_cartesian(xlim = x_range) +
+        ggplot2::facet_wrap(~statistic, scales = "free_y") +
         ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
-          x = "Waiting Time",
-          y = "Density"
+          x = "",
+          y = "Waiting Time"
         ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(
