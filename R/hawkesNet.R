@@ -42,13 +42,6 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
   n_cs <- length(stat_names)
   # Find all CS_params in the fit table (may not be sequential if other params are interspersed)
   cs_indices <- grep("^CS_params[0-9]+$", fit_table$parameter)
-  if (length(cs_indices) != n_cs) {
-    # Mismatch: try to match by extracting numbers
-    warning("rename_CS_params_in_table: Found ", length(cs_indices), 
-            " CS_params in fit table but expected ", n_cs, 
-            " statistics from formula. Some parameters may not be renamed.")
-    
-  }
   # Extract parameter numbers and rename
   for (idx in cs_indices) {
     old_name <- fit_table$parameter[idx]
@@ -1313,6 +1306,43 @@ fit_hawkesNet <- function(params_init,
     }
   }
   vcat("[fit] Hessian total time: ", round(proc.time()[3] - t_hess_start, 2), " s\n")
+
+  # --- Insert fixed parameters into the fit table ---
+  # Element-level fixed (e.g. CS_params1): insert at their natural position
+  if (length(elem_level_fixed) > 0) {
+    for (fp_name in elem_level_fixed) {
+      fp_val <- flat_par_full[fp_name]
+      fp_row <- data.frame(parameter = fp_name, estimate = unname(fp_val),
+                           std.error = NA_real_, stringsAsFactors = FALSE)
+      # Find correct insertion position based on flat_par_full ordering
+      full_names <- names(flat_par_full)
+      fp_pos <- which(full_names == fp_name)
+      # Count how many free params come before this position
+      n_before <- sum(!elem_fixed_mask[seq_len(fp_pos - 1)])
+      insert_at <- n_before + 1L
+      if (insert_at > nrow(fit_table)) {
+        fit_table <- rbind(fit_table, fp_row)
+      } else {
+        fit_table <- rbind(fit_table[seq_len(insert_at - 1L), , drop = FALSE],
+                           fp_row,
+                           fit_table[insert_at:nrow(fit_table), , drop = FALSE])
+      }
+    }
+    rownames(fit_table) <- NULL
+  }
+  # List-level fixed (e.g. K): append at the end
+  if (length(list_level_fixed) > 0) {
+    for (fp_name in list_level_fixed) {
+      fp_val <- params_init_old[[fp_name]]
+      if (is.numeric(fp_val) && length(fp_val) == 1) {
+        fp_row <- data.frame(parameter = fp_name, estimate = fp_val,
+                             std.error = NA_real_, stringsAsFactors = FALSE)
+        fit_table <- rbind(fit_table, fp_row)
+      }
+    }
+    rownames(fit_table) <- NULL
+  }
+
   # Replace CS_params1, CS_params2, ... with actual ERNM statistic names
   fit_table <- rename_CS_params_in_table(fit_table, mark_filtration, list(...))
   vcat("[fit] Results:\n")

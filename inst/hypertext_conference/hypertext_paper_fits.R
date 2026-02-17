@@ -9,7 +9,7 @@
 ##   5. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0)
 ##   6. Full conference — inhomogeneous, triangles + star(c(2,3)) + degree(0) [Non-Simple placeholder]
 ##
-## All fits: growth_only = FALSE, no truncation, no fixed params, include GOF.
+## All fits: growth_only = FALSE, no truncation, all CS params free, include GOF.
 ## =============================================================================
 
 library(hawkesNet)
@@ -149,7 +149,7 @@ run_fit <- function(net, time_window, formula_rhs, label,
   p_scale <- c(
     mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
     node_lambda = 0.5, m = 0.5,
-    setNames(rep(0.1, n_cs - 1), paste0("CS_params", seq_len(n_cs)[-1]))
+    setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
   )
 
   use_inhom <- !is.null(mu_vec)
@@ -165,7 +165,7 @@ run_fit <- function(net, time_window, formula_rhs, label,
         mu_vec = mu_vec,
         integral_bg = integral_bg,
         maxit = MAX_ITER,
-        fixed_params = c("CS_params1"),
+        fixed_params = NULL,
         parscale = p_scale,
         cores = N_CORES,
         cache_intensity = TRUE,
@@ -187,7 +187,7 @@ run_fit <- function(net, time_window, formula_rhs, label,
         mark_decay = MARK_DECAY,
         growth_only = GROWTH_ONLY,
         maxit = MAX_ITER,
-        fixed_params = c("CS_params1"),
+        fixed_params = NULL,
         parscale = p_scale,
         cores = N_CORES,
         cache_intensity = TRUE,
