@@ -25,7 +25,7 @@ N_CORES <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 100L))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 100L else 5000L))
 N_GOF <- as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L))
 N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER",
-                                      if (N_CORES >= 100L) 50L else 0L))
+                                      if (N_CORES >= 100L) 100L else 0L))
 
 FORMULA_RHS <- "triangles + star(c(2,3)) + degree(0)"
 MARK_DECAY <- "node_entrance"

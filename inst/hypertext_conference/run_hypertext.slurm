@@ -9,14 +9,14 @@
 
 # Hypertext 2009 conference: hawkesNet paper fits (4 models).
 # Day 1 simple/non-simple + Full conference inhom simple/non-simple.
-# 100 cores: fit uses all for intensity cache; GOF runs 100 sims in parallel (50 outer).
+# 100 cores: fit uses all for intensity cache; GOF runs 100 sims in parallel (100 outer).
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
 # Full run defaults: N_GOF=100, MAX_ITER=5000.
 # Optional env (set before sbatch or in script):
-#   MAX_ITER=5000  N_GOF=20  GOF_CORES=32  RUN_GOF_FULL=TRUE
+#   MAX_ITER=5000  N_GOF=100  GOF_CORES=100  RUN_GOF_FULL=TRUE
 
 mkdir -p cluster_output
 
