@@ -363,28 +363,20 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #'   generates subsequent events conditional on this initial history.
 #'   Recommended for sparse networks where cold-start simulation is difficult.
 #' @param verbose Print progress messages (default TRUE).
-#' @return List with observed and simulated statistics and plots:
-#'   \itemize{
-#'     \item \code{degree_obs}: Observed degree distribution
-#'     \item \code{degree_sim}: Matrix of simulated degree distributions (rows = simulations)
-#'     \item \code{esp_obs}: Observed ESP distribution
-#'     \item \code{esp_sim}: Matrix of simulated ESP distributions (rows = simulations)
-#'     \item \code{geodist_obs}: Observed geodesic distances
-#'     \item \code{geodist_sim}: List of simulated geodesic distances
-#'     \item \code{wait_obs}: Observed waiting times between structure formations
-#'     \item \code{wait_sim}: List of simulated waiting times
-#'     \item \code{nodemix_obs}: Observed nodeMix statistics
-#'     \item \code{nodemix_sim}: Matrix of simulated nodeMix statistics (rows = simulations)
-#'     \item \code{nets_sim}: List of simulated network objects (for further comparison)
-#'     \item \code{plots}: List of ggplot objects (if ggplot2 available):
-#'       \itemize{
-#'         \item \code{degree_plot}: Boxplot of degree distributions
-#'         \item \code{esp_plot}: Boxplot of ESP distributions
-#'         \item \code{geodist_plot}: Histogram of geodesic distances
-#'         \item \code{nodemix_plot}: Boxplot of nodeMix statistics
-#'         \item \code{waiting_times_plot}: Faceted histograms of waiting times
-#'       }
-#'   }
+#' @return List with observed and simulated statistics and plots.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' fit <- fit_hawkesNet(params, c(0, 3), sim$net, PMF_mark_BA,
+#'                      maxit = 10, verbose = FALSE, truncation = 30)
+#' # Run GOF with 2 simulations for speed
+#' g <- gof(fit, sim$net, params, PMF_mark_BA, cond_intensity,
+#'          time_window = c(0, 3), n_sim = 2, truncation = 30)
+#' names(g$plots)
+#' }
 #' @export
 gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS = NULL,
                 time_window = c(0, 0.05), truncation = 100L, mark_decay = "activity",

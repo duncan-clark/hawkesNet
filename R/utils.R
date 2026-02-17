@@ -289,6 +289,11 @@ safe_parallel_lapply <- function(X, FUN, mc.cores,
 #' @param j Vertex index (tail).
 #' @param edge_hash A \code{hash} object (from package \pkg{hash}) with keys of the form \code{"i-j"}.
 #' @return Logical: \code{TRUE} if the edge (i, j) is in the hash.
+#' @examples
+#' library(hash)
+#' h <- hash("1-2" = TRUE)
+#' has_edge(1, 2, h)
+#' has_edge(1, 3, h)
 #' @rdname has_edge
 #' @export
 has_edge <- function(i, j, edge_hash) {
@@ -306,6 +311,10 @@ has_edge <- function(i, j, edge_hash) {
 #' @param net Optional starting \code{network} object; if \code{NULL}, one is created.
 #' @param directed Logical; whether the network is directed (default \code{FALSE}).
 #' @return A \code{network} object with vertices and edges from \code{events_list}.
+#' @examples
+#' events <- list(i = c(1, 2), j = c(2, 3), t = c(0.1, 0.2))
+#' net <- events_to_net(events)
+#' network::network.size(net)
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[network]{set.edge.attribute}}
 #' @rdname events_to_net
 #' @export
@@ -355,6 +364,16 @@ events_to_net <- function(events_list,
 #' @param t Numeric; cutoff time.
 #' @param equals If \code{FALSE}, also remove edges/vertices with time exactly equal to \code{t} (default \code{FALSE}).
 #' @return The filtered \code{network} object.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Get the network state at time 1.5
+#' net_15 <- filtration_to_net(sim$net, 1.5)
+#' network::network.size(net_15)
+#' }
 #' @rdname filtration_to_net
 #' @export
 filtration_to_net <- function(net,
@@ -386,6 +405,10 @@ filtration_to_net <- function(net,
 #' @param net A \code{network} object with \code{time} attribute on vertices and edges.
 #' @param time_name Character; name of the time attribute (default \code{"time"}).
 #' @return List with \code{node_times}, \code{edge_times}, and \code{times} (sorted unique).
+#' @examples
+#' net <- network::network(2, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", c(0.1, 0.2))
+#' get_times(net)
 #' @rdname get_times
 #' @export
 get_times <- function(net, time_name = 'time'){
@@ -485,6 +508,11 @@ get_latest_times <- function(nw) {
 #' @param keep_na If TRUE, leave NA times as NA (default TRUE). If FALSE, error on NA.
 #' @param constant_value Value to assign when all non-NA times are identical (default 0).
 #' @return The network with normalized times.
+#' @examples
+#' net <- network::network(2, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", c(10, 20))
+#' net <- normalize_times_01(net)
+#' network::get.vertex.attribute(net, "time")
 #' @export
 normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_value = 0) {
   # Pull times using your existing helper
@@ -711,6 +739,9 @@ repair_vertex_categorical_params <- function(params, eps = 1e-6) {
 #' @param params List of parameters (e.g. passed to \code{sim_hawkesNet}).
 #' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
 #' @return \code{invisible(params)} if valid.
+#' @examples
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' validate_point_process_params(params)
 #' @export
 validate_point_process_params <- function(params, eps = 1e-10) {
   if (is.null(params) || length(params) == 0) return(invisible(params))

@@ -23,6 +23,15 @@
 #'   (e.g. \code{list(gender = c("female", "male", "unknown"))}); last level is reference.
 #' @param ... Additional arguments (currently unused).
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' net <- network::network(5, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+#' # Compute mark density for a new node at time 0.6
+#' pmf <- PMF_mark_BA(0.6, params, net)
+#' pmf$log_mark_density
+#' }
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
 #' @export
@@ -528,6 +537,8 @@ strip_vertex_attrs_for_ernm <- function(net, formula_RHS, params = NULL) {
 }
 
 #' @rdname PMF_mark_CS
+#' @examples
+#' normalize_vertex_categorical_probs(c(0.4, 0.4, 0.2))
 #' @export
 normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
   if (is.null(probs) || length(probs) == 0) return(NULL)
@@ -552,6 +563,8 @@ normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
 #' @param level_names Character vector of all n level names; the last element is the reference level.
 #' @param eps Small positive value used as floor for any probability (default 1e-10).
 #' @return Named numeric vector of length n summing to 1, or NULL if inputs are invalid.
+#' @examples
+#' expand_vertex_categorical_probs(c(male=0.4, female=0.4), c("male", "female", "unknown"))
 #' @export
 expand_vertex_categorical_probs <- function(p_n1, level_names, eps = 1e-10) {
   if (is.null(p_n1) || length(p_n1) == 0) return(NULL)
@@ -589,6 +602,8 @@ vertex_categorical_level_names <- function(params, attr_name, mark = NULL) {
 #'
 #' @return List with \code{required} (character vector: \code{beta_edges}, \code{m}) and
 #'   \code{optional} (character vector: \code{vertex_categorical}, \code{vertex_categorical_levels}).
+#' @examples
+#' expected_params_PMF_mark_BA()
 #' @export
 expected_params_PMF_mark_BA <- function() {
   list(required = c("beta_edges", "m"), optional = c("vertex_categorical", "vertex_categorical_levels"))
@@ -603,6 +618,12 @@ expected_params_PMF_mark_BA <- function() {
 #' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).
 #' @param ... Ignored.
 #' @return List with \code{required} and \code{CS_params_length} (NA if cannot be computed).
+#' @examples
+#' \donttest{
+#' net <- network::network(5, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+#' expected_params_PMF_mark_CS(net, "edges + triangles")
+#' }
 #' @export
 expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
   required <- c("node_lambda", "CS_params", "beta_edges")
@@ -663,6 +684,11 @@ expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
 #' @param mark_filtration Observed network; required for CS to validate \code{CS_params} length.
 #' @param ... Passed through (e.g. \code{formula_RHS} for CS).
 #' @return Invisible \code{TRUE}, or an error is thrown.
+#' @examples
+#' \donttest{
+#' params <- list(beta_edges = 0.5, m = 1)
+#' validate_params_for_PMF(params, PMF_mark_BA)
+#' }
 #' @export
 validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ...) {
   if (identical(PMF_mark, PMF_mark_BA)) {
@@ -736,7 +762,14 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
 #' @param old_nodes Number of nodes before this event.
 #' @param truncation Maximum number of nodes to consider.
 #' @param mark_decay Either \code{"node_entrance"} or \code{"activity"}.
+#' @param growth_only Logical; if \code{TRUE}, only allow edges from new nodes to old nodes.
 #' @return List with \code{tails} and \code{heads} integer vectors.
+#' @examples
+#' \donttest{
+#' net <- network::network(5, directed = FALSE)
+#' # Get candidates for a new node (index 6) with truncation 3
+#' get_truncated_candidates(net, 6, 5, 3, "node_entrance")
+#' }
 #' @export
 get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark_decay, growth_only = FALSE) {
   # Add a tiny wait to ensure it's not a race condition in PSOCK
@@ -820,6 +853,15 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' @param probs Named numeric vector of vertex categorical probabilities (used by helpers).
 #' @param eps Small positive value for probability clamping (default 1e-10).
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+#' @examples
+#' \donttest{
+#' params <- list(node_lambda = 0.5, CS_params = c(-5, 0.5), beta_edges = 0.5)
+#' net <- network::network(5, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+#' # Compute mark density for a new node at time 0.6 with triangles
+#' pmf <- PMF_mark_CS(0.6, params, net, formula_RHS = "edges + triangles", truncation = 30)
+#' pmf$log_mark_density
+#' }
 #' @rdname PMF_mark_CS
 #' @export
 PMF_mark_CS <- function(time,

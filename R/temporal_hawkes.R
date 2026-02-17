@@ -59,6 +59,13 @@ hawkes_kernel_cdf <- function(u, kernel = c("exp", "powerlaw"), beta = NULL, c =
 #' @param kde_bg Pre-computed KDE background (from compute_kde_background)
 #' @param kernel "exp" or "powerlaw"
 #' @return Numeric log-likelihood value
+#' @examples
+#' \donttest{
+#' realiz <- data.frame(t = sort(runif(50, 0, 10)))
+#' bg <- compute_kde_background(realiz$t, c(0, 10))
+#' # Log-likelihood for an exponential kernel
+#' loglik_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kde_bg = bg, kernel = "exp")
+#' }
 #' @export
 loglik_temporal_hawkes <- function(params, realiz, windowT, dists = NULL,
                                  kde_bg = NULL, kernel = c("exp", "powerlaw")) {
@@ -113,6 +120,14 @@ loglik_temporal_hawkes <- function(params, realiz, windowT, dists = NULL,
 #' @param trace Non-negative integer controlling optimizer output (default 0, silent).
 #' @param low Optional numeric vector of lower bounds for L-BFGS-B.
 #' @param upp Optional numeric vector of upper bounds for L-BFGS-B.
+#' @return List with \code{par} (fitted parameters) and \code{value} (log-likelihood).
+#' @examples
+#' \donttest{
+#' realiz <- data.frame(t = sort(runif(50, 0, 10)))
+#' # Fit a temporal Hawkes process with exponential kernel
+#' fit <- fit_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kernel = "exp")
+#' fit$par
+#' }
 #' @export
 fit_temporal_hawkes <- function(params_init,
                                 realiz,
@@ -183,6 +198,13 @@ fit_temporal_hawkes <- function(params_init,
 #' @param kernel "exp" or "powerlaw"
 #' @param use_kde Logical or 0/1. If TRUE, uses KDE background. Default is 0 (FALSE).
 #' @return Numeric vector of compensator values at each event time
+#' @examples
+#' \donttest{
+#' realiz <- data.frame(t = sort(runif(50, 0, 10)))
+#' # Compensators for a fitted model
+#' comp <- compensator_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kernel = "exp")
+#' plot(comp, type = "s")
+#' }
 #' @export
 compensator_temporal_hawkes <- function(params,
                                         realiz,
@@ -237,6 +259,12 @@ compensator_temporal_hawkes <- function(params,
 #' @param kernel "exp" or "powerlaw"
 #' @param use_kde Logical/Numeric. Default 0 (FALSE).
 #' @return p-value of KS test
+#' @examples
+#' \donttest{
+#' realiz <- data.frame(t = sort(runif(50, 0, 10)))
+#' # KS test for a fitted model
+#' ks_test_pval_temporal(realiz, c(0, 10), c(1, 0.5, 0.2), kernel = "exp")
+#' }
 #' @export
 ks_test_pval_temporal <- function(realiz,
                                   windowT,
@@ -278,7 +306,10 @@ ks_test_pval_temporal <- function(realiz,
 #' @param seed Optional. Set an integer random seed for reproducibility. Default: \code{NULL}.
 #'
 #' @return A numeric vector of sorted event times within `[0, T]`.
-#'
+#' @examples
+#' # Simulate a Hawkes process with branching ratio 0.5
+#' t <- simulate_hawkes_branching(mu = 1, K = 0.5, beta = 2, T = 10)
+#' length(t)
 #' @details
 #' **Algorithm**:
 #' 1. Draw background events (immigrants) from a Poisson(\eqn{\mu \times T}) process 

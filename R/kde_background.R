@@ -20,6 +20,10 @@ ensure_sorted <- function(t) sort(as.numeric(t))
 #' @param grid_n Number of grid points for the density / rate estimate
 #' @return List with: mu_fun (function mapping t -> rate), grid, mu_grid, bw, windowT.
 #'         mu_grid is the rate at each grid point (density * n so that integral ≈ n).
+#' @examples
+#' t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+#' mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+#' mu_fit$mu_fun(5)
 #' @export
 estimate_mu_kde <- function(t, windowT = NULL, bw = NULL, grid_n = 4096) {
   t <- ensure_sorted(t)
@@ -56,6 +60,11 @@ estimate_mu_kde <- function(t, windowT = NULL, bw = NULL, grid_n = 4096) {
 #'
 #' @param mu_fit Output from estimate_mu_kde (list with grid, mu_grid)
 #' @return List with Lambda_fun (function t -> Lambda(t)) and Lambda_grid (data.frame t, Lambda)
+#' @examples
+#' t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+#' mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+#' ch <- make_cumhaz_fun(mu_fit)
+#' ch$Lambda_fun(5)
 #' @export
 make_cumhaz_fun <- function(mu_fit) {
   x <- mu_fit$grid
@@ -77,6 +86,11 @@ make_cumhaz_fun <- function(mu_fit) {
 #' @param t Numeric vector of event times
 #' @param mu_fit Output from estimate_mu_kde
 #' @return List with tau (rescaled times), Lambda_fun, Lambda_grid
+#' @examples
+#' t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+#' mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+#' rescaled <- time_rescale_by_baseline(t, mu_fit)
+#' head(rescaled$tau)
 #' @export
 time_rescale_by_baseline <- function(t, mu_fit) {
   t <- ensure_sorted(t)
@@ -100,6 +114,20 @@ time_rescale_by_baseline <- function(t, mu_fit) {
 #' @param grid_n Grid size for KDE
 #' @return List with: net_rescaled (network with time_attr set to rescaled times),
 #'         time_window_rescaled = c(0, max_tau), mu_fit, Lambda_fun.
+#' @examples
+#' \donttest{
+#' # Build a small network with time attributes
+#' net <- network::network(5, directed = FALSE)
+#' network::set.vertex.attribute(net, "time", c(0.1, 0.2, 0.5, 1.0, 2.0))
+#' network::add.edge(net, 1, 2)
+#' network::add.edge(net, 2, 3)
+#' network::add.edge(net, 3, 4)
+#' network::add.edge(net, 4, 5)
+#' network::add.edge(net, 1, 5)
+#' network::set.edge.attribute(net, "time", c(0.1, 0.3, 0.6, 1.2, 2.1))
+#' res <- network_rescale_times_by_kde(net)
+#' res$time_window_rescaled
+#' }
 #' @export
 network_rescale_times_by_kde <- function(net, time_attr = "time", bw = NULL, grid_n = 4096) {
   node_times <- get.vertex.attribute(net, time_attr)
@@ -135,6 +163,11 @@ network_rescale_times_by_kde <- function(net, time_attr = "time", bw = NULL, gri
 #' @param mu_fit Output from estimate_mu_kde
 #' @param rescale Optional list with Lambda_grid (for second panel)
 #' @param main Plot title
+#' @return Invisible \code{NULL}; called for its side effect (plotting).
+#' @examples
+#' t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+#' mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+#' plot_kde_background(mu_fit)
 #' @export
 plot_kde_background <- function(mu_fit, rescale = NULL, main = "KDE baseline") {
   op <- par(mfrow = c(1, 2))

@@ -2,6 +2,11 @@
 #'
 #' @param nw A network object with a "time" edge attribute
 #' @return A data.frame with columns 'time' and 'n_edges'
+#' @examples
+#' net <- network::network(matrix(c(1,2, 1,3, 2,3), ncol = 2, byrow = TRUE),
+#'                         directed = FALSE)
+#' network::set.edge.attribute(net, "time", c(0.1, 0.1, 0.5))
+#' get_edges_per_event(net)
 #' @export
 get_edges_per_event <- function(nw) {
   if (!is.network(nw)) stop("Input must be a network object.")

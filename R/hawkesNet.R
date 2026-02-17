@@ -71,6 +71,15 @@ rename_CS_params_in_table <- function(fit_table, mark_filtration, dot_args) {
 #' @param params_init Full initial parameter list (includes fixed params).
 #' @param fixed_params Character vector of fixed param names (unused; for API consistency).
 #' @return List with full params (fitted + fixed).
+#' @examples
+#' \donttest{
+#' params_init <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' par_vec <- c(mu = 0.6, beta_overall = 1.1)
+#' # Merge fitted mu/beta_overall with initial K/beta_edges/m
+#' pfull <- merge_fit_params(par_vec, params_init)
+#' pfull$mu
+#' pfull$K
+#' }
 #' @export
 merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
   pfit <- as.list(params_init)
@@ -117,6 +126,16 @@ merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
 #' @param times Optional precomputed event times; if \code{NULL}, taken from \code{mark_filtration}.
 #' @param ... Arguments passed to \code{PMF_mark}.
 #' @return List with \code{result} (intensity value), \code{func} (function to evaluate intensity at new params), and optional debug fields.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Intensity at time 3.5 given the simulated network
+#' intens <- cond_intensity(sim$net, 3.5, sim$net, PMF_mark_BA, params, truncation = 30)
+#' intens$result
+#' }
 #' @rdname cond_intensity
 #' @export
 cond_intensity <- function(new_net,
@@ -195,6 +214,15 @@ cond_intensity <- function(new_net,
 #'   Used to initialize the Hawkes kernel state for conditional simulation.
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' # Simulate 3 time units using Barabasi-Albert mark PMF
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' plot(sim$net)
+#' }
 #' @seealso \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
 #' @rdname sim_hawkesNet
 #' @export
@@ -1317,6 +1345,15 @@ fit_hawkesNet <- function(params_init,
 #' @param time_window Numeric \code{c(t0, t1)}.
 #' @param mark_filtration Observed network.
 #' @return Numeric vector of compensator values at each event time.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' comp <- compensators_hawkesNet(params, c(0, 3), sim$net)
+#' plot(comp, type = "s")
+#' }
 #' @export
 compensators_hawkesNet <- function(params,
                                          time_window,
@@ -1342,6 +1379,15 @@ compensators_hawkesNet <- function(params,
 #' @param time_window Numeric \code{c(t0, t1)}.
 #' @param mark_filtration Observed network.
 #' @return P-value of the KS test under the null that rescaled times are uniform.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Test if the simulated data matches the parameters
+#' ks_test_pval_hawkesNet(params, c(0, 3), sim$net)
+#' }
 #' @export
 ks_test_pval_hawkesNet <- function(params,
                                          time_window,
@@ -1379,6 +1425,16 @@ ks_test_pval_hawkesNet <- function(params,
 #' @param times Precomputed times from get_times; if NULL, taken from mark_filtration
 #' @param ... Passed to PMF_mark (e.g. formula_RHS, truncation)
 #' @return List with result (intensity), func (function to evaluate intensity at new params), lambda, kernel_sum, decays, diffs
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Intensity at time 3.5 with a specific background rate
+#' intens <- cond_intensity_inhom(sim$net, 3.5, sim$net, PMF_mark_BA, params, mu_at_t = 0.8, truncation = 30)
+#' intens$result
+#' }
 #' @export
 cond_intensity_inhom <- function(new_net,
                                  t,
@@ -1662,6 +1718,20 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 #' @param ... Passed to \code{\link{fit_hawkesNet}} / \code{PMF_mark}
 #'   (e.g. \code{formula_RHS}, \code{truncation}, \code{cores}).
 #' @return Same as \code{\link{fit_hawkesNet}}.
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Prepare inhomogeneous background from the simulated data
+#' inhom <- prepare_inhomogeneous_background(sim$net)
+#' # Fit using the inhomogeneous background
+#' fit <- fit_hawkesNet_inhom(params, c(0, 3), sim$net, PMF_mark_BA,
+#'                            mu_vec = inhom$mu_vec, integral_bg = inhom$integral_bg,
+#'                            maxit = 10, truncation = 30)
+#' fit$fit_table
+#' }
 #' @seealso \code{\link{fit_hawkesNet}}, \code{\link{prepare_inhomogeneous_background}}
 #' @export
 fit_hawkesNet_inhom <- function(params_init,
@@ -1713,6 +1783,16 @@ fit_hawkesNet_inhom <- function(params_init,
 #' @param bw Bandwidth for KDE; NULL = default
 #' @param grid_n Number of grid points for KDE
 #' @return List with mu_vec, integral_bg, times, mu_fit, Lambda_fun
+#' @examples
+#' \donttest{
+#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' set.seed(1)
+#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
+#' # Estimate background rate from simulated events
+#' inhom <- prepare_inhomogeneous_background(sim$net)
+#' names(inhom)
+#' }
 #' @export
 prepare_inhomogeneous_background <- function(mark_filtration, time_attr = "time", bw = NULL, grid_n = 2048) {
   times_obj <- get_times(mark_filtration, time_name = time_attr)
