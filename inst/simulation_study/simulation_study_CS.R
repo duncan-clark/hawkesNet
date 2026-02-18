@@ -394,34 +394,54 @@ if(RUN_CONSISTENCY){
                  length(fit_res$fit$par) >= 2 &&
                  (length(par_bo_idx) == 0 || fit_res$fit$par[par_bo_idx] <= 10))
         
-        # Map true values: unlist gives CS_params1,2,...; fit$par may use those or formula names
+        # Map true values safely
         par_names <- names(fit_res$fit$par)
-        true_vals <- setNames(numeric(length(par_names)), par_names)
-        if ("mu" %in% par_names) true_vals["mu"] <- params_true$mu
-        true_vals["beta_overall"] <- params_true$beta_overall
-        if ("K" %in% par_names) true_vals["K"] <- params_true$K
-        true_vals["beta_edges"] <- params_true$beta_edges
-        true_vals["node_lambda"] <- params_true$node_lambda
-        if ("m" %in% par_names) true_vals["m"] <- params_true$m
-        for (k in seq_along(params_true$CS_params)) {
-          nm <- paste0("CS_params", k)
-          if (nm %in% par_names) true_vals[nm] <- params_true$CS_params[k]
+        n_pars <- length(par_names)
+        true_vals <- setNames(numeric(n_pars), par_names)
+        
+        # Helper to safely map
+        safe_map <- function(target_nm, val) {
+          if (target_nm %in% par_names) true_vals[target_nm] <<- val
         }
-        # Fallback: formula names from expected_params
+        
+        safe_map("mu", params_true$mu)
+        safe_map("beta_overall", params_true$beta_overall)
+        safe_map("K", params_true$K)
+        safe_map("beta_edges", params_true$beta_edges)
+        safe_map("node_lambda", params_true$node_lambda)
+        safe_map("m", params_true$m)
+        
+        # Map CS params (try both index-based and formula-based names)
+        for (k in seq_along(params_true$CS_params)) {
+          safe_map(paste0("CS_params", k), params_true$CS_params[k])
+        }
+        
         exp_cs <- tryCatch(expected_params_PMF_mark_CS(sim_res$net, "edges + triangles + star(c(2,3))"), error = function(e) NULL)
-        if (!is.null(exp_cs$CS_params_names) && length(params_true$CS_params) >= length(exp_cs$CS_params_names)) {
+        if (!is.null(exp_cs$CS_params_names)) {
           for (k in seq_along(exp_cs$CS_params_names)) {
-            if (exp_cs$CS_params_names[k] %in% par_names) true_vals[exp_cs$CS_params_names[k]] <- params_true$CS_params[k]
+            if (k <= length(params_true$CS_params)) {
+              safe_map(exp_cs$CS_params_names[k], params_true$CS_params[k])
+            }
           }
         }
-        # Return row
+        
+        # Final safety check on dimensions before returning
+        estimates <- as.numeric(fit_res$fit$par)
+        t_vals <- as.numeric(true_vals)
+        
+        if (length(estimates) != n_pars || length(t_vals) != n_pars) {
+           message(sprintf("  [Consistency Worker %d] DIMENSION MISMATCH: names=%d, est=%d, true=%d", 
+                           worker_id, n_pars, length(estimates), length(t_vals)))
+           return(NULL)
+        }
+
         return(data.frame(
           keep = keep,
           sim_id = i,
           time_window = curr_time,
           param = par_names,
-          estimate = as.numeric(fit_res$fit$par),
-          true_value = as.numeric(true_vals)
+          estimate = estimates,
+          true_value = t_vals
         ))
       })
       elapsed_simfit <- (proc.time() - t_simfit)[3]
@@ -801,15 +821,16 @@ if(PAPER_OUTPUT){
       sample_fit <- fits[[keep_idx[1]]]
       par_names <- names(sample_fit$fit$par)
       
-      # Map true and init values
+      # Map true and init values (only for params present in fit$par)
       true_vec <- setNames(numeric(length(par_names)), par_names)
       init_vec <- setNames(numeric(length(par_names)), par_names)
-      if ("mu" %in% par_names) true_vec["mu"] <- params$mu
-      true_vec["beta_overall"] <- params$beta_overall
-      if ("K" %in% par_names) true_vec["K"] <- params$K
-      true_vec["beta_edges"] <- params$beta_edges
-      true_vec["node_lambda"] <- params$node_lambda
-      if ("m" %in% par_names) true_vec["m"] <- params$m
+      safe_set <- function(vec, nm, val) { if (nm %in% par_names) vec[nm] <- val; vec }
+      true_vec <- safe_set(true_vec, "mu", params$mu)
+      true_vec <- safe_set(true_vec, "beta_overall", params$beta_overall)
+      true_vec <- safe_set(true_vec, "K", params$K)
+      true_vec <- safe_set(true_vec, "beta_edges", params$beta_edges)
+      true_vec <- safe_set(true_vec, "node_lambda", params$node_lambda)
+      true_vec <- safe_set(true_vec, "m", params$m)
       # Map CS params: fit may use CS_params1,2,... or formula names (edges, triangles, star.2, star.3)
       exp_cs <- expected_params_PMF_mark_CS(sims[[1]]$net, "edges + triangles + star(c(2,3))")
       for (i in seq_along(params$CS_params)) {
@@ -830,12 +851,12 @@ if(PAPER_OUTPUT){
       }
       
       # Map init values for scalar params (CS done above)
-      if ("mu" %in% par_names) init_vec["mu"] <- params_init$mu
-      init_vec["beta_overall"] <- params_init$beta_overall
-      if ("K" %in% par_names) init_vec["K"] <- params_init$K
-      init_vec["beta_edges"] <- params_init$beta_edges
-      init_vec["node_lambda"] <- params_init$node_lambda
-      if ("m" %in% par_names) init_vec["m"] <- params_init$m
+      init_vec <- safe_set(init_vec, "mu", params_init$mu)
+      init_vec <- safe_set(init_vec, "beta_overall", params_init$beta_overall)
+      init_vec <- safe_set(init_vec, "K", params_init$K)
+      init_vec <- safe_set(init_vec, "beta_edges", params_init$beta_edges)
+      init_vec <- safe_set(init_vec, "node_lambda", params_init$node_lambda)
+      init_vec <- safe_set(init_vec, "m", params_init$m)
       
       results <- data.frame(
         mean = colMeans(estims),
