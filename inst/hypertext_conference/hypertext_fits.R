@@ -10,15 +10,13 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Three fits (simple data only, Formula A = tri+star, mark_decay="activity",
-## GROWTH_ONLY=FALSE):
+## Publication fit (simple data only, Formula A = tri+star,
+## mark_decay="activity", GROWTH_ONLY=FALSE):
 ##
-##   Fit A — K=0.5 fixed, edges=-5 fixed  (constrained Hawkes baseline)
-##   Fit B — K=0.5 fixed, edges free      (free structural intercept)
-##   Fit C — K free, edges free            (fully free model)
+##   Fit B — K fixed (default 1), edges free
 ##
-## All fits fix node_lambda at the observed nodes/events ratio.
-## GOF is run for each fit (controllable via env vars).
+## The fit fixes node_lambda at the observed nodes/events ratio.
+## GOF is run for the fit (controllable via env vars).
 ## =============================================================================
 
 library(hawkesNet)
@@ -46,24 +44,25 @@ LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE"
 N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
-N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 25L)))
-N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER",
-                                      if (N_CORES >= 16L) min(N_CORES, 25L) else 0L))
+N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L)))
+# Optional PSOCK parallelism for GOF. When set, gof() ignores `cores` and uses
+# `cores_outer` workers (capped at 60 inside gof()).
+N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", 0L))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
-RUN_FIT_A <- isTRUE(as.logical(Sys.getenv("RUN_FIT_A", "TRUE")))
+RUN_FIT_A <- isTRUE(as.logical(Sys.getenv("RUN_FIT_A", "FALSE")))
 RUN_FIT_B <- isTRUE(as.logical(Sys.getenv("RUN_FIT_B", "TRUE")))
-RUN_FIT_C <- isTRUE(as.logical(Sys.getenv("RUN_FIT_C", "TRUE")))
+RUN_FIT_C <- isTRUE(as.logical(Sys.getenv("RUN_FIT_C", "FALSE")))
 
-RUN_GOF_A <- isTRUE(as.logical(Sys.getenv("RUN_GOF_A", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+RUN_GOF_A <- isTRUE(as.logical(Sys.getenv("RUN_GOF_A", "FALSE")))
 RUN_GOF_B <- isTRUE(as.logical(Sys.getenv("RUN_GOF_B", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-RUN_GOF_C <- isTRUE(as.logical(Sys.getenv("RUN_GOF_C", if (LOCAL_QUICK) "FALSE" else "TRUE")))
+RUN_GOF_C <- isTRUE(as.logical(Sys.getenv("RUN_GOF_C", "FALSE")))
 
 # Fixed model settings
 MARK_DECAY  <- "activity"
 GROWTH_ONLY <- FALSE
-EDGES_FIXED <- -5
-K_FIXED     <- 0.5
+EDGES_INIT  <- -5
+K_FIXED     <- as.numeric(Sys.getenv("K_FIXED", 1))
 GAP_THRESHOLD <- 1.0
 USE_FIRST_CONTACT_ONLY <- TRUE
 
@@ -78,10 +77,8 @@ gofs_abc <- c(A = RUN_GOF_A, B = RUN_GOF_B, C = RUN_GOF_C)
 cat("  GOF to run:", paste(names(gofs_abc)[gofs_abc], collapse = ", "), "\n")
 cat("  Formula:", FORMULA_A, "\n")
 cat("  mark_decay:", MARK_DECAY, "\n")
-cat("  Fit A: K=", K_FIXED, " fixed, edges=", EDGES_FIXED, " fixed\n", sep = "")
 cat("  Fit B: K=", K_FIXED, " fixed, edges free\n", sep = "")
-cat("  Fit C: K free, edges free\n")
-cat("  All fits: node_lambda fixed at observed nodes/events\n\n")
+cat("  node_lambda fixed at observed nodes/events\n\n")
 
 # =============================================================================
 # Helpers
@@ -162,12 +159,12 @@ run_single_fit <- function(net, time_window, label,
   node_lambda_init <- n_nodes / n_events
 
   cs_init <- rep(0, n_cs)
-  cs_init[1] <- EDGES_FIXED
+  cs_init[1] <- EDGES_INIT
 
   params_init <- list(
     mu = mu_init,
     beta_overall = 0.3,
-    K = 0.5,
+    K = K_FIXED,
     beta_edges = 0.3,
     node_lambda = node_lambda_init,
     m = m_init,
@@ -344,26 +341,11 @@ save_incremental <- function() {
       edges_simple = obj_simple$edges,
       tw_simple = tw_simple,
       formula = FORMULA_A,
-      mark_decay = MARK_DECAY, edges_fixed = EDGES_FIXED, K_fixed = K_FIXED,
+      mark_decay = MARK_DECAY, edges_init = EDGES_INIT, K_fixed = K_FIXED,
       N_GOF = N_GOF, MAX_ITER = MAX_ITER, SEED_EVENTS_GOF = SEED_EVENTS_GOF
     ), rds_tmp)
     cat(sprintf("  [checkpoint] Saved partial results: %s\n", rds_tmp))
   }, error = function(e) cat("  [checkpoint] Save failed:", e$message, "\n"))
-}
-
-# --- Fit A: K fixed, edges fixed ---
-if (RUN_FIT_A) {
-  results$fitA <- run_single_fit(
-    net = net_simple, time_window = tw_simple,
-    label = "Fit A: K fixed, edges fixed",
-    formula_rhs = FORMULA_A, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
-    max_iter = MAX_ITER, n_cores = N_CORES,
-    fixed_params = c("K", "CS_params1", "node_lambda"),
-    params_override = list(K = K_FIXED),
-    run_gof = RUN_GOF_A, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
-    seed_events_gof = SEED_EVENTS_GOF
-  )
-  save_incremental()
 }
 
 # --- Fit B: K fixed, edges free ---
@@ -376,20 +358,6 @@ if (RUN_FIT_B) {
     fixed_params = c("K", "node_lambda"),
     params_override = list(K = K_FIXED),
     run_gof = RUN_GOF_B, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
-    seed_events_gof = SEED_EVENTS_GOF
-  )
-  save_incremental()
-}
-
-# --- Fit C: K free, edges free (fully free) ---
-if (RUN_FIT_C) {
-  results$fitC <- run_single_fit(
-    net = net_simple, time_window = tw_simple,
-    label = "Fit C: K free, edges free",
-    formula_rhs = FORMULA_A, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
-    max_iter = MAX_ITER, n_cores = N_CORES,
-    fixed_params = c("node_lambda"),
-    run_gof = RUN_GOF_C, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
   save_incremental()
@@ -422,7 +390,7 @@ save_list <- list(
   tw_simple = tw_simple,
   formula = FORMULA_A,
   mark_decay = MARK_DECAY,
-  edges_fixed = EDGES_FIXED,
+  edges_init = EDGES_INIT,
   K_fixed = K_FIXED,
   N_GOF = N_GOF,
   MAX_ITER = MAX_ITER,

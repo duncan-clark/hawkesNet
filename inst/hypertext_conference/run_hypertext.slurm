@@ -4,22 +4,22 @@
 #SBATCH --error=cluster_output/hypertext_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=25
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=100
+#SBATCH --mem=128G
 
-# Hypertext 2009 conference: hawkesNet fits (3 models, same formula).
-# Formula A (tri+star), varying what is fixed vs free:
-#   Fit A: K=0.5 fixed, edges=-5 fixed
-#   Fit B: K=0.5 fixed, edges free
-#   Fit C: K free, edges free
+# Hypertext 2009 conference: hawkesNet publication fit (single model).
+# Formula A (tri+star):
+#   Fit B: K fixed (default 1), edges free
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run defaults: N_GOF=25, MAX_ITER=5000, GOF for all 3 fits.
+# Full run defaults: N_GOF=100, MAX_ITER=5000, GOF for Fit B only.
 # Optional env (set before sbatch or in script):
-#   MAX_ITER=5000  N_GOF=25  GOF_CORES_OUTER=25
-#   RUN_FIT_A=TRUE  RUN_GOF_A=TRUE  (etc. for B, C)
+#   MAX_ITER=5000  N_GOF=100  GOF_CORES_OUTER=0  K_FIXED=1
+#   RUN_FIT_B=TRUE  RUN_GOF_B=TRUE
+#
+# Note: if GOF_CORES_OUTER > 0, gof() switches to PSOCK and caps workers at 60.
 
 mkdir -p cluster_output
 
@@ -48,7 +48,15 @@ echo "Git status:"
 git status --short || echo "Not a git repository or git not available"
 
 echo "=========================================="
-export N_GOF=25
+export N_GOF=100
+export GOF_CORES_OUTER=0
+export K_FIXED=1
+export RUN_FIT_A=FALSE
+export RUN_GOF_A=FALSE
+export RUN_FIT_B=TRUE
+export RUN_GOF_B=TRUE
+export RUN_FIT_C=FALSE
+export RUN_GOF_C=FALSE
 Rscript inst/hypertext_conference/hypertext_fits.R 2>&1
 
 echo "=========================================="
