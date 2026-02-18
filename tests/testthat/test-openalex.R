@@ -5,6 +5,9 @@
 skip_if_no_openalex <- function() {
   skip_on_cran()
   skip_if_not_installed("httr")
+  # Skip if the helper script is not bundled (e.g. excluded via .Rbuildignore)
+  helper <- system.file("openalex_study", "get_network_openalex.R", package = "hawkesNet")
+  skip_if(helper == "", "openalex_study not installed with package")
   # Check if we can reach OpenAlex API
   testthat::skip_if_not(
     tryCatch({

@@ -27,3 +27,14 @@ List with mu_vec, integral_bg, times, mu_fit, Lambda_fun
 Returns mu_vec aligned with get_times(mark_filtration)$times for use in
 \code{\link{fit_hawkesNet}} (with \code{mu_vec} and \code{integral_bg} arguments).
 }
+\examples{
+\donttest{
+params <- list(mu = 2, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 10), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+# Estimate background rate from simulated events
+inhom <- prepare_inhomogeneous_background(sim$net)
+names(inhom)
+}
+}

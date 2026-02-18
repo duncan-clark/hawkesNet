@@ -19,3 +19,9 @@ Logical: \code{TRUE} if the edge (i, j) is in the hash.
 \description{
 Check whether an edge exists in a hash-backed edge set
 }
+\examples{
+library(hash)
+h <- hash("1-2" = TRUE)
+has_edge(1, 2, h)
+has_edge(1, 3, h)
+}

@@ -20,3 +20,10 @@ List with \code{required} and \code{CS_params_length} (NA if cannot be computed)
 Returns required parameter names and the expected length of \code{CS_params}
 (number of change statistics from the ERNM formula).
 }
+\examples{
+\donttest{
+net <- network::network.initialize(5, directed = FALSE)
+network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+expected_params_PMF_mark_CS(net, "edges + triangles")
+}
+}

@@ -21,3 +21,13 @@ When \code{fixed_params} is used, \code{fit$par} contains only free parameters.
 This helper merges fitted values with \code{params_init} so fixed params (e.g. mu, K)
 are included. Needed for \code{compensators_hawkesNet}, \code{ks_test_pval_hawkesNet}.
 }
+\examples{
+\donttest{
+params_init <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+par_vec <- c(mu = 0.6, beta_overall = 1.1)
+# Merge fitted mu/beta_overall with initial K/beta_edges/m
+pfull <- merge_fit_params(par_vec, params_init)
+pfull$mu
+pfull$K
+}
+}

@@ -6,7 +6,7 @@
 \alias{hawkesNet-package}
 \title{hawkesNet: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models}
 \description{
-Provides tools for simulating and fitting Hawkes-process-driven network growth models via maximum likelihood. Supports both homogeneous and inhomogeneous (KDE-estimated) background rates, Barabási--Albert and change-statistic (ERNM) mark distributions, parallel intensity-cache construction, and goodness-of-fit diagnostics.
+Provides tools for simulating and fitting Hawkes-process-driven network growth models via maximum likelihood. Supports both homogeneous and inhomogeneous (KDE-estimated) background rates, Barabasi-Albert and change-statistic (ERNM) mark distributions, parallel intensity-cache construction, and goodness-of-fit diagnostics.
 }
 \seealso{
 Useful links:
@@ -17,7 +17,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Duncan Clark \email{dac6@williams.edu} (\href{https://orcid.org/0000-0000-0000-0000}{ORCID})
+\strong{Maintainer}: Duncan Clark \email{dac6@williams.edu}
 
 }
 \keyword{internal}

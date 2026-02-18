@@ -46,6 +46,9 @@ This method gives the same distribution as a Hawkes process with intensity
 if you only need the final set of event times (particularly for subcritical K).
 }
 \examples{
+# Simulate a Hawkes process with branching ratio 0.5
+t <- simulate_hawkes_branching(mu = 1, K = 0.5, beta = 2, T = 10)
+length(t)
 \dontrun{
 set.seed(123)
 times <- simulate_hawkes_branching(mu = 0.2, K = 0.5, beta = 1, T = 10)

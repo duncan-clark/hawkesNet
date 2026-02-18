@@ -19,6 +19,7 @@ gof(
   inhom_bg = NULL,
   n_sim = 50L,
   cores = 7L,
+  cores_outer = NULL,
   max_deg = 15L,
   k_esp = 15L,
   degree = 0L,
@@ -58,7 +59,10 @@ If provided, simulations use \code{cond_intensity_inhom} with time-varying backg
 
 \item{n_sim}{Number of simulated networks to generate (default 50).}
 
-\item{cores}{Number of cores for parallelization (default 7).}
+\item{cores}{Number of cores for parallelization (default 7). Ignored when \code{cores_outer} is set.}
+
+\item{cores_outer}{Optional. When set, use PSOCK cluster with this many workers instead of fork.
+Avoids BLAS/fork deadlocks on high-core machines (e.g. 100 cores). Capped at 60 for socket limits.}
 
 \item{max_deg}{Maximum degree for degree distribution (default 15).}
 
@@ -78,30 +82,23 @@ Recommended for sparse networks where cold-start simulation is difficult.}
 \item{verbose}{Print progress messages (default TRUE).}
 }
 \value{
-List with observed and simulated statistics and plots:
-\itemize{
-\item \code{degree_obs}: Observed degree distribution
-\item \code{degree_sim}: Matrix of simulated degree distributions (rows = simulations)
-\item \code{esp_obs}: Observed ESP distribution
-\item \code{esp_sim}: Matrix of simulated ESP distributions (rows = simulations)
-\item \code{geodist_obs}: Observed geodesic distances
-\item \code{geodist_sim}: List of simulated geodesic distances
-\item \code{wait_obs}: Observed waiting times between structure formations
-\item \code{wait_sim}: List of simulated waiting times
-\item \code{nodemix_obs}: Observed nodeMix statistics
-\item \code{nodemix_sim}: Matrix of simulated nodeMix statistics (rows = simulations)
-\item \code{nets_sim}: List of simulated network objects (for further comparison)
-\item \code{plots}: List of ggplot objects (if ggplot2 available):
-\itemize{
-\item \code{degree_plot}: Boxplot of degree distributions
-\item \code{esp_plot}: Boxplot of ESP distributions
-\item \code{geodist_plot}: Histogram of geodesic distances
-\item \code{nodemix_plot}: Boxplot of nodeMix statistics
-\item \code{waiting_times_plot}: Faceted histograms of waiting times
-}
-}
+List with observed and simulated statistics and plots.
 }
 \description{
 Simulates networks from a fitted model and compares observed vs simulated
 network statistics (degree distribution, ESP, geodesic distances, waiting times).
+}
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+fit <- fit_hawkesNet(params, c(0, 3), sim$net, PMF_mark_BA,
+                     maxit = 10, verbose = FALSE, truncation = 30)
+# Run GOF with 2 simulations for speed
+g <- gof(fit, sim$net, params, PMF_mark_BA, cond_intensity,
+         time_window = c(0, 3), n_sim = 2, truncation = 30)
+names(g$plots)
+}
 }

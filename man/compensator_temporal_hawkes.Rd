@@ -36,3 +36,11 @@ Numeric vector of compensator values at each event time
 Computes the compensator values at each event time.
 Optionally uses a KDE for the background rate, otherwise assumes Uniform.
 }
+\examples{
+\donttest{
+realiz <- data.frame(t = sort(runif(50, 0, 10)))
+# Compensators for a fitted model
+comp <- compensator_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kernel = "exp")
+plot(comp, type = "s")
+}
+}

@@ -23,3 +23,18 @@ time_window_rescaled = c(0, max_tau), mu_fit, Lambda_fun.
 Gets all node and edge times from the network, estimates mu(t) via KDE,
 computes Lambda(t), and replaces the time attribute with tau = Lambda(t).
 }
+\examples{
+\donttest{
+# Build a small network with time attributes
+net <- network::network.initialize(5, directed = FALSE)
+network::set.vertex.attribute(net, "time", c(0.1, 0.2, 0.5, 1.0, 2.0))
+network::add.edge(net, 1, 2)
+network::add.edge(net, 2, 3)
+network::add.edge(net, 3, 4)
+network::add.edge(net, 4, 5)
+network::add.edge(net, 1, 5)
+network::set.edge.attribute(net, "time", c(0.1, 0.3, 0.6, 1.2, 2.1))
+res <- network_rescale_times_by_kde(net)
+res$time_window_rescaled
+}
+}

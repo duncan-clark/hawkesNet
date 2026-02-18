@@ -17,3 +17,9 @@ List with tau (rescaled times), Lambda_fun, Lambda_grid
 \description{
 Under the time-change, the rescaled process has approximately constant rate 1.
 }
+\examples{
+t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+rescaled <- time_rescale_by_baseline(t, mu_fit)
+head(rescaled$tau)
+}

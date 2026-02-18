@@ -21,3 +21,7 @@ Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
 finite, and sum to strictly less than 1 (so the reference level gets positive
 probability).  If any check fails, \code{stop()} is called with a message.
 }
+\examples{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+validate_point_process_params(params)
+}

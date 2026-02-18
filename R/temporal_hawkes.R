@@ -62,7 +62,10 @@ hawkes_kernel_cdf <- function(u, kernel = c("exp", "powerlaw"), beta = NULL, c =
 #' @examples
 #' \donttest{
 #' realiz <- data.frame(t = sort(runif(50, 0, 10)))
-#' bg <- compute_kde_background(realiz$t, c(0, 10))
+#' # Compute KDE background
+#' dens <- density(realiz$t, from = 0, to = 10)
+#' mu_vec <- approx(dens$x, dens$y, xout = realiz$t)$y
+#' bg <- list(mu_vec = mu_vec, total_int = 1)
 #' # Log-likelihood for an exponential kernel
 #' loglik_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kde_bg = bg, kernel = "exp")
 #' }

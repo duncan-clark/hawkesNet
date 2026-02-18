@@ -16,17 +16,18 @@
 #' @param truncation Optional integer cap on the number of edges per event.
 #' @param mark_decay Character string controlling how temporal weights decay.
 #'   One of \code{"node_entrance"} (default) or \code{"activity"}.
-#' @param vertex_categorical Optional named list in \code{params}: for each discrete vertex attribute, a named
-#'   numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
-#'   Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).
-#' @param vertex_categorical_levels Optional named list in \code{params}: level names per attribute
-#'   (e.g. \code{list(gender = c("female", "male", "unknown"))}); last level is reference.
 #' @param ... Additional arguments (currently unused).
+#' @details
+#' The \code{params} list may optionally include:
+#' \describe{
+#'   \item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
+#'   \item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
+#' }
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
 #' @examples
 #' \donttest{
 #' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
-#' net <- network::network(5, directed = FALSE)
+#' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
 #' # Compute mark density for a new node at time 0.6
 #' pmf <- PMF_mark_BA(0.6, params, net)
@@ -339,12 +340,12 @@ PMF_mark_BA <- function(time,
 #' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles() + star(c(2,3))"}).
 #' @param truncation Truncation window: 1 = only new-to-old edges; k = edges from k steps before new nodes.
 #' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled edge / probabilities.
-#' @param vertex_categorical Optional named list in \code{params}: for each discrete vertex attribute, a named
-#'   numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
-#'   Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).
-#'   Values are normalized to sum to 1 per attribute; any positive values are valid.
+#' @details
+#' The \code{params} list may optionally include \code{vertex_categorical},
+#' a named list of multinomial proportions per vertex attribute.
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[ernm]{as.BinaryNet}}
-#' Sanitize edge probabilities: replace non-finite, clamp to [eps, 1-eps], fallback to uniform
+
+#' Sanitize edge probabilities: replace non-finite, clamp to \code{[eps, 1-eps]}, fallback to uniform
 #' @param probs Numeric vector of probabilities.
 #' @param eps Small positive floor/ceiling value (default 1e-10).
 #' @param context String appended to warning messages for debugging context.
@@ -620,7 +621,7 @@ expected_params_PMF_mark_BA <- function() {
 #' @return List with \code{required} and \code{CS_params_length} (NA if cannot be computed).
 #' @examples
 #' \donttest{
-#' net <- network::network(5, directed = FALSE)
+#' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
 #' expected_params_PMF_mark_CS(net, "edges + triangles")
 #' }
@@ -766,7 +767,7 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
 #' @return List with \code{tails} and \code{heads} integer vectors.
 #' @examples
 #' \donttest{
-#' net <- network::network(5, directed = FALSE)
+#' net <- network::network.initialize(5, directed = FALSE)
 #' # Get candidates for a new node (index 6) with truncation 3
 #' get_truncated_candidates(net, 6, 5, 3, "node_entrance")
 #' }
@@ -856,7 +857,7 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' @examples
 #' \donttest{
 #' params <- list(node_lambda = 0.5, CS_params = c(-5, 0.5), beta_edges = 0.5)
-#' net <- network::network(5, directed = FALSE)
+#' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
 #' # Compute mark density for a new node at time 0.6 with triangles
 #' pmf <- PMF_mark_CS(0.6, params, net, formula_RHS = "edges + triangles", truncation = 30)

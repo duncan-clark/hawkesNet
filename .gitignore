@@ -9,3 +9,5 @@ paper_dump
 # Ignore job logs; keep cluster_output/ in repo via .gitkeep
 cluster_output/*
 !cluster_output/.gitkeep
+Rplots.pdf
+tests/testthat/Rplots.pdf

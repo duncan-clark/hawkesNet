@@ -19,8 +19,8 @@ if (getRversion() >= "2.15.1") {
 }
 
 ## -- network -------------------------------------------------------------
-#' @importFrom network network network.initialize network.size network.copy
-#'   is.directed
+#' @importFrom network network network.initialize network.size network.edgecount
+#'   network.copy is.network is.directed
 #'   add.edge add.edges add.vertices delete.edges delete.vertices
 #'   set.vertex.attribute get.vertex.attribute delete.vertex.attribute
 #'   list.vertex.attributes
@@ -49,7 +49,7 @@ NULL
 
 ## -- stats ---------------------------------------------------------------
 #' @importFrom stats approx approxfun as.formula density dnorm dpois ks.test
-#'   optim pexp plogis rpois runif rexp sd setNames
+#'   median optim pexp plogis rpois runif rexp sd setNames
 NULL
 
 ## -- utils ---------------------------------------------------------------

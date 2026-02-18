@@ -59,7 +59,7 @@ git status --short || echo "Not a git repository or git not available"
 # git pull origin paper_1_update || echo "Git pull failed or not needed"
 
 echo "=========================================="
-Rscript inst/openalex_study/openalex_hawkes_study.R
+Rscript inst/openalex_study/openalex_hawkes_study.R 2>&1
 
 echo "=========================================="
 echo "Finished:  $(date)"

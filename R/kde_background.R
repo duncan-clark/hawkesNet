@@ -117,7 +117,7 @@ time_rescale_by_baseline <- function(t, mu_fit) {
 #' @examples
 #' \donttest{
 #' # Build a small network with time attributes
-#' net <- network::network(5, directed = FALSE)
+#' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", c(0.1, 0.2, 0.5, 1.0, 2.0))
 #' network::add.edge(net, 1, 2)
 #' network::add.edge(net, 2, 3)

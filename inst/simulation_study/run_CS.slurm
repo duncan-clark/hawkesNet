@@ -31,5 +31,5 @@ export OPENBLAS_NUM_THREADS=1
 # Use 120 workers for simulation phase (leaving buffer for R connection limit)
 export SIM_WORKERS=120
 
-Rscript inst/simulation_study/simulation_study_CS.R
+Rscript inst/simulation_study/simulation_study_CS.R 2>&1
 echo "Finished job at $(date)"

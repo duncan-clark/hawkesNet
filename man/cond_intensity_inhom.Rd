@@ -41,3 +41,15 @@ List with result (intensity), func (function to evaluate intensity at new params
 \description{
 Same as cond_intensity but uses mu_at_t (scalar) instead of params$mu.
 }
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+# Intensity at time 3.5 with a specific background rate
+intens <- cond_intensity_inhom(sim$net, 3.5, sim$net,
+  PMF_mark_BA, params, mu_at_t = 0.8, truncation = 30)
+intens$result
+}
+}

@@ -39,13 +39,6 @@ PMF_mark_BA(
 One of \code{"node_entrance"} (default) or \code{"activity"}.}
 
 \item{...}{Additional arguments (currently unused).}
-
-\item{vertex_categorical}{Optional named list in \code{params}: for each discrete vertex attribute, a named
-numeric vector of multinomial proportions (e.g. \code{list(gender = c(male=0.4, female=0.4, unknown=0.2))}).
-Used for likelihood (observed new-node attribute values) and simulation (sampling new-node attributes).}
-
-\item{vertex_categorical_levels}{Optional named list in \code{params}: level names per attribute
-(e.g. \code{list(gender = c("female", "male", "unknown"))}); last level is reference.}
 }
 \value{
 List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
@@ -55,6 +48,23 @@ Probability mass function for the mark at each event: one new node and K edges f
 where K ~ Poisson(m). So \code{m} is the expected number of edges added per time step. Edges are sampled
 without replacement with probabilities proportional to (degree * time decay); the likelihood uses the
 approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
+}
+\details{
+The \code{params} list may optionally include:
+\describe{
+\item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
+\item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
+}
+}
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+net <- network::network.initialize(5, directed = FALSE)
+network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+# Compute mark density for a new node at time 0.6
+pmf <- PMF_mark_BA(0.6, params, net)
+pmf$log_mark_density
+}
 }
 \seealso{
 \code{\link[network]{network}}, \code{\link[network]{add.vertices}}

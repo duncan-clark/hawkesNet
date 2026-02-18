@@ -46,7 +46,7 @@ git status --short || echo "Not a git repository or git not available"
 
 echo "=========================================="
 export N_GOF=100
-Rscript inst/hypertext_conference/hypertext_paper_fits.R
+Rscript inst/hypertext_conference/hypertext_paper_fits.R 2>&1
 
 echo "=========================================="
 echo "Finished:  $(date)"

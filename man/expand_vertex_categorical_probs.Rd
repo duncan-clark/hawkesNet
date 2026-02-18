@@ -21,3 +21,6 @@ Given n-1 probabilities for the first n-1 levels and a vector of all n level
 names (last is the reference), returns a named vector of length n where the
 last level gets probability \code{1 - sum(p_n1)}.
 }
+\examples{
+expand_vertex_categorical_probs(c(male=0.4, female=0.4), c("male", "female", "unknown"))
+}

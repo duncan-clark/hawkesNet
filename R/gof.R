@@ -440,7 +440,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     if (!is.null(fixed)) {
       cat("  Fixed parameters:", paste(fixed, collapse = ", "), "\n")
     } else {
-      cat("  WARNING: fit$fixed_params is NULL — was this fit run with the latest code?\n")
+      cat("  WARNING: fit$fixed_params is NULL -- was this fit run with the latest code?\n")
     }
   }
   
@@ -616,7 +616,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   }
   cl_gof <- NULL
   if (use_psock) {
-    cat(sprintf("  [GOF] Creating PSOCK cluster (%d workers) at %s\n", n_workers, format(Sys.time(), "%H:%M:%S")), file = stderr())
+    message(sprintf("  [GOF] Creating PSOCK cluster (%d workers) at %s", n_workers, format(Sys.time(), "%H:%M:%S")))
     # Find package root so workers load dev version (avoids "unused argument" when installed pkg is stale)
     pkg_path <- tryCatch({
       p <- getwd()
@@ -631,15 +631,18 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
         env_export$pkg_path <- pkg_path
         parallel::clusterExport(cl, "pkg_path", envir = env_export)
       }
+      # library() is needed here to attach packages on PSOCK workers (separate R processes)
       parallel::clusterEvalQ(cl, {
-        if (!is.null(pkg_path) && nzchar(pkg_path) && requireNamespace("devtools", quietly = TRUE)) {
-          devtools::load_all(pkg_path, quiet = TRUE)
-        } else {
-          library(hawkesNet)
-        }
-        library(network)
-        library(ernm)
-        library(sna)
+        suppressPackageStartupMessages({
+          if (!is.null(pkg_path) && nzchar(pkg_path) && requireNamespace("devtools", quietly = TRUE)) {
+            devtools::load_all(pkg_path, quiet = TRUE)
+          } else {
+            library(hawkesNet)
+          }
+          library(network)
+          library(ernm)
+          library(sna)
+        })
         if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
           RhpcBLASctl::blas_set_num_threads(1L)
           RhpcBLASctl::omp_set_num_threads(1L)
@@ -656,9 +659,9 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       NULL
     })
   }
-  cat(sprintf("  [GOF] Memory before simulation: %.1f Mb\n", gc()[2, 2]), file = stderr())
-  cat(sprintf("  [GOF] Starting %d parallel simulations on %d %s at %s\n",
-              n_sim, n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
+  message(sprintf("  [GOF] Memory before simulation: %.1f Mb", gc()[2, 2]))
+  message(sprintf("  [GOF] Starting %d parallel simulations on %d %s at %s",
+                  n_sim, n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
   sim_results <- tryCatch({
     if (!is.null(cl_gof)) {
       parallel::parLapply(cl_gof, seq_len(n_sim), sim_fun)
@@ -667,10 +670,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     }
   }, error = function(e) {
     if (verbose) cat("  ERROR: Failed to run simulations:", e$message, "\n")
-    cat(sprintf("  [GOF] Simulation FAILED: %s\n", e$message), file = stderr())
+    message(sprintf("  [GOF] Simulation FAILED: %s", e$message))
     list()
   })
-  cat(sprintf("  [GOF] Simulations complete at %s\n", format(Sys.time(), "%H:%M:%S")), file = stderr())
+  message(sprintf("  [GOF] Simulations complete at %s", format(Sys.time(), "%H:%M:%S")))
   
   if (is.null(sim_results) || length(sim_results) == 0) {
     if (verbose) cat("  No simulation results; returning empty GOF results\n")
@@ -792,8 +795,8 @@ n_esp_bins <- k_esp - esp + 1L
 # the workers are as lean as possible.
 
 if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-cat(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s\n",
-            length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
+message(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s",
+                length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
 
 # Combined distributional statistics: Degree, ESP, Geodist, nodeMix
 # Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
@@ -900,8 +903,8 @@ dist_stats_sim <- tryCatch({
     }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
-    cat(sprintf("  [GOF] Starting waiting times (%d nets, %d %s) at %s\n",
-                length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")), file = stderr())
+    message(sprintf("  [GOF] Starting waiting times (%d nets, %d %s) at %s",
+                    length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
     stat_names_standard <- c("edges", "triangles", "star2", "star3")
     wait_fun <- function(n) {
       tryCatch({
@@ -925,7 +928,7 @@ dist_stats_sim <- tryCatch({
       NULL
     })
     
-    cat(sprintf("  [GOF] Waiting times complete at %s\n", format(Sys.time(), "%H:%M:%S")), file = stderr())
+    message(sprintf("  [GOF] Waiting times complete at %s", format(Sys.time(), "%H:%M:%S")))
     if (verbose) {
       cat("    Waiting times: done\n")
       cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")

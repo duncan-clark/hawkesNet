@@ -17,3 +17,8 @@ List with \code{node_times}, \code{edge_times}, and \code{times} (sorted unique)
 \description{
 Extracts vertex and edge \code{time} attributes and returns a sorted unique vector of all event times.
 }
+\examples{
+net <- network::network.initialize(2, directed = FALSE)
+network::set.vertex.attribute(net, "time", c(0.1, 0.2))
+get_times(net)
+}

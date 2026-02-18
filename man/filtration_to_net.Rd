@@ -19,3 +19,14 @@ The filtered \code{network} object.
 \description{
 Removes edges and vertices with time greater than \code{t}; optionally excludes those exactly at \code{t}.
 }
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+# Get the network state at time 1.5
+net_15 <- filtration_to_net(sim$net, 1.5)
+network::network.size(net_15)
+}
+}

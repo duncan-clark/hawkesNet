@@ -4,12 +4,11 @@ Version: 0.1.0
 Author: Duncan A. Clark
 Maintainer: Duncan A. Clark <dac6@williams.edu>
 Authors@R: 
-    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"),
-           comment = c(ORCID = "0000-0000-0000-0000"))
+    person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
 Description: Provides tools for simulating and fitting Hawkes-process-driven
     network growth models via maximum likelihood.
     Supports both homogeneous and inhomogeneous (KDE-estimated) background
-    rates, Barabási--Albert and change-statistic (ERNM) mark distributions,
+    rates, Barabasi-Albert and change-statistic (ERNM) mark distributions,
     parallel intensity-cache construction, and goodness-of-fit diagnostics.
 License: MIT + file LICENSE
 URL: https://github.com/duncan-clark/hawkesNet
@@ -37,6 +36,8 @@ Suggests:
     networkDynamic,
     ndtv,
     animation,
+    MASS,
     numDeriv,
+    RhpcBLASctl,
     gender,
     genderdata

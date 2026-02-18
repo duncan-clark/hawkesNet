@@ -29,3 +29,10 @@ p-value of KS test
 \description{
 Does KS test on pure temporal hawkes
 }
+\examples{
+\donttest{
+realiz <- data.frame(t = sort(runif(50, 0, 10)))
+# KS test for a fitted model
+ks_test_pval_temporal(realiz, c(0, 10), c(1, 0.5, 0.2), kernel = "exp")
+}
+}

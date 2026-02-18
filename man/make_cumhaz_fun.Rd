@@ -15,3 +15,9 @@ List with Lambda_fun (function t -> Lambda(t)) and Lambda_grid (data.frame t, La
 \description{
 Integrated baseline Lambda(t) = integral_0^t mu(s) ds (cumulative hazard)
 }
+\examples{
+t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+ch <- make_cumhaz_fun(mu_fit)
+ch$Lambda_fun(5)
+}

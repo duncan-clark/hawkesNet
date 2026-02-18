@@ -22,3 +22,9 @@ The network with normalized times.
 Uses get_times() to compute the global min/max across BOTH node and edge times,
 then rescales vertex and edge "time" attributes into \verb{[0, 1]}.
 }
+\examples{
+net <- network::network.initialize(2, directed = FALSE)
+network::set.vertex.attribute(net, "time", c(10, 20))
+net <- normalize_times_01(net)
+network::get.vertex.attribute(net, "time")
+}

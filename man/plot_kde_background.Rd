@@ -13,6 +13,14 @@ plot_kde_background(mu_fit, rescale = NULL, main = "KDE baseline")
 
 \item{main}{Plot title}
 }
+\value{
+Invisible \code{NULL}; called for its side effect (plotting).
+}
 \description{
 Plot estimated baseline rate and integrated baseline (for sanity checks)
+}
+\examples{
+t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+plot_kde_background(mu_fit)
 }

@@ -35,6 +35,17 @@ fit_temporal_hawkes(
 
 \item{upp}{Optional numeric vector of upper bounds for L-BFGS-B.}
 }
+\value{
+List with \code{par} (fitted parameters) and \code{value} (log-likelihood).
+}
 \description{
 Fits a Hawkes process with KDE background and specified kernel.
+}
+\examples{
+\donttest{
+realiz <- data.frame(t = sort(runif(50, 0, 10)))
+# Fit a temporal Hawkes process with exponential kernel
+fit <- fit_temporal_hawkes(c(1, 0.5, 0.2), realiz, c(0, 10), kernel = "exp")
+fit$par
+}
 }

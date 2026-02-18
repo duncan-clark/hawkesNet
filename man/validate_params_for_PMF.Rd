@@ -22,3 +22,9 @@ Invisible \code{TRUE}, or an error is thrown.
 Checks that \code{params} contains required names and (for CS) that
 \code{CS_params} length matches the number of change statistics.
 }
+\examples{
+\donttest{
+params <- list(beta_edges = 0.5, m = 1)
+validate_params_for_PMF(params, PMF_mark_BA)
+}
+}

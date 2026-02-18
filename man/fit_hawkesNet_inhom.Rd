@@ -73,6 +73,21 @@ Backward-compatible wrapper around \code{\link{fit_hawkesNet}}.
 Equivalent to calling
 \code{fit_hawkesNet(..., mu_vec = mu_vec, integral_bg = integral_bg)}.
 }
+\examples{
+\donttest{
+params <- list(mu = 2, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 10), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+# Prepare inhomogeneous background from the simulated data
+inhom <- prepare_inhomogeneous_background(sim$net)
+# Fit using the inhomogeneous background
+fit <- fit_hawkesNet_inhom(params, c(0, 10), sim$net, PMF_mark_BA,
+                           mu_vec = inhom$mu_vec, integral_bg = inhom$integral_bg,
+                           maxit = 10, truncation = 30)
+fit$fit_table
+}
+}
 \seealso{
 \code{\link{fit_hawkesNet}}, \code{\link{prepare_inhomogeneous_background}}
 }

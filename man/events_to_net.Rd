@@ -19,6 +19,11 @@ A \code{network} object with vertices and edges from \code{events_list}.
 \description{
 Builds a \code{network} object by applying edge events in order; optionally starts from an existing network.
 }
+\examples{
+events <- list(i = c(1, 2), j = c(2, 3), t = c(0.1, 0.2))
+net <- events_to_net(events)
+network::network.size(net)
+}
 \seealso{
 \code{\link[network]{network}}, \code{\link[network]{add.vertices}}, \code{\link[network]{set.edge.attribute}}
 }

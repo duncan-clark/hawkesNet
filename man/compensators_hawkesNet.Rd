@@ -19,3 +19,13 @@ Numeric vector of compensator values at each event time.
 \description{
 Compensators (integrated intensity) for the Hawkes growth model
 }
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+comp <- compensators_hawkesNet(params, c(0, 3), sim$net)
+plot(comp, type = "s")
+}
+}

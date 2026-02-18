@@ -916,7 +916,7 @@ fit_hawkesNet <- function(params_init,
          paste(names(flat_par_full)[elem_fixed_mask], "=",
                round(flat_par_full[elem_fixed_mask], 4), collapse = ", "), "\n")
   }
-  # Free parameters only — these go to optim
+  # Free parameters only -- these go to optim
   flat_par <- flat_par_full[!elem_fixed_mask]
   if (is.null(parscale)) {
     parscale <- rep(1, length(flat_par))
@@ -1012,10 +1012,10 @@ fit_hawkesNet <- function(params_init,
 
   dot_args <- list(...)
   # Fast optim_func: calls cached closure directly when available, computes integral inline.
-  # PERFORMANCE: proc.time() is a syscall (~5-10μs on Linux) — calling it 12× per eval
-  # doubles the runtime when closure eval itself is ~200μs. We only time on diagnostic
+  # PERFORMANCE: proc.time() is a syscall (~5-10us on Linux) -- calling it 12x per eval
+  # doubles the runtime when closure eval itself is ~200us. We only time on diagnostic
   # intervals (every DIAG_INTERVAL evals) to keep 90% of evals zero-overhead.
-  # tryCatch is also removed from the hot path (~10-50μs per call) since params are
+  # tryCatch is also removed from the hot path (~10-50us per call) since params are
   # validated before the closure eval; any NaN/Inf is caught by the post-hoc check.
   optim_func <- function(params){
     n <- eval_env$n_eval + 1L
@@ -1040,7 +1040,7 @@ fit_hawkesNet <- function(params_init,
     if (params_curr$beta_overall > 100 || (!is.null(params_curr$beta_edges) && params_curr$beta_edges > 100)) return(-1e10)
 
     if (!is.null(cached_funcs)) {
-      # Fast path: evaluate cached closures directly (no tryCatch — params validated above)
+      # Fast path: evaluate cached closures directly (no tryCatch -- params validated above)
       if (should_time) t1 <- proc.time()[3]
       intens_vec <- if (is_combined) cached_funcs[[1L]](params_curr)
                     else {
@@ -1068,7 +1068,7 @@ fit_hawkesNet <- function(params_init,
       if (!is.finite(ll)) return(-1e10)
       if (ll > eval_env$best_ll) eval_env$best_ll <- ll
 
-      # --- Periodic report (only on diagnostic intervals — zero overhead otherwise) ---
+      # --- Periodic report (only on diagnostic intervals -- zero overhead otherwise) ---
       if (should_time) {
         t_total <- proc.time()[3] - t0
         eval_env$t_closure_total <- eval_env$t_closure_total + t_closure
@@ -1180,8 +1180,9 @@ fit_hawkesNet <- function(params_init,
     
     # Check if any parameters are at their bounds
     if (method == "L-BFGS-B") {
-      at_lower <- fit$par <= (bounds$lower + 2 * eps)
-      at_upper <- fit$par >= (bounds$upper - 2 * eps)
+      eps_bound <- 1e-6
+      at_lower <- fit$par <= (bounds$lower + 2 * eps_bound)
+      at_upper <- fit$par >= (bounds$upper - 2 * eps_bound)
       if (any(at_lower | at_upper)) {
         vcat("[fit] WARNING: ", sum(at_lower | at_upper), " parameter(s) at or near bounds.\n")
         for (i in which(at_lower)) vcat(sprintf("[fit]     %-30s at LOWER bound (%.6f)\n", par_names[i], bounds$lower[i]))
@@ -1193,7 +1194,7 @@ fit_hawkesNet <- function(params_init,
   # ---------------------------------------------------------------------------
   # Hessian & Standard Errors
   # ---------------------------------------------------------------------------
-  # Prefer numDeriv::hessian (Richardson extrapolation) — much more accurate
+  # Prefer numDeriv::hessian (Richardson extrapolation) -- much more accurate
   # than optim's simple central-differences, especially for Nelder-Mead.
   # ---------------------------------------------------------------------------
   vcat("[fit] --- Hessian / Standard-Error Computation ---\n")
@@ -1203,7 +1204,7 @@ fit_hawkesNet <- function(params_init,
   
   if (requireNamespace("numDeriv", quietly = TRUE)) {
     vcat("[fit] Computing Hessian via numDeriv::hessian (Richardson extrapolation)...\n")
-    vcat("[fit]   n_params = ", n_par, " → ~", 2 * n_par * n_par, " function evaluations\n")
+    vcat("[fit]   n_params = ", n_par, " -> ~", 2 * n_par * n_par, " function evaluations\n")
     hessian <- tryCatch({
       numDeriv::hessian(func = optim_func, x = fit$par)
     }, error = function(e) {
@@ -1258,10 +1259,10 @@ fit_hawkesNet <- function(params_init,
            paste(sprintf("%.4g", eig), collapse = ", "), "\n")
       n_neg_eig <- sum(eig < 0)
       if (n_neg_eig > 0) {
-        vcat("[fit]   WARNING: ", n_neg_eig, " negative eigenvalue(s) — ",
+        vcat("[fit]   WARNING: ", n_neg_eig, " negative eigenvalue(s) -- ",
              "-H is NOT positive definite (MLE may not be a true maximum)\n")
       } else {
-        vcat("[fit]   All eigenvalues positive — -H is positive definite (good)\n")
+        vcat("[fit]   All eigenvalues positive -- -H is positive definite (good)\n")
       }
     }
     
@@ -1302,7 +1303,7 @@ fit_hawkesNet <- function(params_init,
         vcat(sprintf("[fit]     %-30s  SE = %.6f\n", par_names[i], se[i]))
       }
     } else {
-      vcat("[fit]   FAILED to compute variance-covariance matrix — all SEs will be NA\n")
+      vcat("[fit]   FAILED to compute variance-covariance matrix -- all SEs will be NA\n")
     }
   }
   vcat("[fit] Hessian total time: ", round(proc.time()[3] - t_hess_start, 2), " s\n")
@@ -1462,7 +1463,8 @@ ks_test_pval_hawkesNet <- function(params,
 #' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
 #'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
 #' # Intensity at time 3.5 with a specific background rate
-#' intens <- cond_intensity_inhom(sim$net, 3.5, sim$net, PMF_mark_BA, params, mu_at_t = 0.8, truncation = 30)
+#' intens <- cond_intensity_inhom(sim$net, 3.5, sim$net,
+#'   PMF_mark_BA, params, mu_at_t = 0.8, truncation = 30)
 #' intens$result
 #' }
 #' @export
@@ -1526,7 +1528,7 @@ cond_intensity_inhom <- function(new_net,
 #' one matrix multiply per evaluation (vectorized); per-event steps (plogis, decay,
 #' in_mark, node_dens, kernel) stay in a loop. Faster than N separate multiplies.
 #' @param combined_inputs_list List of length N of combined_inputs from PMF_mark_CS (each has change_stats, in_mark, diffs, ...).
-#' @param diffs_kernel_list List of length N of kernel diffs (t_i - times[times < t_i]).
+#' @param diffs_kernel_list List of length N of kernel diffs (t_i minus earlier times).
 #' @param mu_vec Length-N background rate at each event time.
 #' @param times Length-N event times (used only for length check).
 #' @return List of one function \code{f(params)} returning numeric vector of length N, or NULL on error.
@@ -1750,14 +1752,14 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 #' @return Same as \code{\link{fit_hawkesNet}}.
 #' @examples
 #' \donttest{
-#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' params <- list(mu = 2, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
 #' set.seed(1)
-#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#' sim <- sim_hawkesNet(params, c(0, 10), PMF_mark_BA, cond_intensity,
 #'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
 #' # Prepare inhomogeneous background from the simulated data
 #' inhom <- prepare_inhomogeneous_background(sim$net)
 #' # Fit using the inhomogeneous background
-#' fit <- fit_hawkesNet_inhom(params, c(0, 3), sim$net, PMF_mark_BA,
+#' fit <- fit_hawkesNet_inhom(params, c(0, 10), sim$net, PMF_mark_BA,
 #'                            mu_vec = inhom$mu_vec, integral_bg = inhom$integral_bg,
 #'                            maxit = 10, truncation = 30)
 #' fit$fit_table
@@ -1815,9 +1817,9 @@ fit_hawkesNet_inhom <- function(params_init,
 #' @return List with mu_vec, integral_bg, times, mu_fit, Lambda_fun
 #' @examples
 #' \donttest{
-#' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+#' params <- list(mu = 2, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
 #' set.seed(1)
-#' sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+#' sim <- sim_hawkesNet(params, c(0, 10), PMF_mark_BA, cond_intensity,
 #'                      verbose = FALSE, mu_multiplier = 5, truncation = 30)
 #' # Estimate background rate from simulated events
 #' inhom <- prepare_inhomogeneous_background(sim$net)

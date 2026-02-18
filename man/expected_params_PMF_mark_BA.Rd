@@ -13,3 +13,6 @@ List with \code{required} (character vector: \code{beta_edges}, \code{m}) and
 \description{
 Expected parameter names for PMF_mark_BA
 }
+\examples{
+expected_params_PMF_mark_BA()
+}

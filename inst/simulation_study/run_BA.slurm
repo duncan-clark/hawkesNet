@@ -13,5 +13,5 @@
 module load R
 
 echo "Starting job at $(date)"
-Rscript inst/simulation_study/simulation_study_BA.R
+Rscript inst/simulation_study/simulation_study_BA.R 2>&1
 echo "Finished job at $(date)"

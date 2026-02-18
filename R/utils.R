@@ -406,7 +406,7 @@ filtration_to_net <- function(net,
 #' @param time_name Character; name of the time attribute (default \code{"time"}).
 #' @return List with \code{node_times}, \code{edge_times}, and \code{times} (sorted unique).
 #' @examples
-#' net <- network::network(2, directed = FALSE)
+#' net <- network::network.initialize(2, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", c(0.1, 0.2))
 #' get_times(net)
 #' @rdname get_times
@@ -509,7 +509,7 @@ get_latest_times <- function(nw) {
 #' @param constant_value Value to assign when all non-NA times are identical (default 0).
 #' @return The network with normalized times.
 #' @examples
-#' net <- network::network(2, directed = FALSE)
+#' net <- network::network.initialize(2, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", c(10, 20))
 #' net <- normalize_times_01(net)
 #' network::get.vertex.attribute(net, "time")

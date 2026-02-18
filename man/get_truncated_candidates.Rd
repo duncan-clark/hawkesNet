@@ -23,6 +23,8 @@ get_truncated_candidates(
 \item{truncation}{Maximum number of nodes to consider.}
 
 \item{mark_decay}{Either \code{"node_entrance"} or \code{"activity"}.}
+
+\item{growth_only}{Logical; if \code{TRUE}, only allow edges from new nodes to old nodes.}
 }
 \value{
 List with \code{tails} and \code{heads} integer vectors.
@@ -31,4 +33,11 @@ List with \code{tails} and \code{heads} integer vectors.
 When \code{mark_decay = "node_entrance"} (default), selects the most recently
 \emph{entered} nodes (by index). When \code{mark_decay = "activity"}, selects
 the most recently \emph{active} nodes (latest edge or entry time).
+}
+\examples{
+\donttest{
+net <- network::network.initialize(5, directed = FALSE)
+# Get candidates for a new node (index 6) with truncation 3
+get_truncated_candidates(net, 6, 5, 3, "node_entrance")
+}
 }

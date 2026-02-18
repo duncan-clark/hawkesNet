@@ -61,6 +61,16 @@ List with \code{events}, \code{net}, \code{accept_probs}.
 Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
 Supports both homogeneous (constant mu) and inhomogeneous (time-varying mu) background rates.
 }
+\examples{
+\donttest{
+params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
+set.seed(1)
+# Simulate 3 time units using Barabasi-Albert mark PMF
+sim <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     verbose = FALSE, mu_multiplier = 5, truncation = 30)
+plot(sim$net)
+}
+}
 \seealso{
 \code{\link[network]{as.edgelist}}, \code{\link[hash]{hash}}, \code{\link{cond_intensity_inhom}}, \code{\link{prepare_inhomogeneous_background}}
 }

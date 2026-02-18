@@ -22,3 +22,8 @@ mu_grid is the rate at each grid point (density * n so that integral ≈ n).
 \description{
 Estimate inhomogeneous baseline rate mu(t) from event times using KDE
 }
+\examples{
+t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
+mu_fit <- estimate_mu_kde(t, windowT = c(0, 10))
+mu_fit$mu_fun(5)
+}

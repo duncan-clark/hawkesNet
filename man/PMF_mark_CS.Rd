@@ -69,3 +69,14 @@ List with \code{log_mark_density}, \code{log_density_func}, and optionally sampl
 gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
 caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
 }
+\examples{
+normalize_vertex_categorical_probs(c(0.4, 0.4, 0.2))
+\donttest{
+params <- list(node_lambda = 0.5, CS_params = c(-5, 0.5), beta_edges = 0.5)
+net <- network::network.initialize(5, directed = FALSE)
+network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
+# Compute mark density for a new node at time 0.6 with triangles
+pmf <- PMF_mark_CS(0.6, params, net, formula_RHS = "edges + triangles", truncation = 30)
+pmf$log_mark_density
+}
+}
