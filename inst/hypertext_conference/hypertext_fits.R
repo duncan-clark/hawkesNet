@@ -437,7 +437,7 @@ if (RUN_FIT_D) {
   save_incremental()
 }
 
-results$ernm_fit <- ernm(net_simple ~ edges + gwesp(0.5) + gwdegree(0.5))
+# results$ernm_fit <- ernm(net_simple ~ edges + gwesp(0.5) + gwdegree(0.5))
 
 # =============================================================================
 # Summary table
