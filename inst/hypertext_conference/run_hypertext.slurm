@@ -4,19 +4,19 @@
 #SBATCH --error=cluster_output/hypertext_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=100
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=25
+#SBATCH --mem=32G
 
-# Hypertext 2009 conference: consolidated hawkesNet fits (4 models).
-# 2 formulas x 2 data types (simple/non-simple), all with m-parameter.
-# 100 cores: fit uses all for intensity cache; GOF runs 100 sims in parallel.
+# Hypertext 2009 conference: consolidated hawkesNet fits (2 models).
+# 2 formulas (simple data only), all with m-parameter.
+# 25 cores: fit uses all for intensity cache; GOF runs 25 sims in parallel.
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run defaults: N_GOF=100, MAX_ITER=5000, GOF for all 4 fits.
+# Full run defaults: N_GOF=25, MAX_ITER=5000, GOF for both fits.
 # Optional env (set before sbatch or in script):
-#   MAX_ITER=5000  N_GOF=100  GOF_CORES_OUTER=50
+#   MAX_ITER=5000  N_GOF=25  GOF_CORES_OUTER=25
 #   RUN_FIT_1=TRUE  RUN_GOF_1=TRUE  (etc. for fits 2-4)
 
 mkdir -p cluster_output
@@ -46,7 +46,7 @@ echo "Git status:"
 git status --short || echo "Not a git repository or git not available"
 
 echo "=========================================="
-export N_GOF=100
+export N_GOF=25
 Rscript inst/hypertext_conference/hypertext_fits.R 2>&1
 
 echo "=========================================="

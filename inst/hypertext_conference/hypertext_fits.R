@@ -44,9 +44,9 @@ LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE"
 N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
-N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L)))
+N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 25L)))
 N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER",
-                                      if (N_CORES >= 32L) min(50L, N_CORES) else 0L))
+                                      if (N_CORES >= 16L) min(N_CORES, 25L) else 0L))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 RUN_FIT_1 <- isTRUE(as.logical(Sys.getenv("RUN_FIT_1", "TRUE")))
