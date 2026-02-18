@@ -95,9 +95,9 @@ SEED <- 1267
   # parscale: match param magnitudes so Nelder-Mead simplex steps are proportionate
   # Defined here (not inside SIMULATE block) so consistency study can also use it.
   # IMPORTANT: Names must match flat_par names exactly.
-  # CS_params1 (edges) is fixed. flat_par has:
-  #   mu, beta_overall, K, beta_edges, node_lambda, m, CS_params2, CS_params3, CS_params4
-  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, node_lambda = 0.5, m = 0.1,
+  # CS_params1 (edges) and node_lambda are fixed. flat_par has:
+  #   mu, beta_overall, K, beta_edges, m, CS_params2, CS_params3, CS_params4
+  p_scale <- c(mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1, m = 0.1,
                CS_params2 = 0.1, CS_params3 = 0.1, CS_params4 = 0.1)
 
 make_cluster <- function(n_workers) {
@@ -219,7 +219,7 @@ if(SIMULATE){
         truncation = TRUNCATION,
         mark_decay = "node_entrance",
         growth_only = FALSE,
-        fixed_params = c("CS_params1"),
+        fixed_params = c("CS_params1", "node_lambda"),
         method = "Nelder-Mead",
         parscale = p_scale,
         cores = N_CORES_INNER,
@@ -275,8 +275,8 @@ if(SIMULATE){
 
 if(RUN_CONSISTENCY){
 
-  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic)
-  time_windows <- c(5, 10, 20, 25, 50, 75, 100)
+  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic, T=200 for large-sample)
+  time_windows <- c(5, 10, 20, 25, 50, 75, 100, 200)
   N_SIMS_CONSISTENCY <- 25
 
   # Parameters (Standard/Stable regime) - CS model
@@ -344,13 +344,13 @@ if(RUN_CONSISTENCY){
         
         # B. Fit
         # Initialize near true params + small noise for better convergence.
-        # CS_params1 (edges) is fixed; all other params free with noise.
+        # CS_params1 (edges) and node_lambda are fixed; all other params free with noise.
         params_init <- list(
           mu = max(0.1, params_true$mu * exp(rnorm(1, 0, 0.2))),
           beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
           K = min(0.99, max(0.01, params_true$K * exp(rnorm(1, 0, 0.2)))),
           beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
-          node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
+          node_lambda = params_true$node_lambda,
           m = max(0.1, params_true$m * exp(rnorm(1, 0, 0.2))),
           CS_params = params_true$CS_params + rnorm(length(params_true$CS_params), 0, 0.5)
         )
@@ -371,7 +371,7 @@ if(RUN_CONSISTENCY){
                               combine_intensity = TRUE,
                               verbose = FALSE,
                               trace = 0,
-                              fixed_params = c("CS_params1"),
+                              fixed_params = c("CS_params1", "node_lambda"),
                               parscale = p_scale,
                               cores = N_CONS_INNER,
                               method = "Nelder-Mead")
@@ -551,7 +551,6 @@ if(RUN_CONSISTENCY){
     saveRDS(save_list_ckpt, file.path(CLUSTER_OUTPUT_DIR, "results_CS_full.RDS"))
     cat("Checkpoint saved (main + consistency) to results_CS_full.RDS\n")
   }, error = function(e) message("Checkpoint save failed: ", conditionMessage(e)))
-}
 
 # ==============================================================================
 # STUDY 2: Explosive Regime Analysis - CS model
