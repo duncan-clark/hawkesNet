@@ -67,7 +67,7 @@ GAP_THRESHOLD <- 1.0
 USE_FIRST_CONTACT_ONLY <- TRUE
 
 FORMULA_A <- "edges + triangles + star(c(2,3))"
-FORMULA_B <- "edges  + gwesp(0.5) + gwdegree(0.5)"
+FORMULA_B <- "edges + gwesp(0.5) + gwdegree(0.5)"
 FORMULA_C <- "edges + esp(1:2) + degree(2:3)"
 
 cat("=== Hypertext Conference Fits (simple data only) ===\n")
