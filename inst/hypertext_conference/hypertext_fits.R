@@ -261,7 +261,7 @@ run_single_fit <- function(net, time_window, label,
         esp = 0L,
         mu_multiplier = 5,
         seed_events = as.integer(seed_events_gof),
-        verbose = TRUE
+        verbose = FALSE
       )
       gof_args <- gof_args[names(gof_args) %in% gof_formals]
       gof_res <- tryCatch({
@@ -276,6 +276,10 @@ run_single_fit <- function(net, time_window, label,
     t_gof_elapsed <- (proc.time() - t_gof)[3]
     cat(sprintf("  GOF completed in %.1f s\n", t_gof_elapsed))
   }
+
+  t_total <- t_fit_elapsed + t_gof_elapsed
+  cat(sprintf("\n  === %s: fit %.1f s + GOF %.1f s = total %.1f s ===\n",
+              label, t_fit_elapsed, t_gof_elapsed, t_total))
 
   # Free the intensity closure cache to avoid memory bloat across sequential fits
   if (!is.null(fit)) {
@@ -300,6 +304,7 @@ run_single_fit <- function(net, time_window, label,
 # =============================================================================
 # Load data
 # =============================================================================
+t_wall_start <- proc.time()
 cat("\n=== Loading Data ===\n")
 raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
 
@@ -456,6 +461,8 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
   }
 }
 
+t_wall_elapsed <- (proc.time() - t_wall_start)[3]
 cat("\n######################################################################\n")
 cat("## Finished at", as.character(Sys.time()), "\n")
+cat(sprintf("## Total wall-clock time: %.1f s (%.1f min)\n", t_wall_elapsed, t_wall_elapsed / 60))
 cat("######################################################################\n")
