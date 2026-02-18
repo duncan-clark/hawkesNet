@@ -1,15 +1,9 @@
 ## =============================================================================
 ## Hypertext 2009 conference: Paper Results Script
 ## =============================================================================
-## 6 fits total:
-##   1. Day 1 — edges + triangles + star(c(2,3)) + degree(0)
-##   2. Day 1 — edges + triangles + star(c(2,3)) + degree(0) [Non-Simple]
-##   3. Day 1 — edges + gwesp(0.5) + gwdegree(0.5) + degree(0)
-##   4. Day 1 — edges + gwesp(0.5) + gwdegree(0.5) + degree(0) [Non-Simple]
-##   5. Full conference — inhom, edges + triangles + star(c(2,3)) + degree(0)
-##   6. Full conference — inhom, edges + triangles + star(c(2,3)) + degree(0) [Non-Simple]
-##
-## All fits: growth_only = FALSE, edges (CS_params1) fixed at -5, include GOF.
+## Single fit: Day 1, formula = degree(0) + triangles + star(c(2,3)) (no edges).
+## All params free; mu initialized at observed event rate.
+## growth_only = FALSE. Includes GOF.
 ## =============================================================================
 
 library(hawkesNet)
@@ -106,201 +100,103 @@ cat(sprintf("Day 1: %d nodes, %d edges, %d events, T=[%.4f, %.4f]\n",
             network.size(net_day1), network.edgecount(net_day1),
             length(times_day1), tw_day1[1], tw_day1[2]))
 
-# --- Full conference network ---
-obj_full <- make_hypertext_net(df_all)
-net_full <- normalize_times_01(obj_full$net)
-times_full <- get_times(net_full)$times
-tw_full <- c(min(times_full), max(times_full))
-cat(sprintf("Full:  %d nodes, %d edges, %d events, T=[%.4f, %.4f]\n",
-            network.size(net_full), network.edgecount(net_full),
-            length(times_full), tw_full[1], tw_full[2]))
-
-# --- Inhomogeneous background for full conference ---
-cat("Estimating inhomogeneous background (KDE) for full conference...\n")
-inhom_bg <- prepare_inhomogeneous_background(net_full)
-cat(sprintf("  KDE bandwidth: %.4f | integral_bg: %.2f\n",
-            inhom_bg$mu_fit$bw, inhom_bg$integral_bg))
-
 # =============================================================================
-# Fitting Logic
+# Single Fit: degree(0) + triangles + star(c(2,3)) — no edges, all params free
 # =============================================================================
 
-run_fit <- function(net, time_window, formula_rhs, label,
-                    mu_vec = NULL, integral_bg = NULL) {
-  cat(sprintf("\n>>> Fit: %s <<<\n", label))
+FORMULA_RHS <- "degree(0) + triangles + star(c(2,3))"
 
-  # Prepend "edges +" so CS_params1 = edges (fixed at -5 for identifiability)
-  full_formula <- paste0("edges + ", formula_rhs)
+cat("\n>>> Fit: Day1 (degree(0) + triangles + star(c(2,3)), no edges) <<<\n")
 
-  exp_cs <- expected_params_PMF_mark_CS(net, full_formula)
-  n_cs <- exp_cs$CS_params_length
-  n_events <- length(get_times(net)$times)
-  TRUNC <- network.size(net)
+exp_cs <- expected_params_PMF_mark_CS(net_day1, FORMULA_RHS)
+n_cs <- exp_cs$CS_params_length
+n_events <- length(times_day1)
+TRUNC <- network.size(net_day1)
 
-  m_init <- network.edgecount(net) / n_events
+# mu init at observed event rate (not fixed)
+mu_init <- n_events / (tw_day1[2] - tw_day1[1])
+m_init <- network.edgecount(net_day1) / n_events
 
-  params_init <- list(
-    mu = n_events / (time_window[2] - time_window[1]),
-    beta_overall = 0.3,
-    K = 0.5,
-    beta_edges = 0.3,
-    node_lambda = 0.5,
-    m = m_init,
-    CS_params = c(-5, rep(0, n_cs - 1))
+params_init <- list(
+  mu = mu_init,
+  beta_overall = 0.3,
+  K = 0.5,
+  beta_edges = 0.3,
+  node_lambda = 0.5,
+  m = m_init,
+  CS_params = rep(0, n_cs)
+)
+
+p_scale <- c(
+  mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
+  node_lambda = 0.5, m = 0.5,
+  setNames(rep(0.1, n_cs), paste0("CS_params", seq_len(n_cs)))
+)
+
+t_fit_start <- proc.time()
+fit <- tryCatch({
+  fit_hawkesNet(
+    params_init = params_init,
+    time_window = tw_day1,
+    mark_filtration = net_day1,
+    PMF_mark = PMF_mark_CS,
+    formula_RHS = FORMULA_RHS,
+    truncation = TRUNC,
+    mark_decay = MARK_DECAY,
+    growth_only = GROWTH_ONLY,
+    maxit = MAX_ITER,
+    fixed_params = NULL,
+    parscale = p_scale,
+    cores = N_CORES,
+    cache_intensity = TRUE,
+    combine_intensity = TRUE,
+    verbose = TRUE
   )
+}, error = function(e) {
+  cat(sprintf("  FIT FAILED: %s\n", e$message))
+  NULL
+})
+t_fit <- (proc.time() - t_fit_start)[3]
+cat(sprintf("  Fit time: %.1f s\n", t_fit))
 
-  # p_scale for free params only (CS_params1 = edges is fixed)
-  p_scale <- c(
-    mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
-    node_lambda = 0.5, m = 0.5,
-    setNames(rep(0.1, n_cs - 1), paste0("CS_params", seq_len(n_cs)[-1]))
-  )
-
-  use_inhom <- !is.null(mu_vec)
-
-  t_fit_start <- proc.time()
-  fit <- tryCatch({
-    if (use_inhom) {
-      fit_hawkesNet_inhom(
-        params_init = params_init,
-        time_window = time_window,
-        mark_filtration = net,
-        PMF_mark = PMF_mark_CS,
-        mu_vec = mu_vec,
-        integral_bg = integral_bg,
-        maxit = MAX_ITER,
-        fixed_params = c("CS_params1"),
-        parscale = p_scale,
-        cores = N_CORES,
-        cache_intensity = TRUE,
-        combine_intensity = TRUE,
-        verbose = TRUE,
-        formula_RHS = full_formula,
-        truncation = TRUNC,
-        mark_decay = MARK_DECAY,
-        growth_only = GROWTH_ONLY
-      )
-    } else {
-      fit_hawkesNet(
-        params_init = params_init,
-        time_window = time_window,
-        mark_filtration = net,
-        PMF_mark = PMF_mark_CS,
-        formula_RHS = full_formula,
-        truncation = TRUNC,
-        mark_decay = MARK_DECAY,
-        growth_only = GROWTH_ONLY,
-        maxit = MAX_ITER,
-        fixed_params = c("CS_params1"),
-        parscale = p_scale,
-        cores = N_CORES,
-        cache_intensity = TRUE,
-        combine_intensity = TRUE,
-        verbose = TRUE
-      )
-    }
-  }, error = function(e) {
-    cat(sprintf("  FIT FAILED: %s\n", e$message))
-    NULL
-  })
-  t_fit <- (proc.time() - t_fit_start)[3]
-  cat(sprintf("  Fit time: %.1f s\n", t_fit))
-
-  if (!is.null(fit) && !is.null(fit$fit_table)) {
-    cat("  Fit table:\n")
-    print(fit$fit_table)
-  }
-
-  # GOF
-  cat(sprintf("  Running GOF (%d sims, %d outer workers)...\n", N_GOF, N_GOF_OUTER))
-  t_gof_start <- proc.time()
-  gof_res <- tryCatch({
-    gof_args <- list(
-      fit = fit,
-      net_obs = net,
-      params_init = params_init,
-      PMF_mark = PMF_mark_CS,
-      cond_intensity = cond_intensity,
-      formula_RHS = full_formula,
-      time_window = time_window,
-      truncation = TRUNC,
-      mark_decay = MARK_DECAY,
-      growth_only = GROWTH_ONLY,
-      n_sim = N_GOF,
-      cores_outer = N_GOF_OUTER,
-      verbose = TRUE
-    )
-    if (use_inhom) {
-      gof_args$inhom_bg <- list(
-        mu_vec = mu_vec,
-        integral_bg = integral_bg,
-        mu_fit = inhom_bg$mu_fit,
-        Lambda_fun = inhom_bg$Lambda_fun
-      )
-    }
-    do.call(gof, gof_args)
-  }, error = function(e) {
-    cat(sprintf("  GOF FAILED: %s\n", e$message))
-    NULL
-  })
-  t_gof <- (proc.time() - t_gof_start)[3]
-  cat(sprintf("  GOF time: %.1f s\n", t_gof))
-
-  list(fit = fit, gof = gof_res, label = label,
-       time_fit = t_fit, time_gof = t_gof)
+if (!is.null(fit) && !is.null(fit$fit_table)) {
+  cat("  Fit table:\n")
+  print(fit$fit_table)
 }
 
-# =============================================================================
-# Execute 6 Fits
-# =============================================================================
+# GOF
+cat(sprintf("  Running GOF (%d sims, %d outer workers)...\n", N_GOF, N_GOF_OUTER))
+t_gof_start <- proc.time()
+gof_res <- tryCatch({
+  gof(
+    fit = fit,
+    net_obs = net_day1,
+    params_init = params_init,
+    PMF_mark = PMF_mark_CS,
+    cond_intensity = cond_intensity,
+    formula_RHS = FORMULA_RHS,
+    time_window = tw_day1,
+    truncation = TRUNC,
+    mark_decay = MARK_DECAY,
+    growth_only = GROWTH_ONLY,
+    n_sim = N_GOF,
+    cores_outer = N_GOF_OUTER,
+    verbose = TRUE
+  )
+}, error = function(e) {
+  cat(sprintf("  GOF FAILED: %s\n", e$message))
+  NULL
+})
+t_gof <- (proc.time() - t_gof_start)[3]
+cat(sprintf("  GOF time: %.1f s\n", t_gof))
 
-results <- list()
-
-# 1. Day 1 — Triangles + Star + Degree(0)
-results$day1_tri_simple <- run_fit(
-  net_day1, tw_day1, 
-  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
-  label = "Day1-Tri-Simple"
-)
-
-# 2. Day 1 — Triangles + Star + Degree(0) [Placeholder for non-simple]
-results$day1_tri_nonsimple <- run_fit(
-  net_day1, tw_day1, 
-  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
-  label = "Day1-Tri-NonSimple"
-)
-
-# 3. Day 1 — GWESP + GWDegree + Degree(0)
-results$day1_gw_simple <- run_fit(
-  net_day1, tw_day1, 
-  formula_rhs = "gwesp(0.5) + gwdegree(0.5) + degree(0)",
-  label = "Day1-GW-Simple"
-)
-
-# 4. Day 1 — GWESP + GWDegree + Degree(0) [Placeholder for non-simple]
-results$day1_gw_nonsimple <- run_fit(
-  net_day1, tw_day1, 
-  formula_rhs = "gwesp(0.5) + gwdegree(0.5) + degree(0)",
-  label = "Day1-GW-NonSimple"
-)
-
-# 5. Full conference — Inhomogeneous, Triangles + Star + Degree(0)
-results$full_tri_simple <- run_fit(
-  net_full, tw_full, 
-  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
-  label = "Full-Inhom-Tri-Simple",
-  mu_vec = inhom_bg$mu_vec,
-  integral_bg = inhom_bg$integral_bg
-)
-
-# 6. Full conference — Inhomogeneous, Triangles + Star + Degree(0) [Non-Simple]
-results$full_tri_nonsimple <- run_fit(
-  net_full, tw_full, 
-  formula_rhs = "triangles + star(c(2,3)) + degree(0)",
-  label = "Full-Inhom-Tri-NonSimple",
-  mu_vec = inhom_bg$mu_vec,
-  integral_bg = inhom_bg$integral_bg
-)
+results <- list(day1 = list(
+  fit = fit,
+  gof = gof_res,
+  label = "Day1-degree0-tri-star",
+  time_fit = t_fit,
+  time_gof = t_gof
+))
 
 # =============================================================================
 # Paper Output Section
@@ -310,13 +206,9 @@ cat("## GENERATING PAPER OUTPUTS\n")
 cat("######################################################################\n")
 
 # 1. Summary Table
-summary_table <- do.call(rbind, lapply(results, function(res) {
-  if (is.null(res$fit) || is.null(res$fit$fit_table)) return(NULL)
-  tab <- res$fit$fit_table
-  tab$model <- res$label
-  tab
-}))
-if (!is.null(summary_table)) {
+if (!is.null(fit) && !is.null(fit$fit_table)) {
+  summary_table <- fit$fit_table
+  summary_table$model <- "Day1-degree0-tri-star"
   write.csv(summary_table, file.path(OUTPUT_DIR, "paper_fit_summary.csv"),
             row.names = FALSE)
   cat("\nFit Summary:\n")
@@ -324,19 +216,18 @@ if (!is.null(summary_table)) {
 }
 
 # 2. GOF Plots
-for (name in names(results)) {
-  res <- results[[name]]
-  if (is.null(res$gof) || is.null(res$gof$plots)) next
+res <- results$day1
+if (!is.null(res$gof) && !is.null(res$gof$plots)) {
   if (!is.null(res$gof$plots$waiting_times_plot)) {
     ggsave(
-      filename = file.path(OUTPUT_DIR, paste0("gof_wait_", name, ".pdf")),
+      filename = file.path(OUTPUT_DIR, "gof_wait_day1.pdf"),
       plot = res$gof$plots$waiting_times_plot,
       width = 10, height = 8
     )
   }
   if (!is.null(res$gof$plots$degree_plot)) {
     ggsave(
-      filename = file.path(OUTPUT_DIR, paste0("gof_deg_", name, ".pdf")),
+      filename = file.path(OUTPUT_DIR, "gof_deg_day1.pdf"),
       plot = res$gof$plots$degree_plot,
       width = 8, height = 6
     )
