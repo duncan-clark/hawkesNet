@@ -34,20 +34,12 @@
 }
 
 % Todo notes (Keep these for drafting, remove for final submission)
-\usepackage{todonotes}
-\usepackage{snaptodo}
+% \usepackage{todonotes}
+% \usepackage{snaptodo}
 
 % Hyperref (Loaded last to prevent conflicts)
 \usepackage{hyperref}
-\hypersetup{
-  pdftitle={A General Marked Point Process Framework For Self-Exciting Network Evolution},
-  pdfauthor={Clark; Kresin; Jones-Todd},
-  colorlinks=true,
-  linkcolor={blue},
-  filecolor={Maroon},
-  citecolor={Blue},
-  urlcolor={Blue}
-}
+
 
 %----------------------------------------------------------------------------------------
 %   3. JASA LAYOUT & MARGINS (DO NOT CHANGE)
@@ -76,6 +68,8 @@
 \def\v{{\varepsilon}}
 \DeclareMathOperator{\Thetabb}{\mathcal{C}}
 \newcommand{\cmjt}[1]{{\color{blue}{#1}}}
+
+\newcommand{\conor}[1]{\textcolor{purple}{#1}}
 
 % Theorem Environments
 \newtheorem{example}{Example}
@@ -152,7 +146,7 @@ Inference-focused dynamic network models often regard the node set as fixed and 
 
 A central difficulty is that, in many settings, the times at which the network updates and the nature of those updates are not credibly independent \citep{snijders_2001}. Self-excitation in time is prevalent \cite{HuangLatentHawkes2022}: the arrival of a node or edge can increase the propensity for further updates in the near future. At the same time, network topology shapes which updates are plausible: preferential attachment, triadic closure, and other local mechanisms depend on the current network state. Capturing this joint dependence requires a continuous-time model in which update times and update content are jointly modelled.
 
-Therefore, we propose a novel marked point process  \citep{daley2003introduction,kallenberg1976random} characterisation of time evolving networks: each network update corresponds to an event time, and the mark attached to that time is the update itself (the new nodes and edges added). This perspective allows a single conditional intensity characterisation for the coupled evolution of timing and topology. In this process, but because the node set is typically treated as fixed, they do not facilitate inference paper we focus on a Hawkesian ground specification \citep{Hawkes1971,hawkes1974cluster}, since self-excitation is a natural way to represent bursts of activity. However, the mark-space embedding that we propose is compatible with other point-process specifications. In particular, a marked point process viewpoint enables hitherto impossible statistical inference in this growing network setting, affording interpretability via complex parametric specifications.
+Therefore, we propose a novel marked point process  \citep{daley2003introduction,kallenberg1976random} characterisation of time evolving networks: each network update corresponds to an event time, and the mark attached to that time is the update itself (the new nodes and edges added). This perspective allows a single conditional intensity characterisation for the coupled evolution of timing and topology. We focus on a Hawkesian ground specification \citep{Hawkes1971,hawkes1974cluster}, since self-excitation is a natural way to represent bursts of activity. However, the mark-space embedding that we propose is compatible with other point-process specifications. In particular, a marked point process viewpoint enables hitherto impossible statistical inference in this growing network setting, affording interpretability via complex parametric specifications.
 
 Previous work connects point process and network modeling paradigms by treating node interaction data as realizations of continuous-time stochastic processes. For example, early relational event models \citep{Butts2008, VuHunterSmythAsuncion2011, HunterSmythVuAsuncion2011} and multivariate counting representations \citep{PerryWolfe2013} represent dynamic interactions  as collections of multivariate point processes indexed by dyads. However, these approaches do not explicitly model endogenous excitation through self-exciting intensity kernels as temporal dependence is primarily introduced via history statistics or time-varying covariates.
 
@@ -161,7 +155,7 @@ More recently, \citet{PassinoHeard2023} introduced mutually exciting point proce
 
 The closest precedent to our proposed framework is \citep{farajtabar2017coevolve}, where network updates are modeled via a joint conditional intensity and survival function in a multivariate Hawkes specification. While such work accommodates growth, inference on the network update mechanism is limited in that setting. The path-wise connection between univariate marked Hawkes processes and multivariate representations \citep{davis2024multivariate} provides a bridge to a large literature on multivariate Hawkes processes in network contexts, including mean-field limits \citep{delattre2016hawkes}, Hawkes graphs \citep{embrechts2018hawkes}, and latent group structure \citep{fang2024group}. We adopt a univariate marked formulation for parsimony: marks encode updates directly, avoiding the explosion of dimension that arises when treating each potential interaction type as a separate component.
 
-The paper is structured as follows. Section~\ref{sec:prelim} introduces notation and the dynamic mark space encoding network updates. Section~\ref{sec:induced_models} presents our proposed "HawkesNet" models induced by network update PMFs and develops likelihood-based inference. Section~\ref{sec:path_dependent} introduces mark path dependent Hawkes processes and establishes stability results. Sections~\ref{sec:simulation_study} and \ref{sec:realdata} provide simulation studies and a real-data application. Section~\ref{sec:discuss} concludes, with proofs and additional examples in Appendix~\ref{sec:stability_theory}. All results in this paper were derived using the publicly available \texttt{hawkesNet} software package \cite{hawkesNest}.
+The paper is structured as follows. Section~\ref{sec:prelim} introduces notation and the dynamic mark space encoding network updates. Section~\ref{sec:induced_models} presents our proposed "HawkesNet" models induced by network update PMFs and develops likelihood-based inference. Section~\ref{sec:path_dependent} introduces mark path dependent Hawkes processes and establishes stability results. Sections~\ref{sec:simulation_study} and \ref{sec:hypertext} provide simulation studies and a real-data application. Section~\ref{sec:discuss} concludes, with proofs and additional examples in Appendix~\ref{sec:stability_theory}. All results in this paper were derived using the publicly available \texttt{hawkesNet} software package \cite{hawkesNest}.
 
 % ======================================================================
 \section{Dynamic Network Point Process Setup}\label{sec:prelim}
@@ -185,7 +179,7 @@ The conditional intensity of $N$, denoted $\lambda$, is an integrable, nonnegati
 \]
 where $\nu$ is a reference measure on $\mathcal M$. Since $\mathcal M$ will be discrete in our construction, the natural choice is counting measure.
 
- A point process is simple if, with probability one, all the points' spatiotemporal locations are distinct. We consider only simple point process estimation. Since the conditional intensity $\lambda$, uniquely determines the finite-dimensional distributions of any simple stationary point process (Proposition 7.2.IV of \cite{daley2003introduction}) we can model an MPP by specifying a model for $\lambda$. We note that growing networks themselves are often non-stationary; conveniently, the MPP characterisation itself is (see Section \ref{sec:path_dependent} for further discussion). 
+ A point process is simple if, with probability one, all the points' spatiotemporal locations are distinct. We consider only simple point process estimation. Since the conditional intensity $\lambda$, uniquely determines the finite-dimensional distributions of any simple stationary point process (Proposition 7.2.IV of \cite{daley2003introduction}) we can model an MPP by specifying a model for $\lambda$. We note that growing networks themselves are often non-stationary; conveniently, the MPP characterisation itself is stable (see Section \ref{sec:path_dependent} for further discussion). 
 
 Self-exciting point processes, where points in the past affect future intensity, can be modeled by Hawkes processes \citep{Hawkes1971}. A marked Hawkes process with background rate $\lambda_0(m)$ and triggering kernel $g$ is characterized in Definition \ref{def:mpp_hawkes}.
 
@@ -202,16 +196,13 @@ $\mathcal{H}_t$-conditional intensity admits the representation
 \int_{(0,t)\times\mathcal{M}}
 g\!\left(t-u, m,m'\right)\,
 N(du,dm'),
-\label{eq:path_dependent_marked_hawkes}
+\label{eq:marked_hawkes}
 \end{equation}
 where $\lambda_{\emptyset}(t,m)$ is a predictable baseline intensity and
 $g(t,m,m')$ is a predictable excitation kernel.
 \end{definition}
 
-Marked Hawkes processes are stationary when the offspring branching process is subcritical, i.e.\ the expected cluster size is finite (Lemma 6.3.II of \citealp{daley2007introduction}). Parameters of Hawkes intensities can be estimated consistently via maximum likelihood under standard conditions \citep{rathbun1996,schoenberg2016note,ogata1978estimators}.
-
-
-For self-exciting network growth process, a network update at time $t$ depends on the current network as well as the timing and nature of previous updates. Such a process is termed non-separable. Often assumed for modelling simplicity, separability is imposed to facilitate likelihood computation \citep{davis2024multivariate,spassiani2024distribution}, and is not to be confused with the assumption of independent or unpredictable marks \citep{daley2007introduction}. Intuitively, a process is mark separable if the time process (corresponding to the ground process $N_g$, see \cite{daley2003introduction} for more details) and mark distribution can be decoupled after conditioning on history. This assumption restricts a rich class of models which require jointly considering how marks affect future event rates and vice-versa.
+Classical (linear) Hawkes processes have well-known non-explosion/stability theory under subcriticality of the triggering kernel \cite{Hawkes1971} or in the marked case, when expected finite cluster size (Lemma 6.3.II of \citealp{daley2007introduction}). For self-exciting network growth process, a network update at time $t$ depends on the current network as well as the timing and nature of previous updates. Such a process is termed non-separable. Often assumed for modelling simplicity, separability is imposed to facilitate likelihood computation \citep{davis2024multivariate,spassiani2024distribution}, and is not to be confused with the assumption of independent or unpredictable marks \citep{daley2007introduction}. Intuitively, a process is mark separable if the time process (corresponding to the ground process $N_g$, see \cite{daley2003introduction} for more details) and mark distribution can be decoupled after conditioning on history. This assumption restricts a rich class of models which require jointly considering how marks affect future event rates and vice-versa.
 
 A non-separable specification is natural for the time-evolving random network growth process setting. For example, one may expect to wait a short time for an background singleton node to be added to the network but relatively long time for new highly connected node to arrive. For discussion and development of this idea see Section \ref{sec:path_dependent}.
 
@@ -236,21 +227,37 @@ Because $\mathcal V$ is countable, so is $\mathcal E$, and hence $\mathcal M$ is
 \]
 In practice one may further restrict $\mathcal M_t$ (e.g.\ by bounding how many nodes/edges may be added in a single update). Functionally we can understand this as a dynamic mark space, i.e. the space of possible updates to the network depends on the current network. This is a necessary contrast to typical marked point processes. For example the typical spatiotemporal point process has a fixed $\mathbb{R}^{2}$ mark space.
 
-We can naturally define admissible node and edge sets sets just before time $t$, $\mathcal V_{G_{t-}}$ and $\mathcal E_{G_{t-}}$ via $\mathcal M_t := \bigl\{m\subseteq \mathcal V_t\cup\mathcal E_t \bigr\}$.
+\begin{definition}[Admissible update marks]\label{def:admissible_marks}
+Given the left-limit graph $\mathcal G_{t-}=(V_{t-},E_{t-})$, a mark $m\in\mathcal M$ is \emph{admissible} at time $t$ if, writing $\Delta V:=m\cap\mathcal V$ and $\Delta E:=m\cap\mathcal E$, the following hold:
+\begin{enumerate}
+\item $\Delta V \cap V_{t-}=\emptyset$ and $\Delta E \cap E_{t-}=\emptyset$;
+\item every edge $e\in \Delta E$ has endpoints in $V_{t-}\cup \Delta V$;
+\item $\Delta E$ contains no repeated edges and no self-loops (as appropriate for $\mathcal E$).
+\end{enumerate}
+We write $\mathcal M_t\subseteq\mathcal M$ for the set of all admissible marks at time $t$.
+\end{definition}
 
-This construction makes the key identification used throughout the paper: the evolving network and the marked update sequence are two views of the same object. Given an initial graph $(V_0,E_0)$, the node and edge sets at time $t$ are obtained by accumulating marks,
+
+This construction makes the key identification used throughout the paper: the evolving network and the marked update sequence are two views of the same object. Given an initial graph $(V_0,E_0)$, define the node and edge-components of a mark by
 \[
-V_t = V_0 \,\cup\, \bigcup_{i:\,t_i\le t}\bigl(m_i\cap\mathcal V_{G_{t-}}\bigr),
+\Delta V_i := m_i \cap \mathcal V,
 \qquad
-E_t = E_0 \,\cup\, \bigcup_{i:\,t_i\le t}\bigl(m_i\cap\mathcal E_{G_{t-}}\bigr),
+\Delta E_i := m_i \cap \mathcal E.
 \]
-
+Then, given an initial graph $(V_0,E_0)$, the cumulative node and edge sets at time $t$ are obtained by accumulation:
+\[
+V_t = V_0 \,\cup\, \bigcup_{i:\,t_i\le t}\Delta V_i,
+\qquad
+E_t = E_0 \,\cup\, \bigcup_{i:\,t_i\le t}\Delta E_i.
+\]
 Thus $\mathcal G_t$ is determined by $\{(t_i,m_i):t_i\le t\}$. Conversely, the jump times and jump sizes of $(\mathcal G_t)$ define the marked update sequence.
 
 We observe updates $\{(t_i,m_i)\}_{i=1}^n$ on $[0,T)$. We represent them as a simple marked point process
 $N=\sum_{i=1}^n \delta_{(t_i,m_i)}$ on $\mathbb R^+\times\mathcal M$, with history $\mathcal H_t$ and (predictable) conditional intensity
 $\lambda(t,m\mid\mathcal H_t)$ w.r.t.\ $dt\,\nu(dm)$ (here $\nu$ is counting measure on the countable $\mathcal M$).
 Admissibility is enforced by $\lambda(t,m\mid\mathcal H_t)=0$ for $m\notin\mathcal M_t$. Note that the simplicity of the process is ensured by regarded network updates as marks, not simply restricting to adding single edges or nodes as events.
+
+
 
 \section{Network probability mass function induced models}\label{sec:induced_models}
 
@@ -261,7 +268,7 @@ Specifying the types of network updates that are likely is crucial to appropriat
 where $\lambda_g(t\mid\mathcal H_t)=\sum_{m\in\mathcal M}\lambda(t,m\mid\mathcal H_t)$ is the ground rate and $q(\cdot\mid t,\mathcal H_t)$ is a PMF supported on the admissible set $\mathcal M_t$.
 We call any model built by combining a ground-rate specification for $\lambda_g$ with a network-growth PMF $q$ a HawkesNet model. Even if $q$ does not depend explicitly on $t$, the resulting model need not be separable because the support $\mathcal M_t$ and the features entering $q$ evolve with the graph.
 
-We consider two examples of induced models. The Barabasi Albert (BA) preferential attachment model \citep{BA_model}, is widely used to account for power law behaviour observed in many networks' degree distributions.
+We consider two examples of induced models. The Barabasi Albert (BA) preferential attachment model \citep{BA_model}, is widely used to account for power law behavior observed in many networks' degree distributions.
 
 \begin{example}[Preferential Attachment HawkesNet]\label{ex:BA}
 
@@ -281,21 +288,26 @@ Here $\sum_{i=1}^{N_{t-}} e_i = K_t$, and the product encodes the probability of
 The BA model simply adds nodes to well-connected nodes, independently of other structure in the network. For social networks, where existing, complex network structure may be considered to impact the probability of an edge being added, this is insufficient. We also consider the change statistic model as an alternative model that can consider complex network structure.
 
 \begin{example}[Change Statistic HawkesNet]\label{ex:cs}
-
 For a network $y$ and a vector of network statistics $g(y) \in \mathbb{R}^{p}$, the change statistic for an update $m$ is $C(m) = g(y^{m+}) - g(y^{m-})$, where $y^{m+}$ is the network $y$ with the update $m$ applied and $y^{m-}$ is the network without that update. Change statistics thus measure the effect of an update on arbitrary network statistics. A mark PMF can be induced by adding edges according to a logistic model on these change statistics, following the Exponential-family Random Graph Model (ERGM) literature \citep{FrankStrauss1986,snijders2006,Robins2007} and related network growth models \citep{Fellows2018}.
-
-For a single candidate edge $(i,j)$, write $C_{i,j} = g(y_{i,j}^{+}) - g(y_{i,j}^{-})$, where $y_{i,j}^{+}$ is $y$ with edge $(i,j)$ and $y_{i,j}^{-}$ is $y$ without it. For example, if $g(y) = (\text{edge count}(y), \text{triangle count}(y))^{\top}$, then $C_{i,j}$ has first component $1$ and second component equal to the number of triangles that edge $(i,j)$ would complete.
-
-We define a two-step procedure for drawing the mark $m_t$ at event time $t$. Let $\theta \in \mathbb{R}^{p}$ be the parameter vector for the change statistics, $\tau > 0$ the time-decay rate, and $\lambda > 0$ the expected number of new nodes per event. (1) Draw the number of new nodes, $N_t^{\text{new}}$, from $\text{Poisson}(\lambda)$ and add these nodes at time $t$. (2) Restrict to candidate edges between the new nodes and existing nodes (or a time-truncated subset of existing nodes), so that the number of candidate edges is $\mathcal{O}(n)$ rather than $\mathcal{O}(n^2)$. For each candidate edge $(i,j)$, the probability of adding the edge is
+For a single candidate edge $(i,j)$, write $C_{i,j} = g(y_{i,j}^{+}) - g(y_{i,j}^{-})$. For example, if $g(y) = (\text{edge count}(y), \text{triangle count}(y))^{\top}$, then $C_{i,j}$ has first component $1$ and second component equal to the number of triangles that edge $(i,j)$ would complete.
+We define a procedure for drawing the mark $m_t$ at event time $t$ using parameters $\theta \in \mathbb{R}^{p}$ for the change statistics, $\tau > 0$ for time-decay, $\lambda > 0$ for node arrivals, and $m > 0$ for edge arrivals.
+\begin{enumerate}
+\item \textbf{Node Arrival:} Draw the number of new nodes, $N_t^{\text{new}}$, from $\text{Poisson}(\lambda)$ and add these nodes at time $t$.
+\item \textbf{Edge Count:} Draw the number of edges to add, $K_t$, from $\text{Poisson}(m)$ and restrict $K_t \leq |\mathcal{C}_t|$, where $\mathcal{C}_t$ is the set of candidate edges between new and existing (or time-truncated) nodes.
+\item \textbf{Edge Selection:} For each candidate $(i,j) \in \mathcal{C}t$, define the selection weight:
 \begin{equation}\label{eqn:csdraw}
-p_{i,j}^{\text{CS}} = \exp\bigl(-\tau \cdot (t - t_i)\bigr) \cdot \frac{1}{1 + \exp(-\theta^{\top} C_{i,j})},
+w_{i,j} = \exp\bigl(-\tau \cdot (t - t_i)\bigr) \cdot \frac{1}{1 + \exp(-\theta^{\top} C_{i,j})},
 \end{equation}
-where $t_i$ is the time of the most recent activity of node $i$ (e.g., its arrival time). Thus $\tau$ down-weights older nodes relative to the logistic term. Under the approximation that edge indicators are conditionally independent given the network history, the mark density factors as the Poisson mass for $N_t^{\text{new}}$ times a product of Bernoulli terms over the candidate edges, as in the BA case (\ref{eq:bernoulli}):
+where $t_i$ is the time of the most recent activity of node $i$. Sample $K_t$ distinct edges from $\mathcal{C}t$ without replacement, with probabilities proportional to $w{i,j}$.
+\end{enumerate}
+Thus $m$ governs the density of edges per event, while $\theta$ and $\tau$ govern the structural and temporal preferences of those edges. Under the approximation that edge indicators are conditionally independent given the history, the mark density factors as the product of Poisson masses for nodes and edges, and a product of Bernoulli terms over the candidates:
 \begin{equation}\label{eq:csdensity}
-q(m_t \mid t, \mathcal{H}_t) = \text{Poisson}(N_t^{\text{new}}; \lambda) \times \prod_{(i,j) \in \mathcal{C}_t} \bigl(p_{i,j}^{\text{CS}}\bigr)^{e_{i,j}} \bigl(1 - p_{i,j}^{\text{CS}}\bigr)^{1 - e_{i,j}},
+q(m_t \mid t, \mathcal{H}t) = \text{Poisson}(N_t^{\text{new}}; \lambda) \times \text{Poisson}(K_t; m) \times \prod_{(i,j) \in \mathcal{C}t} \bigl(p_{i,j}^{\text{CS}}\bigr)^{e_{i,j}} \bigl(1 - p_{i,j}^{\text{CS}}\bigr)^{1 - e_{i,j}},
 \end{equation}
-where $\mathcal{C}_t$ is the set of candidate edges at time $t$ and $e_{i,j} = \mathbb{I}\bigl((i,j) \in \mathcal{E}(m_t)\bigr)$. Optionally, discrete vertex attributes on new nodes can be modeled with an accompanying model (see Appedix \ref{app:gender}). Restricting candidates to new-to-old edges (and optionally to the most recent nodes under truncation) keeps the number of terms in the product $\mathcal{O}(n)$ and makes the procedure feasible as $n$ grows.
+where $e_{i,j} = \mathbb{I}\bigl((i,j) \in \mathcal{E}(m_t)\bigr)$ and $p_{i,j}^{\text{CS}}$ is the normalized weight $w_{i,j}$. Restricting $\mathcal{C}_t$ to new-to-old edges (and optionally to the most recent nodes under truncation) keeps the number of terms in the product $\mathcal{O}(n)$ and makes the procedure feasible as $n$ grows.
 \end{example}
+
+One might think that an intercept term in the change statistic formula would be sufficient to model the baseline propensity of edges. For practical data, this is not the case. Mark updates are typically local, meaning a low number of new nodes or edges is added at each event; thus, having parameters $\lambda$ and $m$ that do not change with time is crucial to fitting realistic data
 
 There is significant work on similar models \cite{Fellows2018,lusher2012} with social theory driving the selection of suitable statistics \cite{snijders2006}. The model is specified by the choice of network statistics, common choices include triangles for modeling transitive closure, as well as k-stars, (a single node connected to $k$ others) to model node popularity. One can also consider nodal covariate  based statistics, for example gender, one could then consider the count of matched gender edges, or other related statistics. The inclusion of structural and nodal covariate statistics allows for inference on the nodal covariate, while also accounting for the tendency towards transitive closure.
 
@@ -468,7 +480,7 @@ Linear Hawkes processes admit a Poisson cluster representation \citep{hawkes1974
 
 \caption{Contrasting dependence structures in Hawkes models.
 \textbf{(a)} In a linear marked Hawkes process, the Poisson cluster representation implies that, conditional on a latent parent/branching assignment (arrows), clusters (colors) can be generated independently; $O$ denotes an immigrant and $X$ denotes an offspring.
-\textbf{(b)} In a mark path-dependent Hawkes process, the mark at time $t$ may depend on the entire marked history (e.g., through the current network state and the time-varying admissible mark set $\mathcal M_t$). We therefore depict history dependence of the boxed event via fan-in arrows from all past events; these arrows are \emph{not} a branching genealogy. Using a single (mixed) color emphasizes the lack of a cluster decomposition, and arrow opacity schematically represents relative influence (e.g., stronger for more recent events under temporal decay).}
+\textbf{(b)} In a mark path-dependent Hawkes process, the mark at time $t$ may depend on the entire marked history (e.g., through the current network state and the time-varying admissible mark set $\mathcal M_t$). We therefore depict history dependence of the boxed event via fan-in arrows from all past events; these arrows are not a branching genealogy. Using a single (mixed) color emphasizes the lack of a cluster decomposition, and arrow opacity schematically represents relative influence (e.g., stronger for more recent events under temporal decay).}
 \label{fig:hawkes_linear_vs_nonlinear}
 \end{figure}
 
@@ -528,7 +540,7 @@ For mark path dependent Hawkes processes, cluster-based arguments are not availa
 
 \subsection{Poisson embedding and simulation via thinning}\label{sec:poisson_embedding}
 
-The Poisson embedding is the common engine behind (i) the fixed-point definition of the model, (ii) existence/uniqueness and non-explosion proofs via contraction, and (iii) exact simulation by thinning. The logic is as follows, specify an intensity functional $\eta\mapsto \lambda(\cdot,\cdot\mid\eta)$ on marked histories, embed it into a single Poisson random measure, and then construct the process as a self-consistent thinning of that Poisson measure \citep{bremaud1996stability}.
+The Poisson embedding is the common engine behind (i) the fixed-point definition of the model, (ii) existence/uniqueness and non-explosion proofs via contraction, and (iii) exact simulation by thinning. The logic is as follows: specify an intensity functional $\eta\mapsto \lambda(\cdot,\cdot\mid\eta)$ on marked histories, embed it into a single Poisson random measure, and then construct the process as a self-consistent thinning of that Poisson measure \citep{bremaud1996stability}.
 
 Let $\Pi$ be a Poisson random measure on $E=\mathbb R\times\mathbb R_+\times\mathcal M$ with intensity $dt\,dz\,\nu(dm)$, where $\nu$ is counting measure on $\mathcal M$. Given a predictable marked intensity $\lambda(t,m\mid\mathcal H_t)$, define a marked point process by thinning:
 \begin{equation}\label{eq:thinning}
@@ -552,10 +564,6 @@ There exists measurable $h:\mathbb R_+\to\mathbb R_+$ with $\int_0^\infty h(u)\,
 where $|\eta-\eta'|$ is total variation (symmetric-difference count for integer-valued measures), and $\eta_t$ is the restriction of $\eta$ to $(-\infty,t)\times\mathcal M$.
 \end{assumption}
 
-\begin{assumption}[Time-shift covariance]\label{ass:shift}
-Let $\theta_u$ denote time-shift on histories: $(\theta_u\eta)(A\times B)=\eta((A+u)\times B)$. Assume there exists a measurable functional $\Lambda$ such that $\lambda(t,m\mid\eta_t)=\Lambda_m(\theta_t\eta)$ for all $t$ and $m$.
-\end{assumption}
-
 \begin{theorem}[Existence, pathwise uniqueness, non-explosion]\label{thm:existence}
 Assume \ref{ass:H0}--\ref{ass:HL}. Then there exists a pathwise unique simple marked point process $N$ on $[0,\infty)\times\mathcal M$ satisfying the fixed-point thinning equation \eqref{eq:thinning}. Moreover, for every $T>0$, $\mathbb E[N([0,T]\times\mathcal M)]<\infty$, hence $N([0,T]\times\mathcal M)<\infty$ almost surely.
 \end{theorem}
@@ -564,13 +572,56 @@ Assume \ref{ass:H0}--\ref{ass:HL}. Then there exists a pathwise unique simple ma
 
 Once a solution exists, Assumption~\ref{ass:HL} bounds the ground intensity $\lambda_g(t)=\sum_m \lambda(t,m\mid\mathcal H_t)$ by the baseline rate plus a convolution of $h$ with the counting process itself. Taking expectations yields an integral inequality for $\mathbb E[\lambda_g(t)]$ whose supremum is bounded by $(1-\|h\|_1)^{-1}\sup_t \lambda_{g,\emptyset}(t)$. Integrating over $[0,T]$ implies $\mathbb E[N([0,T]\times\mathcal M)]<\infty$, which rules out explosion (if $N([0,T]\times\mathcal M)=\infty$ with positive probability, the expectation would be infinite).\end{proof}
 
-\begin{theorem}[Stationary ergodic marked solution]\label{thm:stationary}
-Assume \ref{ass:H0}--\ref{ass:HL}--\ref{ass:shift}. Then there exists a stationary marked point process $N^{\mathrm{stat}}$ on $\mathbb R\times\mathcal M$ satisfying \eqref{eq:thinning} for all $t\in\mathbb R$, and its law is unique among stationary solutions. Moreover, $N^{\mathrm{stat}}$ is ergodic under time shifts.
-\end{theorem}
+The above does not imply that a cumulative pure-growth graph stabilizes in global topology; the number of nodes necessarily grows. If one wants a graph-valued process with stationary/ergodic behavior, one should define the graph state with finite memory or explicit aging. Pure-growth cumulative graphs are inherently non-stationary: node and edge counts drift upward.
+To obtain time-local summaries that remain interpretable and to support stability arguments, we define aged (finite-memory) versions of network features.
 
-\begin{proof}[(Proof sketch):] Time-shift covariance (Assumption~\ref{ass:shift}) makes the fixed-point thinning map time-homogeneous on $\mathbb R$. One then couples (i) the stationary candidate constructed from an infinite past and (ii) the process started from empty history at time $0$, again using the same $\Pi$, and shows that their discrepancy on a far-future window decays to $0$ under the contraction. This yields existence and uniqueness of the stationary law, and standard coupling arguments imply ergodicity under shifts \citep{bremaud1996stability}.\end{proof}
+Fix an aging  $a:\mathbb R_+\to[0,1]$ that is nonincreasing with $a(0)=1$ and $\|a\|_1:=\int_0^\infty a(u)\,du<\infty$
+(e.g.\ $a(u)=e^{-\alpha u}$ for some $\alpha>0$). For any network statistic $g(\cdot)$ (edges, triangles, $k$-stars, etc.), we write $g^{(a)}(t)$ for the statistic computed on the aged graph state $A^{(a)}_t$ (or on a windowed graph defined by retaining only edges with $t-b_{i,j}\le L$).
 
-Theorems~\ref{thm:existence} and \ref{thm:stationary} are statements about the marked update process: the times of updates and the distribution of local updates under time shifts. They do not imply that a cumulative pure-growth graph stabilizes in global topology; the number of nodes necessarily grows. If one wants a graph-valued process with stationary/ergodic behavior, one should define the graph state with finite memory or explicit aging. This point is formalized in Appendix~\ref{sec:finite_memory_graphs}.
+\begin{assumption}[Bounded update size]
+\label{ass:bounded_update}
+There exist constants $B_V,B_E<\infty$ such that for all $t$ and all admissible marks $m\in\mathcal M_t$,
+\[
+|m\cap\mathcal V|\le B_V,
+\qquad
+|m\cap\mathcal E|\le B_E.
+\]
+That is, each update adds at most $B_V$ new nodes and at most $B_E$ new edges.
+\end{assumption}
+
+\begin{corollary}[Bounded mean activity and at-most-linear expected network growth]
+\label{cor:linear_growth}
+Assume \ref{ass:H0}--\ref{ass:HL} and \ref{ass:bounded_update}.
+Let $N_T:=N([0,T]\times\mathcal M)$ denote the number of updates on $[0,T]$.
+Then there exists a constant $C_\lambda<\infty$ such that for all $T>0$,
+\[
+\mathbb E[N_T]\le C_\lambda\,T.
+\]
+Consequently, the expected node and edge counts of the cumulative graph satisfy
+\[
+\mathbb E[N_T^{\text{nodes}}]\le N_0 + B_V\,C_\lambda\,T,
+\qquad
+\mathbb E[|E_T|]\le |E_0| + B_E\,C_\lambda\,T,
+\]
+i.e.\ cumulative network size grows at most linearly in expectation.
+
+Moreover, for any aging kernel $a$ with $\|a\|_1<\infty$, define the aged edge mass
+\[
+|E_t|^{(a)}:=\sum_{(i,j)\in E_t} a(t-b_{i,j}).
+\]
+Then
+\[
+\sup_{t\ge 0}\mathbb E[|E_t|^{(a)}] < \infty,
+\]
+so time-local (aged) network totals remain uniformly controlled under the same assumptions.
+\end{corollary}
+
+\begin{proof}[Proof sketch]
+The proof sketch of Theorem~\ref{thm:existence} yields a uniform bound on the mean ground rate, and hence $\mathbb E[N_T]\le C_\lambda T$ for some finite $C_\lambda$.
+Bounded update sizes imply $N_T^{\text{nodes}}\le N_0 + B_V N_T$ and $|E_T|\le |E_0| + B_E N_T$, giving linear expected growth.
+For the aged edge mass, each update contributes at most $B_E a(t-s)$ at age $t-s$; integrate over time and use $\|a\|_1<\infty$ together with the uniform mean-rate bound.
+\end{proof}
+
 
 \subsubsection{Simulation via thinning}\label{sec:simulation}
 
@@ -596,19 +647,62 @@ The stability assumptions in Section~\ref{sec:poisson_embedding} are imposed on 
 
 If the effect of a past event on the current intensity decays with its age, then adding or removing a single past update can only change the present by an amount that shrinks as that update recedes into the past. This is exactly what makes a kernel $h(\cdot)$ integrable and small in $L^1$, the key requirement for contraction. In induced models, decay can appear in the ground rate (e.g.\ Hawkes kernels) and/or in the mark PMF (e.g.\ $\exp(-\tau(t-t_i))$ age-weighting in attachment probabilities).
 
-Many network features used for update probabilities (motif counts, local degrees, triangle participation) can grow with network size. If the mark PMF responds \emph{linearly} to such features, small changes in history can lead to large changes in intensity, potentially violating the contraction condition and enabling explosive cascades. Using saturating links (e.g.\ logistic transforms), truncating/extending statistics in a bounded way, or restricting updates to local neighborhoods keeps the \emph{incremental} effect of any single past update uniformly controlled.
+Pure-growth cumulative graphs are inherently non-stationary: node and edge counts drift upward. To obtain time-local summaries that remain interpretable and to support stability arguments, we define aged(finite-memory) versions of network features. Many network features used for update probabilities (motif counts, local degrees, triangle participation) can grow with network size. If the mark PMF responds linearly to such features, small changes in history can lead to large changes in intensity, potentially violating the contraction condition and enabling explosive cascades. Using saturating links (e.g.\ logistic transforms), truncating/extending statistics in a bounded way, or restricting updates to local neighborhoods keeps the incremental effect of any single past update uniformly controlled.
 
 These principles are not merely theoretical conveniences: they are directly tied to inferential well-posedness. In practice one can (i) enforce decay through parametric restrictions (e.g.\ $\beta>0$ and moderate $K/\beta$ in the ground rate) and (ii) enforce bounded sensitivity by using probability models for marks that are inherently bounded (e.g.\ Bernoulli/logistic links) and by avoiding unbounded linear amplification of motif counts. Appendix~\ref{sec:sufficient_conditions_HL} gives a convenient sufficient route to verify the marked Lipschitz assumption under the factorization $\lambda=\lambda_g q$.
 
+\begin{lemma}[A checkable route to Assumption~\ref{ass:HL} under $\lambda=\lambda_g q$]
+\label{lem:HL_checkable_main}
+Assume $\lambda(t,m\mid\eta_t)=\lambda_g(t\mid\eta_t)\,q(m\mid t,\eta_t)$ where $q(\cdot\mid t,\eta_t)$ is a PMF on $\mathcal M$.
+Suppose there exist kernels $h_g,h_q:\mathbb R_+\to\mathbb R_+$ and a constant $\bar\lambda_g<\infty$ such that for all $t$ and all histories $\eta,\eta'$,
+\begin{align*}
+|\lambda_g(t\mid\eta_t)-\lambda_g(t\mid\eta'_t)|
+&\le \int h_g(t-s)\,|\eta-\eta'|(ds,dm),\\
+\|q(\cdot\mid t,\eta_t)-q(\cdot\mid t,\eta'_t)\|_{\mathrm{TV}}
+&\le \int h_q(t-s)\,|\eta-\eta'|(ds,dm),\\
+\sup_{t,\eta}\lambda_g(t\mid\eta_t)&\le \bar\lambda_g,
+\end{align*}
+where $\|\cdot\|_{\mathrm{TV}}$ is total variation on the countable mark space.
+Then Assumption~\ref{ass:HL} holds with
+\[
+h:=h_g+2\bar\lambda_g\,h_q.
+\]
+\end{lemma}
+
+\begin{proposition}[BA mark PMF is TV-Lipschitz under aging and bounded updates]
+\label{prop:BA_TV}
+Consider the BA HawkesNet mark mechanism in Example~\ref{ex:BA} with aged degree kernel $a(u)=e^{-\tau u}$,
+initial attractiveness $a_0>0$, and bounded edges per update $K_t\le B_E$.
+Then there exists a constant $C_{\mathrm{BA}}<\infty$ (explicit in $B_E,a_0,N_0$) such that for all $t$ and histories $\eta,\eta'$,
+\[
+\bigl\|q_{\mathrm{BA}}(\cdot\mid t,\eta_t)-q_{\mathrm{BA}}(\cdot\mid t,\eta'_t)\bigr\|_{\mathrm{TV}}
+\le
+\int_{(-\infty,t)\times\mathcal M} C_{\mathrm{BA}}\,e^{-\tau(t-s)}\,|\eta-\eta'|(ds,dm).
+\]
+\end{proposition}
+
+\begin{proposition}[CS mark PMF is TV-Lipschitz under bounded candidates and aged/saturated statistics]
+\label{prop:CS_TV}
+Consider the CS HawkesNet mark mechanism in Example~\ref{ex:cs}, assume $|\mathcal C_t|\le C_{\max}$, optionally with saturation $\widetilde C^{(a)}$.
+Then there exists a constant $C_{\mathrm{CS}}<\infty$ (explicit in $C_{\max}$ and the statistic bounds) such that for all $t$ and histories $\eta,\eta'$,
+\[
+\bigl\|q_{\mathrm{CS}}(\cdot\mid t,\eta_t)-q_{\mathrm{CS}}(\cdot\mid t,\eta'_t)\bigr\|_{\mathrm{TV}}
+\le
+\int_{(-\infty,t)\times\mathcal M} C_{\mathrm{CS}}\,e^{-\alpha(t-s)}\,|\eta-\eta'|(ds,dm),
+\]
+for some $\alpha>0$ determined by the chosen kernel. One admissible choice is $C_{\mathrm{BA}}=4B_E^2/(a_0N_0)$.
+\end{proposition}
+
+\begin{remark}
+Propositions~\ref{prop:BA_TV}--\ref{prop:CS_TV} verify the \emph{mark} sensitivity component in Lemma~\ref{lem:HL_checkable_main}.
+Combined with a corresponding bound for the ground rate, they yield a concrete sufficient route to Assumption~\ref{ass:HL} for the showcased induced models. One admissible choice is $C_{\mathrm{CS}}=(C_{\max}/4)\,\|\theta\|_1\,c_{\max}$ under saturation. Detailed bounds are provided in Appendix~\ref{sec:sufficient_conditions_HL}.
+\end{remark}
+
+
+
 \subsection{Likelihood and Parameter Estimation}\label{sec:likelihood}
 
-While the dynamic evolution of the mark space is non standard, estimation and asymptotic inference follow from standard maximum likelihood methods for point processes\citep{ogata1978estimators, rathbun1996}. The intensity \eqref{eq:condintenHN} is predictable and the compensator is finite over bounded time windows under the non-explosion guaranteed by Theorem~\ref{thm:existence}. The parameter-dependent intensity is smooth in the sense required for the usual M-estimation conditions. Thus the general results for point process likelihood estimation apply: under the usual regularity and identifiability conditions \citep[Ch.~7]{daley2003introduction}, the maximum likelihood estimator is consistent and asymptotically normal as the observation window expands. We state this formally as follows. \textbf{CONOR please think though -- are ergodicity requirements met when graph process itself is not stationary?}
-
-\begin{theorem}[Asymptotic distribution of the MLE]\label{thm:MLE_asymptotics}
-Let $\theta$ denote the parameter vector of a HawkesNet model with intensity $\lambda(t,m\mid\mathcal H_t;\theta)$ and compensator $\Lambda([0,T]\times\mathcal M;\theta)$. Assume that (i) the true parameter $\theta_0$ lies in the interior of a compact parameter space $\Theta$, (ii) $\theta\neq\theta_0$ implies $\lambda(\cdot,\cdot\mid\cdot;\theta)\neq \lambda(\cdot,\cdot\mid\cdot;\theta_0)$ on a set of positive $dt\times\nu(dm)$-measure (identifiability), and (iii) the intensity is continuously differentiable in $\theta$ with uniformly bounded log-intensity derivatives on $[0,T]$. Then, under the law $\mathbb P_{\theta_0}$, as $T\to\infty$ the maximum likelihood estimator $\hat\theta_T$ satisfies $\hat\theta_T\to\theta_0$ in probability and $\sqrt{T}(\hat\theta_T-\theta_0)\Rightarrow \mathcal N(0,\mathcal I(\theta_0)^{-1})$, where $\mathcal I(\theta_0)$ is the Fisher information per unit time.
-\end{theorem}
-
-The proof follows from the same arguments as in \citet{ogata1978estimators} and \citet{rathbun1996} for univariate and multivariate point process MLE, applied to the marked intensity and its compensator; the dynamic mark space $\mathcal M_t$ does not alter the validity of these arguments because the likelihood is still a standard point process likelihood conditional on the observed history. In practice, standard errors can be obtained from the observed information matrix (e.g., numerical Hessian of the negative log-likelihood at $\hat\theta_T$)
+Throughout, we estimate parameters by maximizing the standard marked point process log-likelihood \citep{daley2003introduction,rathbun1996asymptotic}. Under the non-explosion guarantee of Theorem~\ref{thm:existence}, the compensator is finite on finite observation windows, and the likelihood is therefore well-defined. Our focus in this paper is on (i) specifying a flexible non-separable model class for growing networks, (ii) enabling tractable likelihood evaluation via the PMF construction, and (iii) demonstrating reliable finite-sample behavior through simulation and applications. A full large-$T$ asymptotic theory (consistency/CLT for estimators under appropriate regularity conditions as developed in $\cite{ogata1978estimators}$ for univariate point processes) is an important direction for future work but not required for the modeling and computational contributions of this paper.
 
 As we consider intensities of the form $
     \lambda(t,m\vert \mathcal{H}_t) = \lambda_{g}(t\vert \mathcal{H}_{t}) q(m\vert t,\mathcal{H}_{t}) 
@@ -618,11 +712,11 @@ As we consider intensities of the form $
 \end{align*}
 with the log likelihood for a parameter vector $\theta$ is given by
 \begin{align*}
-\log(\mathcal{L}(\theta)) = \sum_{i = 1}^{N}\log \left(q(m_i \vert t_i, \mathcal{H}_{t_i}) \cdot\left( \lambda_{\emptyset} + \sum_{j<i} g(t_i,t_j \vert \mathcal{H}_{t_i}) \right)\right) - \int_{[0,T]}\left(\int_{\mathcal{M}_t}  \lambda(t,m|\mathcal{H}_t)  dm \right)\hspace{0.1cm} dt .
+\log(\mathcal{L}(\theta)) = \sum_{i = 1}^{N}\log \left(q(m_i \vert t_i, \mathcal{H}_{t_i}) \cdot\left( \lambda_{\emptyset} + \sum_{j<i} g(t_i,t_j \vert \mathcal{H}_{t_i}) \right)\right) - \int_{[0,T]}\left(\sum_{m \in \mathcal{M}_t}  \lambda(t,m\mid\mathcal{H}_t)\right)\hspace{0.1cm} dt .
 \end{align*}
-For general non separable kernels the compensator \textit{i.e.} the integral, is difficult to calculate. However as we chose $q$ to be a PMF as in \cite{schoenberg_density_trick}, we alleviate the need to integrate over the dynamic mark space by noting $\int_{\mathcal{M}} q(m\vert t,\mathcal{H}_t)dm = 1$ $\forall t$. In this case we observe that
+For general non-separable kernels the compensator (i.e., the integral term) is difficult to calculate. However, because we choose $q(\cdot\mid t,\mathcal H_t)$ to be a PMF supported on the admissible set $\mathcal{M}_t$, we have $\sum_{m\in \mathcal{M}_t} q(m\vert t,\mathcal{H}_t)=1$ for all $t$ (cf.\ \citealp{schoenberg_density_trick}). In this case we observe that
 \begin{align*}
-\int_{[0,T]}\left(\int_{\mathcal{M}_t}  \lambda(t,m|\mathcal{H}_t)  dm \right)\hspace{0.1cm} dt  &= \int_{[0,T]}\left(\int_{\mathcal{M}_t}  q(m\vert t,\mathcal{H}_{t}) \left( \lambda_{\emptyset} + \sum_{i : t_{i} < t} g(t,t_i\vert \mathcal{H}_t) \right)  dm \right)\hspace{0.1cm} dt \\
+\int_{[0,T]}\left(\sum_{m \in \mathcal{M}_t}  \lambda(t,m\mid\mathcal{H}_t)\right)\hspace{0.1cm} dt  &= \int_{[0,T]}\left(\sum_{m \in \mathcal{M}_t}  q(m\vert t,\mathcal{H}_{t}) \left( \lambda_{\emptyset} + \sum_{i : t_{i} < t} g(t,t_i\vert \mathcal{H}_t) \right) \right)\hspace{0.1cm} dt \\
 & = \int_{[0,T]}\left( \lambda_{\emptyset} + \sum_{i : t_{i} < t} g(t,t_i\vert \mathcal{H}_t) \right)   dt.
 \end{align*}
 
@@ -632,7 +726,7 @@ For computational ease, we specify the kernel $g$ as exponential so that the int
 \end{align}
 which is of $\mathcal{O}(n)$ complexity \cite{cui2020elementary}, facilitating practical maximum likelihood estimation.
 
-We note the typical $K$ Hawkes productivity parameter has been absorbed into the mark PMF. As we derive models from network PMFs, they typically include an constant or intercept style term that governs the baseline probability of a network update. Absorbing $K$ is therefore necessary in order to preserve identifiability. In all cases, temporal parameters must be interpreted conditional on a specific proposed mark $m$, reflecting the intrinsic non-separability of the model.
+In all cases, temporal parameters must be interpreted conditional on a specific proposed mark $m$, reflecting the intrinsic non-separability of the model.
 
 In practice, as the log likelihood is available in closed form, we can use standard optimization methods to maximize the log likelihood. For our examples, we used the Nelder-Mead simplex algorithm \citep{NelderMead1965} via the \texttt{optim} function in R \citep{RCoreTeam2025} in our R package \texttt{HawkesNet} \citep{hawkesNest}.
 
@@ -683,9 +777,35 @@ Table \ref{tab:BA_table} reports simulation results. MLE recovers the true param
 \subsection{Change Statistic (CS) HawkesNet}\label{sec:CS_sim}
 % -----------------------------------------------------------------------------
 
-The CS HawkesNet (Example~\ref{ex:cs}) adds $N_t^{\text{new}} \sim \text{Poisson}(\lambda_{\text{nodes}})$ nodes at each event and forms edges via a logistic model on change statistics. Candidate edges are restricted to new-to-old (and optionally time-truncated) pairs, so the number of candidates is $\mathcal{O}(n)$; because edge influence decays in time, the process remains subcritical and avoids a full graph, while still allowing transitive closure and identifiable mark parameters.
+The CS HawkesNet (Example~\ref{ex:cs}) adds $N_t^{\text{new}} \sim \text{Poisson}(\lambda_{\text{nodes}})$ nodes at each event and forms edges via a logistic model on change statistics. Candidate edges are restricted to new-to-old, so the number of candidates is $\mathcal{O}(n)$. Parameters were chosen to achieve mean degree around $2$ and a tendency toward transitivity (positive triangle effect), with positive 2-star and negative 3-star terms as often used in ERGM-style fits \citep{Fellows2018,snijders2006}. 
 
-Parameters were chosen to achieve mean degree around $2$ and a tendency toward transitivity (positive triangle effect), with positive 2-star and negative 3-star terms as often used in ERGM-style fits \citep{Fellows2018,snijders2006}. In this parametrization the model is over-identified: the mark model includes an edge term and the Hawkes kernel has a scale $K$, so we fix $K = 0.5$ and interpret the temporal and mark parameters jointly.
+% \paragraph{Overparametrization}
+
+% The full conditional intensity is as follows:
+
+% \begin{align}\label{eq:condintenHN}
+%     \lambda(t,m\mid\mathcal H_t) &=\lambda_{\emptyset}(t,m)+\sum_{i:t_i<t}g(t-t_i,m,m_i\mid\mathcal H_t) \\
+%     \intertext{with}
+% q(m_t \mid t, \mathcal{H}_t) &= \text{Poisson}(N_t^{\text{new}}; \lambda) \times \prod_{(i,j) \in \mathcal{C}_t} \bigl(p_{i,j}^{\text{CS}}\bigr)^{e_{i,j}} \bigl(1 - p_{i,j}^{\text{CS}}\bigr)^{1 - e_{i,j}}\\
+% \intertext{yielding}
+% \lambda(t,m\mid\mathcal H_t) &= \left(\text{Poisson}(N_t^{\text{new}}; \lambda) \times \prod_{(i,j) \in \mathcal{C}_t} \bigl(p_{i,j}^{\text{CS}}\bigr)^{e_{i,j}} \bigl(1 - p_{i,j}^{\text{CS}}\bigr)^{1 - e_{i,j}} \right)\cdot \\ 
+% & \quad \left( \lambda_{\emptyset} + K\cdot\sum_{t_i <t} exp(\beta\cdot(t-t_i)) \right)
+% \end{align}
+
+% From the paper and code, the full conditional intensity is:
+% $$\lambda(t,m \mid \mathcal{H}t) = q(m \mid t, \mathcal{H}_t) \cdot \left(\mu + K \sum{t_i < t} e^{-\beta(t-t_i)}\right)$$
+% where the mark PMF is:
+% $$q(m_t \mid t, \mathcal{H}t) = \text{Poisson}(N_t^{\text{new}}; \lambda{\text{nodes}}) \times \prod_{(i,j) \in \mathcal{C}t} (p{i,j}^{\text{CS}})^{e_{i,j}} (1 - p_{i,j}^{\text{CS}})^{1-e_{i,j}}$$
+% with $p_{i,j}^{\text{CS}} = \text{logistic}(\eta_{i,j})$ and $\eta_{i,j} = \text{CS\params}^\top \cdot \Delta s{i,j}$.
+
+Recall from Section~\ref{sec:likelihood} that the log-likelihood decomposes as
+\begin{align}\label{eq:CS_identifiability}
+\log \mathcal{L}(\theta) &= \underbrace{\sum_{i=1}^{N} \log q(m_i \mid t_i, \mathcal{H}_{t_i})}_{\text{mark contribution}} \;+\; \underbrace{\sum_{i=1}^{N} \log\!\Bigl(\lambda_{\emptyset} + K\!\sum_{j<i} e^{-\beta(t_i - t_j)}\Bigr)}_{\text{ground intensity}} \; \\&-\; \underbrace{\Bigl(\lambda_{\emptyset}\, T + \frac{K}{\beta}\sum_{i=1}^{N}\bigl(1 - e^{-\beta(T-t_i)}\bigr)\Bigr)}_{\text{compensator}}.
+\end{align}
+
+Because $q$ is a PMF that integrates to one over $\mathcal{M}_t$, the compensator depends only on the temporal parameters $(\lambda_{\emptyset}, K, \beta)$ and not on any mark parameters. The mark contribution likewise depends only on $(\theta, \tau, \lambda_{\text{nodes}})$ via~\eqref{eq:csdensity}. In the log-likelihood these two groups of parameters are therefore \emph{additively separable}: the ground intensity and compensator terms involve $(\lambda_{\emptyset}, K, \beta)$ alone, while the mark sum involves $(\theta, \tau, \lambda_{\text{nodes}})$ alone. 
+
+Despite this separability, a practical identification issue arises because the ground intensity includes both a constant baseline $\lambda_{\emptyset}$ and a scale $K$ on the self-exciting kernel. For any fixed realization of event times, the pair $(\lambda_{\emptyset}, K)$ trades off along a near-ridge in the profile likelihood: increasing $\lambda_{\emptyset}$ while decreasing $K$ (or vice versa) can produce nearly identical ground intensity values. Moreover, the edge intercept $\theta_1$ in the mark PMF~\eqref{eqn:csdraw} plays an analogous role to $\lambda_{\emptyset}$ on the mark side: it governs the baseline edge formation probability and hence the overall number of edges in each network update (mark $m$). We therefore fix both $K$ and $\lambda_{\emptyset}$ at their true values and estimate the remaining parameters. Fixing $K$ alone would resolve the $(\lambda_{\emptyset}, K)$ ridge in the ground intensity, but would leave $\lambda_{\emptyset}$ free to absorb variation that properly belongs to the mark parameters; fixing both anchors the temporal rate and allows unbiased recovery of $(\theta, \tau, \lambda_{\text{nodes}})$. Because our specification is mark path dependent, $\mu$ and $K$ do not retain their typical Hawkes process interpretation; we retain the edge intercept $\theta_1$ (fixed) to preserve the connection to ERGM/LOLOG-style change statistic models and to support cleaner interpretation of the remaining structural parameters. Practitioners should therefore interpret $\lambda_{\emptyset}$ and $K$ estimates with care.
 
 \begin{table}[tb]
     \centering
@@ -693,238 +813,167 @@ Parameters were chosen to achieve mean degree around $2$ and a tendency toward t
         \toprule
         Parameter & True & Mean estimate & Std.\ dev. \\
         \midrule
-        $T$ & \texttt{---} & -- & -- \\
-        $K$ & 0.5 & (fixed) & -- \\
+        $T$ & \texttt{---} & \texttt{--} & \texttt{--} \\
+        $K$ & 0.5 & (fixed) & \texttt{--} \\
+        $\lambda_{\emptyset}$ & 10 & (fixed) & \texttt{--} \\
         \midrule
-        $\lambda_{\emptyset}$ & 10 & \texttt{---} & \texttt{---} \\
-        $\beta$ & 2.0 & \texttt{---} & \texttt{---} \\
+        $\beta$ & 2.0 & \texttt{--} & \texttt{--} \\
         \midrule
-        edges & $-6.7$ & \texttt{---} & \texttt{---} \\
-        triangles & $2.0$ & \texttt{---} & \texttt{---} \\
-        2-star & $0.1$ & \texttt{---} & \texttt{---} \\
-        3-star & $-0.1$ & \texttt{---} & \texttt{---} \\
-        $\tau$ & 1.0 & \texttt{---} & \texttt{---} \\
-        $\lambda_{\text{nodes}}$ & 1.0 & \texttt{---} & \texttt{---} \\
+        edges & $-6.7$ & \texttt{--} & \texttt{--} \\
+        triangles & $2.0$ & \texttt{--} & \texttt{--} \\
+        2-star & $0.1$ & \texttt{--} & \texttt{--} \\
+        3-star & $-0.1$ & \texttt{--} & \texttt{--} \\
+        $\tau$ & 1.0 & \texttt{--} & \texttt{--} \\
+        $\lambda_{\text{nodes}}$ & 1.0 & \texttt{--} & \texttt{--} \\
         \midrule
     \end{tabular}
     \caption{CS HawkesNet: parameters and summary of MLE over $100$ replications. Fill \texttt{---} from package output (\texttt{results\_CS\_full.RDS} or equivalent).}
     \label{tab:CS_table}
 \end{table}
 
-Table~\ref{tab:CS_table} summarizes parameter recovery for the CS model. Variability in $\beta$ and $K$ is expected for small $T$ and moderate event counts.
+Table~\ref{tab:CS_table} summarizes parameter recovery for the CS model. Appendix~\ref{sec:app_consistency} confirms that bias and variance decay as the observation window $T$ increases.
 
-\section{Application to Citation Network of Hawkes Process Papers}\label{sec:openalex}
+\section{Application to Dynamic Human Contact Patterns}\label{sec:hypertext}
 
-We illustrate the HawkesNet framework on a citation network of academic works retrieved from the OpenAlex API \citep{openalex}. The data are well suited to a self-exciting, non-separable formulation: the appearance of influential papers can trigger bursts of related publications and citations, while the evolving structure of the citation graph (e.g., formation of triangles and stars) influences both the rate and the type of subsequent citations.
+We apply the HawkesNet framework to a face-to-face contact network recorded during the first day of the ACM Hypertext 2009 conference \citep{hypertext_conf_1}. Attendees wore radio-frequency badges that registered mutual proximity at a temporal resolution of 20\,seconds \citep{sociopatterns2025}. Conference settings are well suited to a self-exciting, non-separable formulation: an initial face-to-face contact can spark further interactions as participants join ongoing conversations, recognise familiar individuals, or are drawn into shared social contexts, producing short-term excitation in contact activity and a relatively dense network of proximity-based connections.
 
 \subsection{Data and Network Construction}
 
-Works were selected by searching OpenAlex for the phrase ``Hawkes Process'' in title and abstract. We restrict to a fixed topic (e.g., ``Point processes and geometric inequalities'') so that nodes belong to a coherent research area. The resulting node set comprises $n$ works (papers), ordered by publication date. Each node has a \emph{vertex time} equal to its publication date; we scale all event times to the unit interval $[0,1]$ for numerical stability. An edge between two works represents a citation from the later (citing) work to the earlier (cited) work; only citations between works in the selected set are retained. The edge is assigned the publication date of the citing work, so that the \emph{event times} in the marked point process are the times at which citations occur (i.e., publication times of citing papers). The network is treated as undirected for the purpose of structural statistics (degree, triangles, $k$-stars, geodesics). In the growth representation, each event corresponds to the publication of one or more papers and the simultaneous creation of edges from those papers to previously published papers in the set; the \emph{mark} is the set of new nodes and new edges added at that time.
+The raw data consist of $28\,468$ timestamped contact records spanning approximately three days. We restrict attention to the first day (the longest uninterrupted session, approximately 16 hours) by identifying the first temporal gap exceeding one hour. Within this session the data contain $n=100$ unique attendees and $946$ first-contact edges, where a \emph{first-contact edge} between two attendees is defined by the earliest time they appear together. All event times are rescaled to the unit interval $[0,1]$ for numerical stability.
 
-Optional nodal covariates can be incorporated for richer inference. We obtain a proxy for author gender by predicting from the first author's first name using the \texttt{gender} package in R (U.S. SSA method, with publication-year-based birth-year window). This yields a categorical vertex attribute that can be used in a change-statistic specification (e.g., homophily via \texttt{nodeMatch}) to assess whether citation formation depends on author gender. All construction and fitting steps are implemented in the \texttt{hawkesNet} R package \citep{hawkesNest}.
+We construct the marked point process from the  data by jittering timestamps by independent Gaussian noise ($\sigma = 0.01\,\text{s}$) so that no two events share a time. While our model can handle edges and nodes arriving simultaneously, doing so reduced the number of events to around $400$ which leads to poorly fitting models. In addition the jitter reconstructs the true data; the timestamps are only at $20$ second resolution.
 
-\subsection{Model Specification and Inhomogeneous Background}
+The network is treated as undirected and only first contacts are retained, so that the edge set grows monotonically. A natural extension to HawkesNet is to allow for multiple interactions, but that development is left for future work. Each node's vertex time is the time of its first appearance in any contact; the node set is therefore also monotonically growing.
 
-Citation activity is often non-stationary over time (e.g., growth in the field). We therefore model the ground rate using an \emph{inhomogeneous} Hawkes specification: the baseline intensity $\lambda_{\emptyset}(t)$ is replaced by a time-varying function estimated from the observed event times via kernel density estimation (KDE). The conditional intensity is
-\[
-\lambda(t,m\mid\mathcal{H}_t) = \mu(t)\, + \sum_{i:\,t_i<t} g(t-t_i,m,m_i\mid\mathcal{H}_t),
-\]
-where $\mu(t)$ is the KDE-smoothed baseline and $g$ is the excitation kernel. Simulations and goodness-of-fit (GOF) use the same inhomogeneous background so that the comparison is fair. This extension is described and implemented in the package's inhomogeneous fitting and simulation routines.
+\subsection{Model specification}\label{sec:hypertext_model}
 
-The mark distribution is given by a change-statistic (CS) HawkesNet model (Example~\ref{ex:cs}). We specify the structural formula as
-\[
-\text{edges} + \text{degree}(0) + \text{triangles} + \text{star}(2{,}3).
-\]
-The \texttt{degree(0)} term explicitly models the proportion of isolates (uncited papers in the set), which improves the match between observed and simulated degree distributions and avoids GOF plots that are overly connected. The triangle and 2- and 3-star terms capture transitivity and concentration of citations. Optionally, we add a \texttt{nodeMatch} term for a categorical vertex attribute (e.g., predicted first-author gender) to allow homophily in citation formation; the full formula is then
-\[
-\text{edges} + \text{degree}(0) + \text{triangles} + \text{star}(2{,}3) + \text{nodeMatch}(\texttt{gender}).
-\]
-Candidate edges are restricted to new-to-old pairs with time truncation (e.g., the $100$ most recently active nodes), so that the number of candidates is $\mathcal{O}(n)$ and estimation remains feasible.
+We fit the change-statistic (CS) HawkesNet model as described in Example~\ref{ex:cs}.
 
-Parameters are estimated by maximum likelihood. We fit two models: (i) structural only, and (ii) structural plus \texttt{nodeMatch}. The nodeMatch model is initialized from the structural fit when the latter converges. Optimization uses the Nelder-Mead algorithm with parameter scaling and iteration limits as in the simulation studies.
+We consider the structural formula familiar to ERGM users:
+\begin{align}
+  \text{Formula}\quad & \texttt{edges} + \texttt{degree}(0) + \texttt{triangles} + \texttt{star}(2,3). \label{eq:hypertext_formula}
+\end{align}
+
+We include a \texttt{degree}(0) term, which models the propensity for isolate nodes (attendees who have not yet made a contact within the active window) and improves the match between observed and simulated degree distributions. The triangle and star terms capture transitivity and degree heterogeneity in the growing contact network. The \texttt{edges} intercept is held fixed at $-5$ across all fits to stabilise estimation, consistent with the simulation studies in Section~\ref{sec:CS_sim}.
+\subsection{Results}\label{sec:hypertext_results}
+
+ Table~\ref{tab:ht_fit1} reports the parameter estimates.
 
 \begin{table}[htbp]
-\centering
-\caption{OpenAlex CS HawkesNet (structural): parameter estimates from inhomogeneous fit. Fill from \texttt{fit\_inhom\_structural} in \texttt{results\_openalex\_full.RDS}.}
-\label{tab:openalex_structural}
-\begin{tabular}{lrr}
-\toprule
-Parameter & Estimate & Std.\ error \\
-\midrule
-$\mu$ (baseline, KDE integral) & --- & --- \\
-$\beta_{\text{overall}}$ & --- & --- \\
-$K$ & --- & --- \\
-$\beta_{\text{edges}}$ & --- & --- \\
-$\lambda_{\text{nodes}}$ & --- & --- \\
-edges & --- & --- \\
-degree(0) & --- & --- \\
-triangles & --- & --- \\
-2-star & --- & --- \\
-3-star & --- & --- \\
-$\tau$ & --- & --- \\
-\bottomrule
-\end{tabular}
+  \centering
+  \caption{CS HawkesNet fit for the simple Hypertext 2009 process.
+           Formula~A: \texttt{edges $+$ degree(0) $+$ triangles $+$ star(2,3)}.
+           Fill from \texttt{results\$fit1\$fit\$fit\_table}.}
+  \label{tab:ht_fit1}
+  \begin{tabular}{lrr}
+    \toprule
+    Parameter & Estimate & Std.\ error \\
+    \midrule
+    $\mu$                          & --- & --- \\
+    $\beta_{\text{overall}}$       & --- & --- \\
+    $K$                            & --- & --- \\
+    $\beta_{\text{edges}}$         & --- & --- \\
+    $\lambda_{\text{nodes}}$ (fixed) & --- & --- \\
+    $m$                            & --- & --- \\
+    edges (fixed)                  & $-5$ & --- \\
+    degree(0)                      & --- & --- \\
+    triangles                      & --- & --- \\
+    2-star                         & --- & --- \\
+    3-star                         & --- & --- \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
-\begin{table}[htbp]
-\centering
-\caption{OpenAlex CS HawkesNet (nodeMatch): structural parameters plus nodeMatch and gender proportions. Fill from \texttt{fit\_inhom\_nodematch}.}
-\label{tab:openalex_nodematch}
-\begin{tabular}{lrr}
-\toprule
-Parameter & Estimate & Std.\ error \\
-\midrule
-\multicolumn{3}{l}{\textit{Structural (as in Table~\ref{tab:openalex_structural})}} \\
-$\mu$, $\beta_{\text{overall}}$, $K$, $\beta_{\text{edges}}$, $\lambda_{\text{nodes}}$ & --- & --- \\
-edges, degree(0), triangles, 2-star, 3-star, $\tau$ & --- & --- \\
-\midrule
-nodeMatch(gender) & --- & --- \\
-\midrule
-\multicolumn{3}{l}{\textit{Vertex categorical (gender) proportions}} \\
-female & --- & --- \\
-male & --- & --- \\
-unknown (reference) & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
+\paragraph{Interpretation.}
+% TODO: Fill in interpretation of the fitted parameters.
+% Points to address:
+% - Sign and magnitude of mu (baseline rate) and K (branching ratio / self-excitation).
+% - beta_overall and beta_edges: temporal decay of self-excitation.
+% - m: expected number of edges per event (should be close to 1 for simple data).
+% - Structural parameters:
+%     degree(0): positive = tendency to avoid isolates; negative = preference for isolates.
+%     triangles: positive = transitive closure; negative = open triads preferred.
+%     star(2,3): captures degree heterogeneity; often compensating signs.
+% - Is the effective branching ratio (K) significantly positive, suggesting self-excitation?
+% - Practical note: sensitivity to the fixed edges intercept (-5) and truncation.
 
-\subsection{Temporal Fit and Kolmogorov--Smirnov Test}
 
-To assess fit in the time dimension, we fit a univariate temporal Hawkes process to the observed event times (ignoring marks) and compute rescaled residuals. Under the random time-change theorem \citep[Proposition 7.4.VI]{daley2003introduction}, a correctly specified conditional intensity yields residuals that are distributed as a unit-rate Poisson process; a Kolmogorov--Smirnov test on the residual inter-event times provides a $p$-value for the temporal specification.
+\subsection{Goodness of Fit}\label{sec:hypertext_gof}
 
-\begin{table}[htbp]
-\centering
-\caption{Temporal Hawkes fit and KS test. Fill from \texttt{fit\_temporal} and \texttt{ks\_temporal\_pval}.}
-\label{tab:openalex_temporal}
-\begin{tabular}{lrr}
-\toprule
-Quantity & Value \\
-\midrule
-Temporal $\hat{\mu}$ & --- \\
-Temporal $\hat{\beta}$ & --- \\
-Temporal $\hat{K}$ & --- \\
-KS $p$-value (rescaled residuals) & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
+Assessing goodness of fit for marked point processes is difficult, and although various \textit{ad-hoc} options exist in the literature \citep{clements2011residual,clements2012evaluation, baddeley2005residual, schoenberg2003multidimensional} none are theoretically robust. Rescaled residuals are unit Poisson distributed for a correctly specified conditional intensity function via the Random Time Change theorem \cite[cf. Proposition 7.4.VI]{daley2003introduction}. This result allows for assessment of model fit with respect to the time dimension, and p-values can be calculated from a Kolmogorov--Smirnov (KS) test on the residual inter-event times.
 
-\subsection{Goodness-of-Fit: Network Statistics and Waiting Times}
+To assess joint network and time GOF we pursue a simulation-based approach by simulating $25$ networks from the fitted model and comparing observed and simulated network statistics. Goodness-of-fit diagnostics focus on four aspects of the network: the degree distribution, the edgewise shared partner (ESP) distribution, geodesic distances, and waiting times between structural motif formations. Note that the waiting times combine network structure and time and are therefore well suited to our setting.
 
-We assess fit to the network structure by simulating $25$ networks from the fitted inhomogeneous CS HawkesNet model (same truncation and formula as the fit) and comparing observed and simulated statistics.
+\paragraph{Degree distribution.}
+Counts of nodes with degree $0, 1, \ldots, k_{\max}$ are computed for the observed network and for each simulated replicate. The \texttt{degree}(0) term in the model directly targets the proportion of isolates; we assess whether the remaining degree distribution---particularly the right tail---is also well reproduced.
 
-\textbf{Degree and ESP.} We compute the degree distribution (counts of nodes with degree $0,1,\ldots,k_{\max}$) and the edge-wise shared partner (ESP) distribution for the observed network and for each simulated network. Observed values are plotted as points (or a single bar) and simulated values as boxplots, with distinct fill for observed vs.\ simulated (e.g., orange for observed, blue for simulated) to match the style of the simulation-study figures.
+\paragraph{Edgewise shared partners.}
+The ESP distribution counts, for each edge, the number of mutual neighbours shared by its endpoints. This captures transitivity at a finer resolution than the global triangle count alone.
 
-\textbf{Geodesic distances.} We compute the distribution of pairwise geodesic distances (excluding unreachable pairs) and compare observed and simulated distributions, e.g., via relative proportions at each distance or ECDFs.
+\paragraph{Geodesic distances.}
+The distribution of pairwise shortest-path lengths (excluding unreachable pairs) provides a global summary of network connectivity and diameter.
 
-\textbf{Waiting times between formations.} For each of the structural terms (triangles, 2-star, 3-star), we compute the waiting times between consecutive formation events (i.e., the time gaps between successive increases in the count of that motif). Histograms of these waiting times are compared in density scale (relative scale) so that shapes are comparable; again, observed and simulated are distinguished by fill (e.g., orange vs.\ blue).
+\paragraph{Waiting times.}
+For each structural term in the formula (triangles, 2-stars, 3-stars), we compute the inter-event times between consecutive increases in the count of that motif. These waiting-time distributions link the temporal and structural dimensions of the model: a well-specified model should reproduce not only the final counts but also the \emph{pace} at which structure accumulates.
 
 \begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/openalex_gof_degree.pdf}
-\caption{GOF: Degree distribution. Observed (orange) vs.\ simulated (blue) counts by degree. Replace \texttt{figures/openalex\_gof\_degree.pdf} with path to saved degree plot from \texttt{GOF\_results\$plots\$degree\_plot}.}
-\label{fig:openalex_gof_degree}
+  \centering
+  % \includegraphics[width=0.85\textwidth]{assets/gof_fit_1__simple__tri_star_degree_plot.pdf}
+  \caption{GOF: Degree distribution. Observed (orange points) vs.\ simulated (blue boxplots).}
+  \label{fig:ht_gof_degree}
 \end{figure}
 
 \begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/openalex_gof_esp.pdf}
-\caption{GOF: Edge-wise shared partner (ESP) distribution. Observed vs.\ simulated. Save from \texttt{GOF\_results\$plots\$esp\_plot}.}
-\label{fig:openalex_gof_esp}
+  \centering
+  % \includegraphics[width=0.85\textwidth]{assets/gof_fit_1__simple__tri_star_esp_plot.pdf}
+  \caption{GOF: Edgewise shared partner distribution.}
+  \label{fig:ht_gof_esp}
 \end{figure}
 
 \begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/openalex_gof_geodesic.pdf}
-\caption{GOF: Geodesic distance distribution (relative proportions or ECDF). Observed vs.\ simulated. Save from \texttt{GOF\_results\$plots\$geodist\_plot}.}
-\label{fig:openalex_gof_geodesic}
+  \centering
+  % \includegraphics[width=0.85\textwidth]{assets/gof_fit_1__simple__tri_star_geodist_plot.pdf}
+  \caption{GOF: Geodesic distance distribution.}
+  \label{fig:ht_gof_geodist}
 \end{figure}
 
 \begin{figure}[htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{figures/openalex_gof_waiting_times.pdf}
-\caption{GOF: Waiting times between formation events. Faceted density histograms for triangle, 2-star, and 3-star; observed vs.\ simulated (density scale). Save from \texttt{GOF\_results\$plots\$waiting\_times\_plot}.}
-\label{fig:openalex_gof_waiting_times}
+  \centering
+  % \includegraphics[width=0.9\textwidth]{assets/gof_fit_1__simple__tri_star_waiting_times_plot.pdf}
+  \caption{GOF: Waiting times between motif formations (triangles, 2-stars, 3-stars). Faceted density histograms comparing observed (orange) and simulated (blue) distributions.}
+  \label{fig:ht_gof_waiting}
 \end{figure}
 
 \paragraph{Discussion of GOF.}
-Summarize whether the simulated networks reproduce the observed degree distribution (including isolates via \texttt{degree(0)}), ESP, geodesic distances, and waiting-time distributions. Note any systematic discrepancies (e.g., over- or under-connection, tail behavior) and their possible causes (e.g., missing terms, truncation, or identifiability).
 
-\subsection{Discussion of the OpenAlex Application}
+The model reproduces networks of a similar size with similar edgewise shared partner, degree, and geodesic distance distributions. This suggests that our model captures important structural features of the true data generating process. In addition, the waiting times for structural motifs to appear are consistent with the observed data, suggesting the nature of structure formation over time is also effectively modeled.
 
-Interpret the structural parameter estimates (e.g., positive triangle effect as tendency toward transitive citation; role of 2-star and 3-star). If the nodeMatch model was fitted, interpret the homophily coefficient and gender distribution; note that gender is predicted from first name and may be missing or noisy. Practical considerations: sensitivity to topic filter, date range, and truncation; computational cost of GOF simulations; use of \texttt{degree(0)} to improve GOF. Limitations: citation network is a subset of all citations; undirected treatment; possible unmeasured confounders (e.g., subfield, venue).
+\subsection{Reproducibility and computational time}
+
+The raw data are from the SocioPatterns collaboration \citep{sociopatterns2025} and are bundled with the \texttt{hawkesNet} package as \texttt{ht09\_contact\_list.dat}. The fitting script and SLURM configuration are in \texttt{inst/hypertext\_conference/}. All analyses are reproducible from the package source and can be run on a laptop (with reduced simulation counts) or on HPC resources for full goodness-of-fit runs.
 
 \medskip
-\noindent\textit{Reproducibility.} Data were obtained from the OpenAlex API; the exact replication script and default search/filter settings are in the \texttt{hawkesNet} package (\texttt{inst/openalex\_study/}). Full state (network, fits, GOF results) is saved to \texttt{results\_openalex\_full.RDS} for rehydration of tables and figures without re-fitting.
-
-
-
-% \section{Application to the Modeling of Dynamic Human Contact Patterns}\label{sec:realdata}
-
-% HawkesNet models are plausible when updates are self-excitory, that is shortly after the network is updated, a new update is subsequently more likely. Given the non-separability, the model is particular well suited when the type of update also depends on the timing and vice verse.
-
-% We fit the CS model to a network of interactions during the first day of the ACM Hypertext 2009 conference \citep{hypertext_conf_1}. Edges between conference attendees are present when people are judged to be in close proximity using radio based badges, see \cite{sociopatterns2025} for details. There are 100 nodes and 941 edges. Conference settings are characterized by intense and clustered social interaction: an initial contact can increase the likelihood of subsequent contacts as participants join ongoing conversations, recognize familiar individuals, or are drawn into shared social contexts. This produces short-term excitation in interaction activity and a relatively high degree distribution, reflecting the low physical barrier to forming proximity-based connections.
-
-% Most nodes enter early in the time period, with no new nodes added after approximately $10\%$ of the total time period. To model this effectively we fixed the $\lambda_{nodes}$ to be $0$ after this time. The node arrival time is not a driving factor in edges triggering, for the   $\exp(-\tau \cdot(t - t_i))$ we let $t_{i}$ be the time of the last edge involving node $i$ rather than the arrival time of node $i$. 
-
-% \subsection{Parameter Estimation and Interpretation}
-
-% Table \ref{tab:realdata_results} shows the result of fitting the CS model to the data. The triangle parameter estimate is negative, suggesting there is a tendency towards edges not completing triangles. The negative two-star parameter also suggests a tendency against central nodes gaining even more edges, this is mediated by the three-star parameter's negativity, a phenomenon often observed in ERGM style models \citep{snijders2006}. This suggests that most attendees at the conference are perhaps seeking out new connections as they socialize intensely, rather than revisiting connections already close in their social circle.
-
-% \begin{table}[tb]
-%   \centering
-%   \begin{tabular}{
-%     l
-%     S[table-format=3.3]
-%     S[table-format=2.3]
-%   }
-%     \toprule
-%     Parameter &
-%       {Estimate} &
-%       {Std.\ Deviation Estimate} \\
-%     \midrule
-%     $\lambda_{\emptyset}$                    & 906.015 & 34.058 \\
-%     $\beta_{\text{overall}}$ &  32.870 & 17.245 \\
-%     $\beta_{\text{edges}}$   &  55.757 &  1.613 \\
-%     $\lambda_{\text{nodes}}$ &   0.998 &  0.101 \\
-%     edges                    &  -4.999 &  0.043 \\
-%     triangles                &  -0.100 &  0.021 \\
-%     $2$-star                 &  -0.098 &  0.005 \\
-%     $3$-star                 &   0.003 &  0.000 \\
-%     \bottomrule
-%   \end{tabular}
-%   \caption{Results from fitting the CS HawkesNet to a contact network of conference attendees.}
-%   \label{tab:realdata_results}
-% \end{table}
-
-% \subsection{Goodness of Fit}
-
-% Assessing goodness of fit for marked point processes is difficult, and although various \textit{ad-hoc} options exist in the literature \citep{clements2011residual,clements2012evaluation, baddeley2005residual, schoenberg2003multidimensional} none are theoretically robust. Rescaled residual are unit Poisson distributed for a correctly specified conditional intensity function via the Random Time Change theorem \cite[cf. Proposition 7.4.VI]{daley2003introduction}. This result allows for assessment of model fit with respect to the time-dimension, and p-values can be calculated from a Kolmogorov-Smirnov test. Reliable results using this method often require parametric bootstrapping \citep{brown2002time}, but more importantly, this approach requires integrating over the mark space, and therefore yields no information with respect to goodness of fit for mark parameters. As an alternative to goodness of fit, predictive information gain metrics are sometimes used for model assessment \citep{davis2024fractional}. 
-
-% From the network literature, fitted models are often used to simulate distributions of network statistics not allowed for in the model. For example the degree or edgewise shared partner distributions. Figure \ref{fig:GOF_network} show the results of this.
-
-% Heuristically we can combine,
-
-% - waiting time unitl triangle
-% - waiting time until 2-star
-% - waiting time unitl 3-star
-% - time weighted geodesic distance
-
-
-
-
-
-
 
 \section{Discussion}\label{sec:discuss}
 
-By adapting methods from both the network and point process fields, we have developed a novel framework for modeling time-evolving networks.  In this framework, the arrival times of updates to a network are represented as a marked point process, with the marks being updates to the network. Our framework allows highly realistic and expressive modeling; crucially marks and update times can be dependent (non-separable). 
-We demonstrated the ability to simulate from and perform MLE-based inference on a wide class of network growth models. 
+We introduced a marked point process representation of network growth in continuous time in which each event corresponds to a network update and the mark encodes the newly born nodes and edges. This construction yields a single conditional-intensity characterization for the coupled evolution of when a network changes and how it changes, allowing for non-separability between update timing and network topology. Within this framework we proposed a class of mark path-dependent Hawkes specifications (HawkesNet), established stability conditions in a fully marked setting (Appendix~\ref{sec:stability_theory}), and demonstrated that simulation and likelihood-based inference are feasible for expressive growth mechanisms.
 
-From a network modeling perspective, our approach is the first to provide valid statistical inference for networks with temporally bursty growth. With the increased availability of fine grained temporal network data, our framework unlocks inference for time-evolving networks, without simplifying assumptions. We emphasize that while we have chosen examples with popular network specifications and Hawkesian arrival times, one could posit an arbitrary network growth model with an arbitrary point process specification. The complex interplay between arrival times and network structure sheds light on network model degeneracy. As the kernel function of the Hawkes process temporally decays, it acts as a natural regularizer, preventing degenerate specifications resulting in full graphs. 
+HawkesNet provides an inference-oriented alternative to descriptive models of bursty temporal networks by retaining a generative, interpretable parameterization of local growth mechanisms while accommodating temporally clustered update times. The induced mark PMFs we studied illustrate two commonly posited drivers of network formation: preferential attachment (Section~\ref{sec:BA_sim}) and local motif formation via change statistics (Section~\ref{sec:CS_sim}). Both are modular: other update distributions (e.g., community-driven attachment, spatial proximity kernels, or covariate-driven tie formation) can be substituted so long as the resulting mark density is computable on the dynamic admissible mark space.
 
-From a point process perspective, our framework introduces several ideas: most importantly, the notion of a new nonlinear mark path dependent Hawkes process. Nonlinear Hawkes processes have been well studied \citep{bremaud1996stability}, but our formulation introduces a novel flavor of nonlinearity that is not captured by a nonlinear ``kernel activation function'' but rather within the kernel itself through dependence on the history. This structure is crucial for capturing the network evolution as marks. This framework is amenable to a non-separable setting, wherein the temporal evolution and nature of network updates can be intertwined, conditioned on the past history.
+Our formulation broadens the scope of nonlinear Hawkes processes by introducing mark-path dependence through the evolving graph state: even when the ground component is Hawkesian, the effective event rate depends on the network history through the mark model. This feature is essential for representing growth processes in which the plausibility of updates depends on current topology, but it also changes how temporal parameters should be interpreted. In particular, in non-separable settings the coefficient \(K\) should be viewed as a temporal excitation weight rather than a literal offspring mean in a cluster representation. Accordingly, temporal parameters should be interpreted as components of the conditional-intensity specification for network updates rather than as stand-alone features of an unmarked Hawkes process.
 
-This paper introduces a general framework, for which there are many possible extensions that are beyond the scope of this paper. Nodal covariates, often of interest to practitioners, are trivial to include. Currently, we do not allow for repeated edges as might be observed in a typical interaction network; neither do we consider edge dissolution (akin to a birth-death process), which might feasibly be modeled jointly or separately to the edge formation process. A key area of practical focus for future work is computationally facilitating inference for large or online networks. The next step in the theoretical development of our framework is to formally derive stability and stationarity conditions for nonlinear mark path dependent Hawkes processes with network update marks.
+Our simulation studies show that, under stable regimes, maximum likelihood estimation recovers mark parameters reliably and captures key structural mechanisms, while temporal parameters exhibit the well-known finite-sample variability typical of Hawkes decay and excitation estimation (Sections~\ref{sec:BA_sim}--\ref{sec:CS_sim}; Appendix~\ref{sec:mle_dist}). The conference-contact application (Section~\ref{sec:hypertext}) illustrates that a single fitted model can reproduce multiple out-of-model summaries—degree and shared-partner structure, global connectivity, and motif-formation waiting-time distributions (Section~\ref{sec:hypertext_gof})—providing empirical support that the proposed coupling between time and topology captures salient features of the observed dynamics.
+
+Our stability results provide a foundation for well-posedness in marked, history-dependent settings, but sharper model-specific conditions and estimator guarantees remain open. In particular, large-window limit theory under finite-memory or explicitly aged graph states (Section~\ref{sec:finite_memory_graphs}; Appendix~\ref{sec:stability_theory}) would strengthen the link between stability assumptions and practical model design. We view HawkesNet as a flexible starting point for such developments. We provide an open implementation (\texttt{hawkesNet}) to support reproducible research and facilitate extensions.
+
+Several directions for future work merit emphasis. First, the present implementations target monotone growth (no dissolution) and, in some applications, first-contact edges; these choices are convenient but also encode substantive hypotheses about opportunity formation and tie persistence. High-value extensions include redefining the mark space to allow repeated dyadic interactions and weighted updates, incorporating dissolution via birth-death marks. Second, a further theoretical direction is to develop sharper, model-specific sufficient conditions ensuring that the proposed mark specification \(q(m\mid t,\mathcal H_t)\) induces a well defined mark path dependent point process.  Thirdly, because HawkesNet couples timing and topology, improved diagnostics should target co-evolution directly (bursts coinciding with motif formation at the observed pace) rather than only marginal temporal residuals or marginal network statistics. Finally, exploring scalability for very large networks of $100,000$s of nodes is of interest. This would enable valid statistical inference for important applications, particularly derived from large internet based networks.
+
+In summary, HawkesNet provides a likelihood-based framework for continuous-time network evolution by embedding network updates as marks in a point process and allowing update timing and structural content to interact through history dependence. We provide the \texttt{hawkesNet} software to support reproducible use of the methods and to facilitate extensions.
+
+
+
+
+
 
 \section{Data Availability Statement}\label{data-availability-statement}
 
@@ -1114,22 +1163,6 @@ $\eta,\eta'$ (integer-valued measures on $\mathbb R\times\mathcal M$),
 where $\eta_t$ denotes the restriction of $\eta$ to $(-\infty,t)\times\mathcal M$.
 \end{assumption}
 
-\begin{assumption}[Time-shift covariance (marked)]
-\label{ass:shift_covariance_marked}
-Let $\theta_u$ be the time-shift operator on measures, defined by
-\[
-(\theta_u\eta)(A\times B) := \eta((A+u)\times B),
-\quad A\subseteq\mathbb R,\; B\subseteq\mathcal M.
-\]
-Assume there exists a measurable functional $\Lambda:\mathcal N\to \mathbb R_+^{\mathcal M}$
-(on the space $\mathcal N$ of locally finite integer-valued measures on $\mathbb R\times\mathcal M$)
-such that for all $t\in\mathbb R$ and all histories $\eta$,
-\[
-\lambda(t,m\mid \eta_t)=\Lambda_m(\theta_t\eta)
-\quad\text{for every }m\in\mathcal M.
-\]
-Equivalently, the law of the model does not depend on the absolute time origin.
-\end{assumption}
 
 \subsection{Existence, uniqueness, and non-explosion on finite horizons}
 
@@ -1147,8 +1180,7 @@ N([0,T]\times\mathcal M) < \infty \ \text{a.s.}
 \end{theorem}
 
 \begin{proof}
-\textbf{Step 1 (Picard iteration).}
-Define $N^{(0)}\equiv 0$ on $[0,\infty)\times\mathcal M$.
+We construct the process by Picard iteration, starting from the null measure and repeatedly thinning the same driving PRM with the current iterate’s intensity. Define $N^{(0)}\equiv 0$ on $[0,\infty)\times\mathcal M$.
 For $n\ge 0$, set
 \[
 \lambda^{(n)}(t,m) := \lambda(t,m\mid \mathcal H^{(n)}_t),
@@ -1164,8 +1196,7 @@ N^{(n+1)}(dt,dm)
 \qquad t\ge 0.
 \end{equation}
 
-\textbf{Step 2 (A contraction bound in expected total variation).}
-Fix $T>0$ and define
+We next show that successive iterates contract in expected total variation on $[0,T]\times \mathcal{M}$. Fix $T>0$ and define
 \[
 D_n(T) := \mathbb E\bigl[\,|N^{(n+1)}-N^{(n)}|([0,T]\times\mathcal M)\,\bigr].
 \]
@@ -1224,8 +1255,7 @@ D_n(T) \le (\|h\|_1)^n D_0(T),
 \]
 so $\sum_{n\ge 0}D_n(T)<\infty$ because $\|h\|_1<1$.
 
-\textbf{Step 3 (Cauchy property and existence of a limit measure).}
-For integers $p>q\ge 0$, by the triangle inequality for total variation,
+Since the series of expected increments is summable, the Picard sequence is Cauchy; we therefore extract an almost sure limit on a countable generating $\pi$-system and extend it to a random measure on $[0,T]\times\mathcal{M}$. For integers $p>q\ge 0$, by the triangle inequality for total variation,
 \[
 |N^{(p)}-N^{(q)}|([0,T]\times\mathcal M)
 \le
@@ -1258,7 +1288,7 @@ Since each $N^{(n)}$ is a measure, the a.s.\ pointwise limit preserves finite ad
 Thus $(N_T(A))$ extends (a.s.) to an integer-valued pre-measure on that algebra, and Carath\'eodory's extension theorem yields
 a (a.s.\ unique) integer-valued random measure on $[0,T]\times\mathcal M$, which we denote by $N|_{[0,T]}$.
 
-\textbf{Step 4 (Identification as a fixed point of the thinning map).}
+It remains to verify that the limit $N$ indeed satisfies the fixed point equation, i.e., that it is the thinning of $\Pi$ with intensity $\lambda(t,m\mid\mathcal{H}_t)$.
 Define the candidate limiting intensity
 \[
 \lambda^\star(t,m) := \lambda(t,m\mid \mathcal H_t),
@@ -1284,7 +1314,7 @@ Now use \eqref{eq:HL_lambda_marked} with $\eta=N^{(n)}$ and $\eta'=N$:
 \le
 \int_{[0,t)\times\mathcal M} h(t-s)\,|N^{(n)}-N|(ds,dm),
 \]
-and repeat the Tonelli swap as in Step~2 to obtain
+and apply Tonelli's theorem again (as above) to obtain
 \[
 \mathbb E\!\left[\int_0^T\sum_{m\in\mathcal M}\bigl|\lambda^{(n)}(t,m)-\lambda^\star(t,m)\bigr|\,dt\right]
 \le
@@ -1296,11 +1326,10 @@ Combining with \eqref{eq:identify_fixed_point_1} shows
 \[
 \mathbb E\bigl[|N^{(n+1)}-\widehat N|([0,T]\times\mathcal M)\bigr]\to 0.
 \]
-Since also $N^{(n+1)}\to N$ in $L^1$ on $[0,T]\times\mathcal M$ by Step~3, we conclude
-$\mathbb E[|N-\widehat N|([0,T]\times\mathcal M)]=0$, hence $N=\widehat N$ a.s. on $[0,T]\times\mathcal M$.
+Moreover, $N^{(n+1)}\to N$ in $L^1$ on $[0,T]\times\mathcal M$, so we conclude $\mathbb E[|N-\widehat N|([0,T]\times\mathcal M)]=0$, hence $N=\widehat N$ a.s. on $[0,T]\times\mathcal M$.
 Because $T>0$ was arbitrary, $N$ satisfies \eqref{eq:hawkesnet_fixed_point} for all $t\ge 0$.
 
-\textbf{Step 5 (Non-explosion).}
+We next prove non-explosion by bounding the expected total intensity $\mathbb E[\lambda_g(t)]$ and then integrating over $[0,T]$.
 Let $\lambda_g(t):=\sum_{m\in\mathcal M}\lambda^\star(t,m)$.
 Apply \eqref{eq:HL_lambda_marked} with $\eta=N$ and $\eta'=\mathbf 0$:
 \[
@@ -1380,8 +1409,7 @@ T\cdot \frac{\bar\lambda_\emptyset}{1-\|h\|_1}
 \]
 Finally, $N([0,T]\times\mathcal M)$ is an $\mathbb N$-valued random variable. If it were infinite with positive probability, its expectation would be $+\infty$. Hence $N([0,T]\times\mathcal M)<\infty$ a.s.
 
-\textbf{Step 6 (Pathwise uniqueness).}
-Let $N$ and $N'$ be two solutions of \eqref{eq:hawkesnet_fixed_point} driven by the same PRM $\Pi$ (same probability space).
+Finally, we establish pathwise uniqueness by coupling two solutions driven by the same PRM and showing their expected total variation distance on $[0,T]\times\mathcal M$ must vanish, Let $N$ and $N'$ be two solutions of \eqref{eq:hawkesnet_fixed_point} driven by the same PRM $\Pi$ (same probability space).
 For fixed $T>0$ define
 \[
 D(T):=\mathbb E\bigl[|N-N'|([0,T]\times\mathcal M)\bigr].
@@ -1404,215 +1432,6 @@ Since $\|h\|_1<1$, this implies $D(T)=0$.
 Therefore $|N-N'|([0,T]\times\mathcal M)=0$ a.s. for every $T$, so $N=N'$ a.s. on $[0,\infty)\times\mathcal M$.
 \end{proof}
 
-\subsection{Stationarity and marked ergodicity}
-
-Under time-shift covariance, the contraction framework yields a unique stationary version and ergodicity of the \emph{marked} process under time shifts.
-This is the stability/ergodicity theorem of \citep{bremaud1996stability}. Although \citep{bremaud1996stability} state results for a general (unmarked) point process on $\mathbb R$,
-their argument is driven by (i) a Poisson embedding/thinning representation, and (ii) a contraction bound in expected total variation for the coupled thinnings.
-Both ingredients are present here on the marked configuration space $\mathbb R\times\mathcal M$, with the coupling computation given explicitly in Lemma~\ref{lem:coupling_marked}
-and the contraction imposed directly on the \emph{full marked intensity} via Assumption~\ref{ass:HL_lambda_marked}.
-
-\begin{theorem}[Unique stationary and ergodic marked HawkesNet]
-\label{thm:stationary_ergodic_marked}
-Assume Assumptions~\ref{ass:H0_marked}--\ref{ass:HL_lambda_marked}--\ref{ass:shift_covariance_marked}.
-Then there exists a stationary marked point process $N^{\mathrm{stat}}$ on $\mathbb R\times\mathcal M$ satisfying \eqref{eq:hawkesnet_fixed_point} for all $t\in\mathbb R$,
-and its law is unique among stationary solutions.
-
-Moreover, $N^{\mathrm{stat}}$ is ergodic under the time-shift $\theta_u$:
-for any integrable functional $F$ on the configuration space that is shift-invariant,
-$F(\theta_u N^{\mathrm{stat}})=F(N^{\mathrm{stat}})$ for all $u$ implies $F(N^{\mathrm{stat}})$ is a.s.\ constant.
-\end{theorem}
-
-\begin{proof}
-The existence and uniqueness of the stationary law and ergodicity under time shifts follow by applying the Poisson-embedding/coupling method of \citep{bremaud1996stability}
-to the state space $\mathbb R\times\mathcal M$.
-Concretely: Assumption~\ref{ass:shift_covariance_marked} supplies time-homogeneity, Assumption~\ref{ass:H0_marked} supplies a finite baseline rate,
-and Assumption~\ref{ass:HL_lambda_marked} is the required contraction property expressed directly in the natural metric for marked thinnings,
-namely the integrated $\ell^1(\mathcal M)$ distance in intensity (Lemma~\ref{lem:coupling_marked}).
-The remainder of the proof in \citep{bremaud1996stability} (construction on $\mathbb R$ and shift-ergodicity via coupling) depends only on these two ingredients,
-and thus carries over verbatim.
-\end{proof}
-
-\subsection{Finite-memory (aged) graph states and ergodic theorems for network summaries}
-\label{sec:finite_memory_graphs}
-
-Theorem~\ref{thm:stationary_ergodic_marked} is a statement about the marked update process $N$.
-To connect this to graph-level stabilization, define the \emph{graph state} at time $t$ as a measurable functional of the marked history,
-\[
-G_t := \Phi(\eta_t),
-\]
-where $\eta_t$ denotes the restriction of the full configuration $\eta$ to $(-\infty,t)\times\mathcal M$.
-If $\Phi$ has \emph{finite memory}---either in the strict window sense or via explicit \emph{aging}---then stationarity/ergodicity of $N$ transfers directly to $(G_t)_{t\in\mathbb R}$.
-Two canonical examples are:
-\begin{itemize}
-\item \textbf{Sliding-window graph.} Fix $L>0$ and let $G_t^{(L)}$ be the graph induced by marks in $(t-L,t]\times\mathcal M$ (edges/nodes older than $L$ are forgotten).
-\item \textbf{Exponentially aged graph.} Fix an integrable aging kernel $a:\mathbb R_+\to\mathbb R_+$ (e.g.\ $a(u)=e^{-\alpha u}$).
-Let $G_t^{(a)}$ be the (weighted) graph obtained by aggregating past update marks with weights $a(t-s)$, so that the contribution of an update at time $s$ decays with its age $t-s$.
-\end{itemize}
-These definitions align with the modeling interpretation that network influence decays with time (``aging''), rather than imposing hard saturation.
-
-\begin{proposition}[Stationarity/ergodicity transfer to finite-memory graph states]
-\label{prop:graph_state_ergodic}
-Assume the conditions of Theorem~\ref{thm:stationary_ergodic_marked} and let $N^{\mathrm{stat}}$ be the stationary ergodic marked process.
-Let $\Phi$ be a measurable functional such that $\Phi(\eta_t)$ depends on $\eta$ only through either (i) $\eta$ restricted to $(t-L,t]\times\mathcal M$ for some fixed $L<\infty$,
-or (ii) through an explicit aging transform with an integrable kernel $a$ (e.g.\ exponentially aged adjacency/summary statistics).
-Then $(G_t)_{t\in\mathbb R}$ defined by $G_t=\Phi(\mathcal H_t^{\mathrm{stat}})$ is stationary and ergodic under time shifts.
-
-In particular, for any bounded measurable graph functional $f$ (e.g.\ bounded versions of clustering, local motif counts, bounded-degree summaries),
-\[
-\frac{1}{T}\int_0^T f(G_t)\,dt \;\xrightarrow[T\to\infty]{\text{a.s.}}\; \mathbb E[f(G_0)].
-\]
-\end{proposition}
-
-\begin{proof}
-Under Assumption~\ref{ass:shift_covariance_marked}, $N^{\mathrm{stat}}$ is stationary under $\theta_u$.
-If $\Phi$ is defined by a window restriction or an explicit aging transform, then $\Phi$ is shift-covariant:
-$\Phi((\theta_u\eta)_t)=\Phi(\eta_{t+u})$ for all $u$ and $t$.
-Hence $(G_t)$ is a measurable factor of the stationary process $(\theta_t N^{\mathrm{stat}})_{t\in\mathbb R}$ and is itself stationary; ergodicity transfers to measurable factors.
-The final convergence is the continuous-time ergodic theorem (Birkhoff) applied to the stationary ergodic process $t\mapsto f(G_t)$.
-\end{proof}
-
-\subsection{A quantitative mixing bound (fully marked)}
-
-\begin{proposition}[Coupling-to-stationarity bound on a window]
-\label{prop:mixing_bound_marked}
-Let $N^{\mathrm{stat}}$ be the unique stationary solution from Theorem~\ref{thm:stationary_ergodic_marked}.
-Let $N^{(0)}$ be the solution on $[0,\infty)$ constructed in Theorem~\ref{thm:existence_unique_nonexplosion_marked} from \emph{empty} pre-history at time $0$.
-Couple $(N^{\mathrm{stat}},N^{(0)})$ using the \emph{same} PRM $\Pi$ in \eqref{eq:hawkesnet_fixed_point}.
-
-Let $h$ be as in Assumption~\ref{ass:HL_lambda_marked}, and define its tail
-\[
-H^\leftarrow(t):=\int_t^\infty h(u)\,du,\qquad t\ge 0.
-\]
-Define the \emph{resolvent} kernel
-\[
-r(t):=\sum_{k=0}^\infty h^{*k}(t),\qquad t\ge 0,
-\]
-where $h^{*0}$ is the unit mass at $0$ and $h^{*k}$ denotes $k$-fold convolution on $\mathbb R_+$.
-Then for any $t\ge 0$ and $T>0$,
-\begin{equation}
-\label{eq:mixing_bound_resolvent}
-\mathbb E\bigl[\,|N^{\mathrm{stat}}-N^{(0)}|([t,t+T]\times\mathcal M)\,\bigr]
-\le
-\mathbb E[\lambda^{\mathrm{stat}}_g(0)]
-\int_t^{t+T} (H^\leftarrow * r)(s)\,ds,
-\end{equation}
-where $\lambda^{\mathrm{stat}}_g(s):=\sum_m \lambda(s,m\mid \mathcal H^{\mathrm{stat}}_s)$ and $(f*g)(s)=\int_0^s f(s-u)g(u)\,du$.
-
-In particular, if $\int_0^\infty u\,h(u)\,du<\infty$, then $H^\leftarrow\in L^1(\mathbb R_+)$, $r\in L^1(\mathbb R_+)$, and hence
-\[
-\int_t^{t+T} (H^\leftarrow * r)(s)\,ds \xrightarrow[t\to\infty]{} 0,
-\]
-so the bound in \eqref{eq:mixing_bound_resolvent} tends to $0$ as $t\to\infty$ for each fixed $T$.
-\end{proposition}
-
-\begin{proof}
-Let $\Delta N:=|N^{\mathrm{stat}}-N^{(0)}|$ denote the symmetric-difference measure on $\mathbb R\times\mathcal M$ under the shared-PRM coupling.
-Define the (random) intensity discrepancy
-\[
-\delta(t):=\sum_{m\in\mathcal M}\bigl|\lambda^{\mathrm{stat}}(t,m)-\lambda^{(0)}(t,m)\bigr|,
-\quad t\ge 0,
-\]
-where $\lambda^{\mathrm{stat}}(t,m)=\lambda(t,m\mid \mathcal H^{\mathrm{stat}}_t)$ and $\lambda^{(0)}(t,m)=\lambda(t,m\mid \mathcal H^{(0)}_t)$.
-
-\textbf{Step 1 (From counts to intensity differences).}
-By Lemma~\ref{lem:coupling_marked} on the window $[t,t+T]\times\mathcal M$,
-\begin{equation}
-\label{eq:mix_step_counts_to_delta}
-\mathbb E[\Delta N([t,t+T]\times\mathcal M)]
-\le
-\mathbb E\!\left[\int_t^{t+T} \delta(s)\,ds\right].
-\end{equation}
-
-\textbf{Step 2 (A renewal-type inequality for $\mathbb E[\delta(t)]$).}
-Apply the marked Lipschitz condition \eqref{eq:HL_lambda_marked} with $\eta=N^{\mathrm{stat}}$ and $\eta'=N^{(0)}$.
-For each $t\ge 0$,
-\[
-\delta(t)\le \int_{(-\infty,t)\times\mathcal M} h(t-u)\,\Delta N(du,dm).
-\]
-Taking expectations and splitting $u<0$ and $u\in[0,t)$ gives
-\begin{align}
-\mathbb E[\delta(t)]
-&\le
-\mathbb E\!\left[\int_{(-\infty,0)\times\mathcal M} h(t-u)\,\Delta N(du,dm)\right]
-+
-\mathbb E\!\left[\int_{[0,t)\times\mathcal M} h(t-u)\,\Delta N(du,dm)\right]. \label{eq:delta_split}
-\end{align}
-On $(-\infty,0)\times\mathcal M$, we have $N^{(0)}\equiv 0$, hence $\Delta N=N^{\mathrm{stat}}$ there. By stationarity,
-\[
-\mathbb E\!\left[\int_{(-\infty,0)\times\mathcal M} h(t-u)\,N^{\mathrm{stat}}(du,dm)\right]
-=
-\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\int_{-\infty}^0 h(t-u)\,du
-=
-\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\,H^\leftarrow(t).
-\]
-For the second term in \eqref{eq:delta_split}, use Tonelli and the fact that under the shared-PRM thinning coupling,
-the expected increment of the mismatch measure satisfies
-\[
-\mathbb E[\Delta N(du,dm)] = \mathbb E\bigl[\,|\lambda^{\mathrm{stat}}(u,m)-\lambda^{(0)}(u,m)|\,\bigr]\,du
-\quad\text{and hence}\quad
-\mathbb E[\Delta N(du,\mathcal M)] = \mathbb E[\delta(u)]\,du,
-\]
-(which is the same Campbell/compensator computation as in Lemma~\ref{lem:coupling_marked}, applied infinitesimally in time).
-Therefore,
-\[
-\mathbb E\!\left[\int_{[0,t)\times\mathcal M} h(t-u)\,\Delta N(du,dm)\right]
-=
-\int_0^t h(t-u)\,\mathbb E[\delta(u)]\,du.
-\]
-Combining yields the renewal-type inequality
-\begin{equation}
-\label{eq:renewal_delta}
-\mathbb E[\delta(t)]
-\le
-\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\,H^\leftarrow(t)
-+
-\int_0^t h(t-u)\,\mathbb E[\delta(u)]\,du.
-\end{equation}
-
-\textbf{Step 3 (Resolvent bound).}
-Let $a(t):=\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\,H^\leftarrow(t)$ and $x(t):=\mathbb E[\delta(t)]$.
-Then \eqref{eq:renewal_delta} reads $x\le a + h*x$.
-Iterating gives, for each $n\ge 0$,
-\[
-x \le \sum_{k=0}^n h^{*k} * a + h^{*(n+1)}*x.
-\]
-Because $\|h\|_1<1$, the resolvent $r=\sum_{k\ge 0} h^{*k}$ exists in $L^1(\mathbb R_+)$ with $\|r\|_1=(1-\|h\|_1)^{-1}$,
-and $h^{*(n+1)}*x\ge 0$ can be dropped to obtain
-\[
-x(t)\le (r*a)(t)=\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\, (r*H^\leftarrow)(t).
-\]
-That is,
-\begin{equation}
-\label{eq:delta_resolvent_bound}
-\mathbb E[\delta(t)]
-\le
-\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\,(H^\leftarrow * r)(t).
-\end{equation}
-
-\textbf{Step 4 (Conclusion for window counts).}
-Combine \eqref{eq:mix_step_counts_to_delta} and \eqref{eq:delta_resolvent_bound}:
-\[
-\mathbb E[\Delta N([t,t+T]\times\mathcal M)]
-\le
-\int_t^{t+T}\mathbb E[\delta(s)]\,ds
-\le
-\mathbb E[\lambda_g^{\mathrm{stat}}(0)]\int_t^{t+T}(H^\leftarrow*r)(s)\,ds,
-\]
-which is \eqref{eq:mixing_bound_resolvent}.
-
-\textbf{Step 5 (Tail decay under a first-moment condition).}
-If $\int_0^\infty u\,h(u)\,du<\infty$ then
-\[
-\|H^\leftarrow\|_1=\int_0^\infty H^\leftarrow(t)\,dt=\int_0^\infty u\,h(u)\,du<\infty,
-\]
-and $\|r\|_1=(1-\|h\|_1)^{-1}<\infty$, hence $H^\leftarrow*r\in L^1(\mathbb R_+)$.
-Therefore,
-\[
-\int_t^{t+T}(H^\leftarrow*r)(s)\,ds \le \int_t^\infty (H^\leftarrow*r)(s)\,ds \xrightarrow[t\to\infty]{} 0,
-\]
-as claimed.
-\end{proof}
 
 \subsection{Sufficient conditions for the marked Lipschitz assumption in HawkesNet models}
 \label{sec:sufficient_conditions_HL}
@@ -1720,6 +1539,9 @@ we have a linear marked Hawkes process. Now consider instead
 \end{equation}
 In \eqref{eq:nonlinearETAS}, each event’s contribution depends not only on its mark, but also on all previous marks. The kernel is a function of the entire history.
 
+
+
+
 \subsection{Additional induced models from network growth procedures}\label{app:more_induced}
 
 \begin{example}[Stochastic block model HawkesNet]
@@ -1742,13 +1564,16 @@ p_i^{LS}=\exp(-\tau(t-t_i))\cdot \frac{1}{1+\exp(-\theta^\top d_{i,N_t})},
 where $d_{i,N_t}$ is Euclidean distance between $x_i$ and $x_{N_t}$. This again induces a product-Bernoulli PMF over candidate edges.
 \end{example}
 
-% ======================================================================
+
+
+
+
 \section{Simulation algorithm}\label{sec:sim_algorithm}
 % ======================================================================
 
-Algorithm \ref{alg:ogata_thinning} shows Ogata's \cite{ogata1981lewis} algorithm applied to our marked point process with dynamic mark space.
+Algorithm \ref{alg:ogata_thinning} show the algorithm of \cite{ogata1981lewis} applied to our marked point process with dynamic mark space.
 
-\begin{algorithm}[[H]]
+\begin{algorithm}[!h]
 \caption{Ogata's Thinning Algorithm for HawkesNet}
 \label{alg:ogata_thinning}
 \begin{algorithmic}[1]
@@ -1780,6 +1605,7 @@ $\lambda_g(t \mid \mathcal{H}_t) \leq \Lambda(t)$ for all $t \leq T_{\max}$, and
 
 \end{algorithmic}
 \end{algorithm}
+\break
 
 
 \section{Simulation Study}\label{app:sim_study_extra}
@@ -1804,28 +1630,28 @@ Figure \ref{fig:BA_sim_study_shape} and \ref{fig:CS_sim_study_shape} shows the d
     \label{fig:CS_sim_study_shape}
 \end{figure}
 
-\subsection{Consistency as $T$ increases}\label{sec:app_consistency}
+\subsection{Empirical consistency verification}\label{sec:app_consistency}
 
 We evaluate the consistency of the Maximum Likelihood Estimators (MLE) by performing a series of simulate-and-fit experiments across increasing observation windows $T \in \{5, 10, 25, 50, 75, 100\}$. This procedure assesses the asymptotic behavior of the estimators as the expected number of events $E[N(T)]$ grows. For each window, we generate $N_{\text{rep}} = 25$ independent realizations from the true model and compute the MLE for each.
 
 For each parameter $\theta$, we compute estimate the root mean squared error (RMSE):
 \[ \text{RMSE}_T = \sqrt{\frac{1}{N_{\text{rep}}} \sum_{i=1}^{N_{\text{rep}}} (\hat{\theta}_{i,T} - \theta_{\text{true}})^2} \]
 
-As $T$ increases, we observe that the distribution of estimates centers more tightly around $\theta_{\text{true}}$ and the $\text{RMSE}_T$ decays toward zero, confirming the asymptotic properties of the HawkesNet estimators \citep{rathbun1996}.
+As $T$ increases, we observe that the distribution of estimates centers more tightly around $\theta_{\text{true}}$ and the $\text{RMSE}_T$ decays toward zero, confirming that estimation error decreases as the expected number of events grows (an empirical large-sample trend).
 
 \paragraph{BA Model Consistency.} 
 The Barabási-Albert (BA) HawkesNet results demonstrate clear convergence across all parameters ($\lambda_{\emptyset}, \beta,\tau, m$). Figure~\ref{fig:BA_consistency_boxplots} shows the contraction of the sampling distribution, while Figure~\ref{fig:BA_consistency_rmse} illustrates the corresponding decay in RMSE.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{figures/BA_consistency_boxplots.pdf}
+    \includegraphics[width=1.0\textwidth]{assets/BA_consistency_boxplots.pdf}
     \caption{BA HawkesNet: Distribution of parameter estimates by time window $T$. Red dashed lines indicate the true parameter values. The tightening of the boxplots around the truth demonstrates the decreasing variance of the MLE as data increases.}
     \label{fig:BA_consistency_boxplots}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{figures/BA_consistency_rmse.pdf}
+    \includegraphics[width=1.0\textwidth]{assets/BA_consistency_rmse.pdf}
     \caption{BA HawkesNet: RMSE versus time window $T$ by parameter. The monotonic decay in RMSE for all parameters confirms the consistency of the estimation procedure.}
     \label{fig:BA_consistency_rmse}
 \end{figure}
@@ -1835,14 +1661,14 @@ The Change Statistic (CS) model involves a higher-dimensional parameter space, i
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{figures/CS_consistency_boxplots.pdf}
+    \includegraphics[width=1.0\textwidth]{assets/CS_consistency_boxplots.pdf}
     \caption{CS HawkesNet: Distribution of parameter estimates by time window $T$. Even with the higher-dimensional structural parameter space, the estimators center on the true values as the observation window lengthens.}
     \label{fig:CS_consistency_boxplots}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{figures/CS_consistency_rmse.pdf}
+    \includegraphics[width=1.0\textwidth]{assets/CS_consistency_rmse.pdf}
     \caption{CS HawkesNet: RMSE versus time window $T$ by parameter. The consistent decay across both temporal and structural parameters indicates robust performance in the presence of complex network dependencies.}
     \label{fig:CS_consistency_rmse}
 \end{figure}
@@ -1850,7 +1676,9 @@ The Change Statistic (CS) model involves a higher-dimensional parameter space, i
 
 \subsection{Explosive vs.\ stable regime}\label{sec:app_explosivity}
 
-When the Hawkes memory decays slowly (small $\beta$) and the triggering weight $K$ is close to or above $\beta$, the integrated intensity can diverge and the process becomes supercritical (explosive): the number of events grows very quickly in time. When $\beta$ is larger and $K$ is moderate, the process is stable and event counts grow in a controlled way. To illustrate this, we compare two BA HawkesNet specifications over a short window $[0, T_{\text{expl}}]$ (e.g.\ $T_{\text{expl}} = 5$): an ``explosive'' set with small $\beta$ and $K \approx 1$, and a ``stable'' set with larger $\beta$ and $K = 0.5$. The package simulates both and produces (i) cumulative event counts $N(t)$ vs.\ $t$ (object \texttt{p\_expl}); (ii) number of nodes vs.\ $t$ (object \texttt{p\_node\_growth}); (iii) base-R plots of the two networks (stable vs.\ explosive); (iv) maximum degree in each network (\texttt{max\_deg\_stable}, \texttt{max\_deg\_exp}). Saving \texttt{p\_expl} and \texttt{p\_node\_growth} as PDFs gives the figures referenced below.
+When the Hawkes memory decays slowly (small $\beta$) and the triggering weight $K$ is close to or above $\beta$, the integrated intensity can diverge and the process becomes supercritical (explosive): the number of events grows very quickly in time. When $\beta$ is larger and $K$ is moderate, the process is stable and event counts grow in a controlled way. To illustrate this, we compare two BA HawkesNet specifications over a short window $[0, T_{\text{expl}}]$ (e.g.\ $T_{\text{expl}} = 5$): an ``explosive'' set with small $\beta$ and $K \approx 1$, and a ``stable'' set with larger $\beta$ and $K = 0.5$.
+
+Table~\ref{tab:explosive_comparison} reports the parameter settings alongside summary statistics from a single run of each specification.
 
 \begin{table}[!htb]
     \centering
@@ -1866,32 +1694,36 @@ When the Hawkes memory decays slowly (small $\beta$) and the triggering weight $
         Total events (by $T_{\text{expl}}$) & \texttt{---} & \texttt{---} \\
         \midrule
     \end{tabular}
-    \caption{Explosive vs.\ stable BA HawkesNet: parameter settings and summary of one run. Fill max degree from \texttt{max\_deg\_stable} and \texttt{max\_deg\_exp}; event counts from \texttt{length(sim\_stable\$events\$t)} and \texttt{length(sim\_exp\$events\$t)}.}
+    \caption{Explosive vs.\ stable BA HawkesNet: parameter settings and summary of one run.}
     \label{tab:explosive_comparison}
 \end{table}
+
+Figure~\ref{fig:BA_explosive_cumulative} plots the cumulative event count $N(t)$ against time for each specification. Under the stable parameters, $N(t)$ increases roughly linearly, consistent with a stationary rate slightly above $\lambda_{\emptyset}$. Under the explosive parameters, $N(t)$ exhibits the characteristic convex, superlinear growth of a supercritical process: each event triggers further events faster than the kernel can decay, producing an accelerating cascade. The divergence is already stark by $t = 2$--$3$, well before the end of the window. Figure~ \ref{fig:BA_explosive_node_growth} visualizes this growth of the network.
 
 \begin{figure}[!htb]
     \centering
     % From p_expl: cumulative events N(t) vs t, two curves (Stable vs Explosive)
-    \includegraphics[width=0.85\textwidth]{figures/BA_explosive_cumulative_events.pdf}
-    \caption{Cumulative number of events $N(t)$ vs.\ time $t$ for one stable and one explosive BA HawkesNet run. Explosive run (small $\beta$, $K \approx 1$) grows rapidly; stable run remains moderate. From \texttt{p\_expl}.}
+    \includegraphics[width=0.85\textwidth]{assets/BA_explosive_cumulative_events.pdf}
+    \caption{Cumulative number of events $N(t)$ vs.\ time $t$ for one stable and one explosive BA HawkesNet run. Explosive run (small $\beta$, $K \approx 1$) grows rapidly; stable run remains moderate.}
     \label{fig:BA_explosive_cumulative}
 \end{figure}
 
 \begin{figure}[!htb]
     \centering
     % From p_node_growth: number of nodes vs t
-    \includegraphics[width=0.85\textwidth]{figures/BA_explosive_node_growth.pdf}
-    \caption{Number of nodes in the network vs.\ time for the same stable and explosive runs. From \texttt{p\_node\_growth}.}
+    \includegraphics[width=0.85\textwidth]{assets/BA_explosive_network.pdf}
+    \caption{Network visualization of explosive vs stable regime in finite time window}
     \label{fig:BA_explosive_node_growth}
 \end{figure}
 
 
-\subsection{Process Stability and the Explosive Regime}\label{sec:app_explosivity}
 
-In a standard Hawkes process, stability is determined simply by the ratio of the triggering weight to the decay rate. However, as discussed in Section~\ref{sec:stability}, the stability of a \textbf{HawkesNet} model is significantly more complex due to the path-dependent coupling between the temporal intensity and the evolving network structure. Because the marks (node arrivals and edge formations) alter the future intensity through the kernel, the process can exhibit "explosive" behavior where self-excitation outpaces the structural capacity for decay, leading to a supercritical regime.
 
-To illustrate these dynamics, we compare two specifications of the CS HawkesNet model over a short observation window $T = 5$. The stable regime is defined by parameters that favor rapid memory decay ($\beta = 2.0$), while the explosive regime uses a specification where memory persists ($\beta = 0.1$) and the triggering weight large ($K = 0.99$). Table~\ref{tab:explosive_comparison} summarizes the parameter settings and the resulting network properties for a single realization of each.
+\subsection{Process Stability and the Explosive Regime}\label{sec:app_explosivity_cs}
+
+In a standard Hawkes process, stability is determined simply by the ratio of the triggering weight to the decay rate. However, as discussed in Section~\ref{sec:path_dependent} and Appendix~\ref{sec:stability_theory}, the stability of a \textbf{HawkesNet} model is more complex due to the path-dependent coupling between the temporal intensity and the evolving network structure. Because the marks (node arrivals and edge formations) alter the future intensity through the kernel, the process can exhibit ``explosive'' behavior where self-excitation outpaces the structural capacity for decay, leading to a supercritical regime.
+
+To illustrate these dynamics, we compare two specifications of the CS HawkesNet model over a short observation window $T = 5$. The stable regime is defined by parameters that favor rapid memory decay ($\beta = 2.0$), while the explosive regime uses a specification where memory persists ($\beta = 0.1$) and the triggering weight is large ($K = 0.99$). Table~\ref{tab:explosive_comparison_cs} summarizes the parameter settings and the resulting network properties for a single realization of each.
 
 \begin{table}[H]
     \centering
@@ -1910,30 +1742,29 @@ To illustrate these dynamics, we compare two specifications of the CS HawkesNet 
         \bottomrule
     \end{tabular}
     \caption{Comparison of Stable and Explosive CS HawkesNet regimes. The explosive regime demonstrates the impact of path-dependent self-excitation, where the persistence of past events drives a rapid expansion of both activity and structure.}
-    \label{tab:explosive_comparison}
+    \label{tab:explosive_comparison_cs}
 \end{table}
 
 The divergence in these regimes is visualized in Figure~\ref{fig:explosive_cumulative}. While the stable process grows at a controlled, near-linear rate, the explosive process exhibits the characteristic upward curvature of a supercritical system. This feedback loop is also evident in the vertex set expansion; as shown in Figure~\ref{fig:explosive_node_growth}, the explosive regime drives a much more rapid arrival of new nodes, which in turn provides more targets for future edge formations, further sustaining the high-intensity state.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{figures/CS_explosive_cumulative_events.pdf}
+    \includegraphics[width=0.95\textwidth]{assets/CS_explosive_cumulative_events.pdf}
     \caption{Cumulative event counts $N(t)$ for stable and explosive CS HawkesNet realizations. The explosive regime demonstrates the non-linear acceleration caused by the coupling of temporal intensity and structural feedback.}
     \label{fig:explosive_cumulative}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{figures/CS_explosive_node_growth.pdf}
+    \includegraphics[width=0.95\textwidth]{assets/CS_explosive_node_growth.pdf}
     \caption{Vertex set expansion over time. The explosive regime results in a significantly higher rate of new node arrivals, illustrating how structural growth can reinforce temporal explosivity in the HawkesNet framework.}
     \label{fig:explosive_node_growth}
 \end{figure}
 
-\section{Further Application Results}
+
+\section{Nodal Covariates and Joint Estimation}\label{app:gender}
 
 Edges in a network may depend not only on network structure, but on nodal covariates. In this section we discuss a natural extension to the CS model that facilitates this.
-
-\subsection{Nodal Covariates and Joint Estimation}\label{app:gender}
 
 The CS HawkesNet framework incorporates nodal covariates by factoring the mark density into structural and attribute components. At each event time $t$, we observe $N_t^{\text{new}} \sim \text{Poisson}(\lambda_{\text{nodes}})$ new nodes. Each new node $v \in \mathcal{V}_t^{\text{new}}$ is assigned a covariate value $x_v$ drawn from a distribution $f_X(\cdot\,;\xi)$ with parameters $\xi$. The joint mark density $q(m_t \mid t, \mathcal{H}_t)$ is the product of the structural formation probability and the attribute likelihood:
 \[
@@ -1943,46 +1774,6 @@ where $\mathcal{C}_t$ is the set of candidate dyads at time $t$. For a categoric
 
 This factorization enables the inclusion of homophily and mixing effects within the change-statistic vector $C_{i,j}$. By extending $C_{i,j}$ to include terms such as \texttt{nodeMatch} or \texttt{nodeMix}, the edge formation probability $p_{i,j}^{\text{CS}}$ becomes a function of both the network topology and the nodal attributes. The parameters $\xi$ and the structural parameters $\theta$ are estimated jointly via MLE, as the log-likelihood remains additive across the three components. This approach is consistent with the Exponential Random Network Model (ERNM) framework \citep{fellows2012, fellows2023ernm}, but adapted here for the growing, time-stamped context of HawkesNet.
 
-\subsection{Application: Gender Homophily in OpenAlex Citations}\label{app:gender_fit}
-
-To demonstrate the inclusion of nodal covariates, we apply the CS HawkesNet model to the OpenAlex citation dataset using author gender as a categorical attribute. Gender is treated as a three-level factor—\textit{female}, \textit{male}, and \textit{unknown} (the reference level)—where values are predicted from author first names using the \texttt{gender} R package and U.S. Social Security Administration baby name data. The structural model is extended with a \texttt{nodeMatch('gender')} statistic to test for homophily—the preference for citations between authors of the same predicted gender, controlling for the underlying distribution of gender in the population of researchers.
-
-The joint MLE results are summarized in Table~\ref{tab:gender_fit_results}. The attribute parameters $\pi_{\text{female}}$ and $\pi_{\text{male}}$ represent the estimated proportions of new nodes entering the network with those attributes. 
-
-\begin{table}[H]
-    \centering
-    \small
-    \begin{tabular}{llccc}
-        \toprule
-        Component & Parameter & Estimate & Std. Error & $z$-value \\
-        \midrule
-        \textit{Temporal} & $\mu$ (Baseline) & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & $\beta$ (Decay) & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & $K$ (Weight) & \texttt{---} & \texttt{---} & \texttt{---} \\
-        \midrule
-        \textit{Structural} & Edges & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & Triangles & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & GW-Degree (0.5) & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & \textbf{nodeMatch (gender)} & \texttt{---} & \texttt{---} & \texttt{---} \\
-        \midrule
-        \textit{Attributes} & $\pi_{\text{female}}$ & \texttt{---} & \texttt{---} & \texttt{---} \\
-                  & $\pi_{\text{male}}$ & \texttt{---} & \texttt{---} & \texttt{---} \\
-        \bottomrule
-    \end{tabular}
-    \caption{MLE results for the CS HawkesNet model with gender covariates. The \texttt{nodeMatch} parameter indicates the log-odds of an edge forming between authors of the same gender relative to a random baseline, controlling for structural effects like triadic closure.}
-    \label{tab:gender_fit_results}
-\end{table}
-
-The positive estimate for the \texttt{nodeMatch} coefficient (if $\hat{\theta}_{\text{match}} > 0$) indicates significant gender homophily in the citation process, even after accounting for the baseline rate of edge formation and the tendency for triadic closure (triangles). This illustrates the flexibility of the HawkesNet framework in capturing both the temporal self-excitation of research activity and the socio-structural biases that drive network evolution.
-
-
-
-
-\clearpage
-
-\bibstyle{abbrv}
-\bibliography{bib}
-
-
+\bibliography{bib.bib}
 
 \end{document}
