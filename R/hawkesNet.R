@@ -889,6 +889,7 @@ fit_hawkesNet <- function(params_init,
                                 parallel_type = "auto",
                                 mu_vec = NULL,
                                 integral_bg = NULL,
+                                run_sim = FALSE,
                                 ...){
   use_inhom <- !is.null(mu_vec) && !is.null(integral_bg)
   # Helper: write to stderr (unbuffered even inside optim's C code) and flush
@@ -1368,6 +1369,42 @@ fit_hawkesNet <- function(params_init,
   # Full params (fitted + fixed) for compensators, KS test, etc.
   params_full <- merge_fit_params(fit$par, params_init_old, fixed_params)
 
+  # Optional single-network simulation with fitted parameters
+  sim_result <- NULL
+  if (isTRUE(run_sim) && !is.null(params_full)) {
+    vcat("[fit] Simulating one network from fitted params...\n")
+    t_sim <- proc.time()[3]
+    sim_args <- list(
+      params = params_full,
+      time_window = time_window,
+      PMF_mark = PMF_mark,
+      cond_intensity = cond_intensity,
+      hashed_edges = TRUE,
+      verbose = FALSE,
+      mu_multiplier = 5,
+      stop_on_full_network = FALSE,
+      inhom_bg = if (use_inhom) list(mu_vec = mu_vec, integral_bg = integral_bg) else NULL,
+      max_node_time = max(get_times(mark_filtration)$node_times)
+    )
+    mark_args <- dot_args[intersect(names(dot_args), c(
+      "formula_RHS", "truncation", "mark_decay", "growth_only",
+      "vertex_categorical_levels"
+    ))]
+    sim_args <- c(sim_args, mark_args)
+    sim_result <- tryCatch({
+      do.call(sim_hawkesNet, sim_args)
+    }, error = function(e) {
+      vcat("[fit] Simulation failed: ", e$message, "\n")
+      NULL
+    })
+    vcat("[fit] Simulation done: ", round(proc.time()[3] - t_sim, 1), " s")
+    if (!is.null(sim_result) && !is.null(sim_result$net)) {
+      vcat(" | nodes=", network::network.size(sim_result$net),
+           " edges=", network::network.edgecount(sim_result$net))
+    }
+    vcat("\n")
+  }
+
   # NOTE: intens_funcs can be very large (closure environments with stacked matrices
   # for all events). If running multiple fits sequentially, NULL out intens_funcs and
   # call gc() before the next fit to prevent fork()/PSOCK memory bloat.
@@ -1378,7 +1415,8 @@ fit_hawkesNet <- function(params_init,
     params_init_old = params_init_old,
     fit_table = fit_table,
     hessian = hessian,
-    fixed_params = fixed_params
+    fixed_params = fixed_params,
+    sim = sim_result
   )
 }
 
