@@ -528,6 +528,31 @@ if(RUN_CONSISTENCY){
     }
   }
 
+  # Save checkpoint: main + consistency results (before explosive, which may fail)
+  save_list_ckpt <- list()
+  if (exists("sims") && !is.null(sims)) {
+    save_list_ckpt$sims <- sims
+    save_list_ckpt$fits <- fits
+    save_list_ckpt$temp_hawkes_fits <- temp_hawkes_fits
+    save_list_ckpt$params <- params
+    save_list_ckpt$params_init <- params_init
+    save_list_ckpt$TIME <- TIME
+    save_list_ckpt$N_SIMS <- N_SIMS
+  }
+  if (exists("consistency_results")) {
+    save_list_ckpt$consistency_results <- consistency_results
+    save_list_ckpt$summary_stats <- if (exists("summary_stats")) summary_stats else NULL
+    save_list_ckpt$p_cons <- if (exists("p_cons")) p_cons else NULL
+    save_list_ckpt$p_rmse <- if (exists("p_rmse")) p_rmse else NULL
+    save_list_ckpt$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
+    save_list_ckpt$time_windows <- time_windows
+  }
+  tryCatch({
+    saveRDS(save_list_ckpt, file.path(CLUSTER_OUTPUT_DIR, "results_CS_full.RDS"))
+    cat("Checkpoint saved (main + consistency) to results_CS_full.RDS\n")
+  }, error = function(e) message("Checkpoint save failed: ", conditionMessage(e)))
+}
+
 # ==============================================================================
 # STUDY 2: Explosive Regime Analysis - CS model
 # ==============================================================================
@@ -542,7 +567,7 @@ if(RUN_CONSISTENCY){
 gc()
 
 if(RUN_EXPLOSIVE){
-
+  tryCatch({
   # Define Explosive Parameters - CS model (include node_lambda, CS_params)
   params_explosive <- list(
     mu = 10,
@@ -550,6 +575,7 @@ if(RUN_EXPLOSIVE){
     K = 0.99,
     beta_edges = 0.1,
     node_lambda = 1,
+    m = 1,
     CS_params = c(-7, 3, 0.1, -0.1)
   )
 
@@ -560,6 +586,7 @@ if(RUN_EXPLOSIVE){
     K = 0.5,
     beta_edges = 1.0,
     node_lambda = 1,
+    m = 1,
     CS_params = c(-7, 3, 0.1, -0.1)
   )
 
@@ -567,7 +594,7 @@ if(RUN_EXPLOSIVE){
 
   T_explode <- 5
 
-  # Simulate Explosive
+  # Simulate Explosive (may fail with "full networks" if params too extreme)
   sim_exp <- sim_hawkesNet(params = params_explosive,
                                  time_window = c(0, T_explode),
                                  PMF_mark = PMF_mark_CS,
@@ -653,6 +680,10 @@ if(RUN_EXPLOSIVE){
 
   cat("Max Degree Stable:", max_deg_stable, "\n")
   cat("Max Degree Explosive:", max_deg_exp, "\n")
+  }, error = function(e) {
+    message("Explosive regime simulation failed: ", conditionMessage(e))
+    message("Skipping explosive block; main and consistency results will still be saved.")
+  })
 }
 
 # ==============================================================================
