@@ -41,7 +41,7 @@ dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 ON_SLURM <- nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE" else "TRUE")))
 
-N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 7L)))
+N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 16L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
 N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L)))
@@ -62,11 +62,13 @@ RUN_GOF_C <- isTRUE(as.logical(Sys.getenv("RUN_GOF_C", "FALSE")))
 MARK_DECAY  <- "activity"
 GROWTH_ONLY <- FALSE
 EDGES_INIT  <- -5
-K_FIXED     <- as.numeric(Sys.getenv("K_FIXED", 1))
+K_FIXED     <- as.numeric(Sys.getenv("K_FIXED", 0.5))
 GAP_THRESHOLD <- 1.0
 USE_FIRST_CONTACT_ONLY <- TRUE
 
-FORMULA_A <- "edges + degree(0) + triangles + star(c(2,3))"
+FORMULA_A <- "edges + triangles + star(c(2,3))"
+FORMULA_B <- "edges  + gwesp(0.5) + gwdegree(0.5)"
+FORMULA_C <- "edges + esp(1:2) + degree(2:3)"
 
 cat("=== Hypertext Conference Fits (simple data only) ===\n")
 cat("  Mode:", if (ON_SLURM) "SLURM" else if (LOCAL_QUICK) "Local (quick)" else "Local", "\n")
@@ -348,20 +350,70 @@ save_incremental <- function() {
   }, error = function(e) cat("  [checkpoint] Save failed:", e$message, "\n"))
 }
 
-# --- Fit B: K fixed, edges free ---
-if (RUN_FIT_B) {
-  results$fitB <- run_single_fit(
-    net = net_simple, time_window = tw_simple,
-    label = "Fit B: K fixed, edges free",
-    formula_rhs = FORMULA_A, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
-    max_iter = MAX_ITER, n_cores = N_CORES,
+# --- Fit A: K fixed, edges free ---
+if (RUN_FIT_A) {
+  results$fitA <- run_single_fit(
+    net = net_simple,
+    time_window = tw_simple,
+    label = "Fit A: K fixed, edges free",
+    formula_rhs = FORMULA_A,
+    mark_decay = MARK_DECAY,
+    growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER,
+    n_cores = N_CORES,
     fixed_params = c("K", "node_lambda"),
     params_override = list(K = K_FIXED),
-    run_gof = RUN_GOF_B, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
+    run_gof = RUN_GOF_B,
+    n_gof = N_GOF,
+    n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
   save_incremental()
 }
+
+# --- Fit B: K fixed, edges free ---
+if (RUN_FIT_B) {
+  results$fitB <- run_single_fit(
+    net = net_simple,
+    time_window = tw_simple,
+    label = "Fit B: K fixed, edges free",
+    formula_rhs = FORMULA_B,
+    mark_decay = MARK_DECAY,
+    growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER,
+    n_cores = N_CORES,
+    fixed_params = c("K", "node_lambda"),
+    params_override = list(K = K_FIXED),
+    run_gof = RUN_GOF_B,
+    n_gof = N_GOF,
+    n_gof_outer = N_GOF_OUTER,
+    seed_events_gof = SEED_EVENTS_GOF
+  )
+  save_incremental()
+}
+
+# --- Fit C: K fixed, edges free ---
+if (RUN_FIT_C) {
+  results$fitC <- run_single_fit(
+    net = net_simple,
+    time_window = tw_simple,
+    label = "Fit C: K fixed, edges free",
+    formula_rhs = FORMULA_C,
+    mark_decay = MARK_DECAY,
+    growth_only = GROWTH_ONLY,
+    max_iter = MAX_ITER,
+    n_cores = N_CORES,
+    fixed_params = c("K", "node_lambda"),
+    params_override = list(K = K_FIXED),
+    run_gof = RUN_GOF_B,
+    n_gof = N_GOF,
+    n_gof_outer = N_GOF_OUTER,
+    seed_events_gof = SEED_EVENTS_GOF
+  )
+  save_incremental()
+}
+
+results$ernm_fit <- ernm(net_simple ~ edges + gwesp(0.5) + gwdegree(0.5))
 
 # =============================================================================
 # Summary table
