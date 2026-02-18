@@ -44,10 +44,10 @@ LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE"
 N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 25L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
-N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L)))
+N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", N_CORES)))
 # Optional PSOCK parallelism for GOF. When set, gof() ignores `cores` and uses
 # `cores_outer` workers (capped at 60 inside gof()).
-N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", 25L))
+N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", N_CORES))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 RUN_FIT_A <- isTRUE(as.logical(Sys.getenv("RUN_FIT_A", "TRUE")))
