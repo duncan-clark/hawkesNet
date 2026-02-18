@@ -41,22 +41,22 @@ dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 ON_SLURM <- nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE" else "TRUE")))
 
-N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 16L)))
+N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 25L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
 N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", if (LOCAL_QUICK) 2L else 100L)))
 # Optional PSOCK parallelism for GOF. When set, gof() ignores `cores` and uses
 # `cores_outer` workers (capped at 60 inside gof()).
-N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", 0L))
+N_GOF_OUTER <- as.integer(Sys.getenv("GOF_CORES_OUTER", 25L))
 SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
-RUN_FIT_A <- isTRUE(as.logical(Sys.getenv("RUN_FIT_A", "FALSE")))
+RUN_FIT_A <- isTRUE(as.logical(Sys.getenv("RUN_FIT_A", "TRUE")))
 RUN_FIT_B <- isTRUE(as.logical(Sys.getenv("RUN_FIT_B", "TRUE")))
-RUN_FIT_C <- isTRUE(as.logical(Sys.getenv("RUN_FIT_C", "FALSE")))
+RUN_FIT_C <- isTRUE(as.logical(Sys.getenv("RUN_FIT_C", "TRUE")))
 
-RUN_GOF_A <- isTRUE(as.logical(Sys.getenv("RUN_GOF_A", "FALSE")))
-RUN_GOF_B <- isTRUE(as.logical(Sys.getenv("RUN_GOF_B", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-RUN_GOF_C <- isTRUE(as.logical(Sys.getenv("RUN_GOF_C", "FALSE")))
+RUN_GOF_A <- isTRUE(as.logical(Sys.getenv("RUN_GOF_A", "TRUE")))
+RUN_GOF_B <- isTRUE(as.logical(Sys.getenv("RUN_GOF_B", "TRUE")))
+RUN_GOF_C <- isTRUE(as.logical(Sys.getenv("RUN_GOF_C", "TRUE")))
 
 # Fixed model settings
 MARK_DECAY  <- "activity"
@@ -363,7 +363,7 @@ if (RUN_FIT_A) {
     n_cores = N_CORES,
     fixed_params = c("K", "node_lambda"),
     params_override = list(K = K_FIXED),
-    run_gof = RUN_GOF_B,
+    run_gof = RUN_GOF_A,
     n_gof = N_GOF,
     n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
@@ -405,7 +405,7 @@ if (RUN_FIT_C) {
     n_cores = N_CORES,
     fixed_params = c("K", "node_lambda"),
     params_override = list(K = K_FIXED),
-    run_gof = RUN_GOF_B,
+    run_gof = RUN_GOF_C,
     n_gof = N_GOF,
     n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
