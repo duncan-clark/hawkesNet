@@ -173,7 +173,7 @@ cond_intensity <- function(new_net,
   func <- func_template
   environment(func) <- e_tiny
   
-  list(
+  out <- list(
     result = result0,
     func   = func,
     lambda = params$mu,
@@ -181,6 +181,8 @@ cond_intensity <- function(new_net,
     decays = decays0,
     diffs  = diffs
   )
+  if (!is.null(tmp$combined_inputs)) out$combined_inputs <- tmp$combined_inputs
+  out
 }
 
 #' Simulate a Hawkes-driven network growth process
@@ -633,7 +635,7 @@ loglik_hawkesNet = function(params,
     cores <- dot_args$cores
     parallel_type <- if (!is.null(dot_args$parallel_type)) dot_args$parallel_type else "auto"
     use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1
-    combine_intensity <- use_inhom && isTRUE(dot_args$combine_intensity)
+    combine_intensity <- isTRUE(dot_args$combine_intensity)
     # Reuse one ERNM model when running sequentially (avoids createCppModel per event)
     shared_model <- NULL
     if (!use_parallel && !is.null(formula_rhs)) {
@@ -675,10 +677,15 @@ loglik_hawkesNet = function(params,
         call_args <- c(
           list(new_net = current_net, t = times[i],
                mark_filtration = current_net, PMF_mark = PMF_mark,
-               params = params, model = model, times = times_precalc),
+               params = params, model = model, times = times_precalc,
+               return_combined_inputs = combine_intensity),
           extra_args)
         intensity <- do.call(cond_intensity, call_args)
         out <- list(result = intensity$result, func = intensity$func)
+        if (combine_intensity) {
+          out$combined_inputs <- intensity$combined_inputs
+          out$diffs_kernel <- intensity$diffs
+        }
       }
       out
     }
@@ -721,7 +728,7 @@ loglik_hawkesNet = function(params,
     }
     intens_vec <- vapply(intens_list, function(x) x$result, numeric(1))
     intens_funcs <- lapply(intens_list, function(x) x$func)
-    # Combine per-event closures into one vectorized closure (inhom + CS only)
+    # Combine per-event closures into one vectorized closure (CS path)
     if (combine_intensity) {
       ci <- lapply(intens_list, function(x) x$combined_inputs)
       dk <- lapply(intens_list, function(x) x$diffs_kernel)
@@ -731,7 +738,13 @@ loglik_hawkesNet = function(params,
       # the bloated address space, causing hangs or OOM on the second fit.
       rm(intens_list); gc()
       if (all(vapply(ci, function(x) !is.null(x), NA))) {
-        combined <- build_combined_intensity_funcs(ci, dk, mu_vec, times)
+        combined <- build_combined_intensity_funcs(
+          combined_inputs_list = ci,
+          diffs_kernel_list = dk,
+          mu_vec = if (use_inhom) mu_vec else NULL,
+          times = times,
+          homogeneous = !use_inhom
+        )
         if (!is.null(combined)) {
           intens_funcs <- combined
           message("Intensity cache: combined ", length(times),
@@ -1533,9 +1546,12 @@ cond_intensity_inhom <- function(new_net,
 #' @param times Length-N event times (used only for length check).
 #' @return List of one function \code{f(params)} returning numeric vector of length N, or NULL on error.
 #' @noRd
-build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_list, mu_vec, times) {
+build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_list, mu_vec, times, homogeneous = FALSE) {
   N <- length(times)
-  if (N == 0L || length(combined_inputs_list) != N || length(diffs_kernel_list) != N || length(mu_vec) != N) {
+  if (N == 0L || length(combined_inputs_list) != N || length(diffs_kernel_list) != N) {
+    return(NULL)
+  }
+  if (!homogeneous && length(mu_vec) != N) {
     return(NULL)
   }
   n_cs <- NA_integer_
@@ -1728,8 +1744,9 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
 
     # 6. Combine: intensity[i] = exp(log_mark_density[i]) * (mu[i] + kernel[i])
     log_dens <- log_edge_sums + node_dens
-    out <- exp(log_dens) * (mu_vec + kernel_sums)
-    out[degenerate] <- mu_vec[degenerate] + kernel_sums[degenerate]
+    mu_base <- if (homogeneous) rep(params$mu, N) else mu_vec
+    out <- exp(log_dens) * (mu_base + kernel_sums)
+    out[degenerate] <- mu_base[degenerate] + kernel_sums[degenerate]
     pmax(out, eps)
   }
 
