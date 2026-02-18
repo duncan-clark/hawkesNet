@@ -1164,11 +1164,12 @@ create_gof_plots <- function(GOF_results) {
       plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = type, y = waiting_time, fill = type)) +
         ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
         ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+        ggplot2::scale_y_log10() +
         ggplot2::facet_wrap(~statistic, scales = "free_y") +
         ggplot2::labs(
           title = "Waiting Times Between Structure Formations",
           x = "",
-          y = "Waiting Time"
+          y = "Waiting Time (log scale)"
         ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(

@@ -10,13 +10,11 @@
 ## Cluster mode (SLURM):
 ##   sbatch inst/hypertext_conference/run_hypertext.slurm
 ##
-## Four fits (all use m-parameter, mark_decay="activity", GROWTH_ONLY=FALSE,
-## edges term fixed at -5):
+## Two fits (simple data only, m-parameter, mark_decay="activity",
+## GROWTH_ONLY=FALSE, edges + node_lambda fixed):
 ##
-##   Fit 1 — Simple,     tri+star:  edges + degree(0) + triangles + star(c(2,3))
-##   Fit 2 — Non-simple, tri+star:  edges + degree(0) + triangles + star(c(2,3))
-##   Fit 3 — Simple,     gw:        edges + degree(0) + gwesp(0.5) + gwdegree(0.5)
-##   Fit 4 — Non-simple, gw:        edges + degree(0) + gwesp(0.5) + gwdegree(0.5)
+##   Fit 1 — Simple, tri+star:  edges + degree(0) + triangles + star(c(2,3))
+##   Fit 2 — Simple, gw:        edges + degree(0) + gwesp(0.5) + gwdegree(0.5)
 ##
 ## GOF is run for each fit (controllable via env vars).
 ## =============================================================================
@@ -53,13 +51,9 @@ SEED_EVENTS_GOF <- as.integer(Sys.getenv("SEED_EVENTS_GOF", 20L))
 
 RUN_FIT_1 <- isTRUE(as.logical(Sys.getenv("RUN_FIT_1", "TRUE")))
 RUN_FIT_2 <- isTRUE(as.logical(Sys.getenv("RUN_FIT_2", "TRUE")))
-RUN_FIT_3 <- isTRUE(as.logical(Sys.getenv("RUN_FIT_3", "TRUE")))
-RUN_FIT_4 <- isTRUE(as.logical(Sys.getenv("RUN_FIT_4", "TRUE")))
 
 RUN_GOF_1 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_1", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 RUN_GOF_2 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_2", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-RUN_GOF_3 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_3", if (LOCAL_QUICK) "FALSE" else "TRUE")))
-RUN_GOF_4 <- isTRUE(as.logical(Sys.getenv("RUN_GOF_4", if (LOCAL_QUICK) "FALSE" else "TRUE")))
 
 # Fixed model settings
 MARK_DECAY  <- "activity"
@@ -71,16 +65,17 @@ USE_FIRST_CONTACT_ONLY <- TRUE
 FORMULA_A <- "edges + degree(0) + triangles + star(c(2,3))"
 FORMULA_B <- "edges + degree(0) + gwesp(0.5) + gwdegree(0.5)"
 
-cat("=== Hypertext Conference Fits ===\n")
+cat("=== Hypertext Conference Fits (simple data only) ===\n")
 cat("  Mode:", if (ON_SLURM) "SLURM" else if (LOCAL_QUICK) "Local (quick)" else "Local", "\n")
 cat("  N_CORES:", N_CORES, "| MAX_ITER:", MAX_ITER, "| N_GOF:", N_GOF, "\n")
-cat("  Fits to run:", paste(which(c(RUN_FIT_1, RUN_FIT_2, RUN_FIT_3, RUN_FIT_4)),
+cat("  Fits to run:", paste(which(c(RUN_FIT_1, RUN_FIT_2)),
                             collapse = ", "), "\n")
-cat("  GOF:", paste(which(c(RUN_GOF_1, RUN_GOF_2, RUN_GOF_3, RUN_GOF_4)),
+cat("  GOF:", paste(which(c(RUN_GOF_1, RUN_GOF_2)),
                     collapse = ", "), "\n")
 cat("  Formula A:", FORMULA_A, "\n")
 cat("  Formula B:", FORMULA_B, "\n")
-cat("  mark_decay:", MARK_DECAY, "| edges fixed at:", EDGES_FIXED, "\n\n")
+cat("  mark_decay:", MARK_DECAY, "| edges fixed at:", EDGES_FIXED, "\n")
+cat("  node_lambda: fixed at observed nodes/events\n\n")
 
 # =============================================================================
 # Helpers
@@ -148,6 +143,7 @@ run_single_fit <- function(net, time_window, label,
   cat("  Network:", n_events, "events |", n_nodes, "nodes |", n_edges, "edges\n")
   cat("  Time window:", sprintf("[%.4f, %.4f]", time_window[1], time_window[2]), "\n")
   cat("  Edges/event:", round(n_edges / n_events, 2), "\n")
+  cat("  Nodes/event:", round(n_nodes / n_events, 4), "(fixed as node_lambda)\n")
   cat("  Formula:", formula_rhs, "\n")
 
   exp_cs <- expected_params_PMF_mark_CS(net, formula_rhs)
@@ -173,7 +169,7 @@ run_single_fit <- function(net, time_window, label,
 
   p_scale <- c(
     mu = 1, beta_overall = 0.1, K = 0.1, beta_edges = 0.1,
-    node_lambda = 0.5, m = 0.5,
+    m = 0.5,
     setNames(rep(0.1, n_cs - 1), paste0("CS_params", 2:n_cs))
   )
 
@@ -205,7 +201,7 @@ run_single_fit <- function(net, time_window, label,
       maxit = max_iter,
       trace = 1,
       verbose = TRUE,
-      fixed_params = c("CS_params1"),
+      fixed_params = c("CS_params1", "node_lambda"),
       parscale = p_scale,
       cache_intensity = TRUE,
       combine_intensity = TRUE,
@@ -315,25 +311,6 @@ tw_simple <- c(min(times_simple), max(times_simple))
 cat(sprintf("  Simple day-1: %d events | %d nodes | %d edges\n",
             length(times_simple), network.size(net_simple), network.edgecount(net_simple)))
 
-# --- Non-simple data (original timestamps, multi-edge events) ---
-df_nonsimple <- data.frame(
-  time = raw$V1 / 3600,
-  from = raw$V2,
-  to   = raw$V3
-)
-df_nonsimple$time <- df_nonsimple$time - min(df_nonsimple$time)
-df_nonsimple <- df_nonsimple[order(df_nonsimple$time), ]
-
-df_ns_day1 <- subset_first_session(df_nonsimple, gap_threshold = GAP_THRESHOLD)
-obj_nonsimple <- make_hypertext_net(df_ns_day1, use_first_contact_only = USE_FIRST_CONTACT_ONLY)
-net_nonsimple <- normalize_times_01(obj_nonsimple$net)
-times_nonsimple <- get_times(net_nonsimple)$times
-tw_nonsimple <- c(min(times_nonsimple), max(times_nonsimple))
-
-cat(sprintf("  Non-simple day-1: %d events | %d nodes | %d edges | %.2f edges/event\n",
-            length(times_nonsimple), network.size(net_nonsimple),
-            network.edgecount(net_nonsimple),
-            network.edgecount(net_nonsimple) / length(times_nonsimple)))
 
 # =============================================================================
 # Run fits
@@ -346,9 +323,9 @@ save_incremental <- function() {
   tryCatch({
     saveRDS(list(
       results = results,
-      net_simple = net_simple, net_nonsimple = net_nonsimple,
-      edges_simple = obj_simple$edges, edges_nonsimple = obj_nonsimple$edges,
-      tw_simple = tw_simple, tw_nonsimple = tw_nonsimple,
+      net_simple = net_simple,
+      edges_simple = obj_simple$edges,
+      tw_simple = tw_simple,
       formula_A = FORMULA_A, formula_B = FORMULA_B,
       mark_decay = MARK_DECAY, edges_fixed = EDGES_FIXED,
       N_GOF = N_GOF, MAX_ITER = MAX_ITER, SEED_EVENTS_GOF = SEED_EVENTS_GOF
@@ -370,40 +347,14 @@ if (RUN_FIT_1) {
   save_incremental()
 }
 
-# --- Fit 2: Non-simple, tri+star ---
+# --- Fit 2: Simple, gwesp+gwdegree ---
 if (RUN_FIT_2) {
   results$fit2 <- run_single_fit(
-    net = net_nonsimple, time_window = tw_nonsimple,
-    label = "Fit 2: Non-simple, tri+star",
-    formula_rhs = FORMULA_A, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
+    net = net_simple, time_window = tw_simple,
+    label = "Fit 2: Simple, gwesp+gwdegree",
+    formula_rhs = FORMULA_B, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
     max_iter = MAX_ITER, n_cores = N_CORES,
     run_gof = RUN_GOF_2, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
-    seed_events_gof = SEED_EVENTS_GOF
-  )
-  save_incremental()
-}
-
-# --- Fit 3: Simple, gwesp+gwdegree ---
-if (RUN_FIT_3) {
-  results$fit3 <- run_single_fit(
-    net = net_simple, time_window = tw_simple,
-    label = "Fit 3: Simple, gwesp+gwdegree",
-    formula_rhs = FORMULA_B, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
-    max_iter = MAX_ITER, n_cores = N_CORES,
-    run_gof = RUN_GOF_3, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
-    seed_events_gof = SEED_EVENTS_GOF
-  )
-  save_incremental()
-}
-
-# --- Fit 4: Non-simple, gwesp+gwdegree ---
-if (RUN_FIT_4) {
-  results$fit4 <- run_single_fit(
-    net = net_nonsimple, time_window = tw_nonsimple,
-    label = "Fit 4: Non-simple, gwesp+gwdegree",
-    formula_rhs = FORMULA_B, mark_decay = MARK_DECAY, growth_only = GROWTH_ONLY,
-    max_iter = MAX_ITER, n_cores = N_CORES,
-    run_gof = RUN_GOF_4, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
   save_incremental()
@@ -432,11 +383,8 @@ for (nm in names(results)) {
 save_list <- list(
   results = results,
   net_simple = net_simple,
-  net_nonsimple = net_nonsimple,
   edges_simple = obj_simple$edges,
-  edges_nonsimple = obj_nonsimple$edges,
   tw_simple = tw_simple,
-  tw_nonsimple = tw_nonsimple,
   formula_A = FORMULA_A,
   formula_B = FORMULA_B,
   mark_decay = MARK_DECAY,
