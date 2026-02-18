@@ -2,11 +2,12 @@
 #
 # RUNTIME ESTIMATE (16 cores, cluster):
 #   One sim at TIME=50 is ~6 min (gives ~600 events); fit typically similar or longer.
-#   Main study (SIMULATE):  N_SIMS=7  -> ~10-20 min total.
-#   Consistency:            4 windows x 100 reps = 400 (sim+fit) pairs;
-#                            ~8-15 min per run -> 400*10/16 ~ 4-4.5 h.
+#   Main study (SIMULATE):  N_SIMS=100  -> ~1-2 h total.
+#   Consistency:            9 windows x 50 reps = 450 (sim+fit) pairs;
+#                            T=500 window is expensive (~hours per rep).
+#                            Expect 8-16+ h total depending on cores.
 #   Explosive:               2 sims only, T=5 -> ~2-5 min.
-#   Total (all blocks):      ~4.5-5 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 16).
+#   Total (all blocks):      ~10-20 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 64+).
 
 library(spatstat)
 library(ggplot2)
@@ -275,9 +276,9 @@ if(SIMULATE){
 
 if(RUN_CONSISTENCY){
 
-  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic, T=200 for large-sample)
-  time_windows <- c(5, 10, 20, 25, 50, 75, 100, 200)
-  N_SIMS_CONSISTENCY <- 25
+  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic, T=500 for large-sample)
+  time_windows <- c(5, 10, 20, 25, 50, 75, 100, 200, 500)
+  N_SIMS_CONSISTENCY <- 50
 
   # Parameters (Standard/Stable regime) - CS model
   params_true <- list(mu = 10,
@@ -308,6 +309,7 @@ if(RUN_CONSISTENCY){
     
     # Storage for results
     consistency_results <- data.frame()
+    consistency_example_sims <- list()
     
     for(curr_time in time_windows){
       t_window <- proc.time()
@@ -435,19 +437,34 @@ if(RUN_CONSISTENCY){
            return(NULL)
         }
 
-        return(data.frame(
-          keep = keep,
-          sim_id = i,
-          time_window = curr_time,
-          param = par_names,
-          estimate = estimates,
-          true_value = t_vals
-        ))
+        result <- list(
+          df = data.frame(
+            keep = keep,
+            sim_id = i,
+            time_window = curr_time,
+            param = par_names,
+            estimate = estimates,
+            true_value = t_vals
+          ),
+          example_sim = if (i == 1) sim_res else NULL
+        )
+        return(result)
       })
       elapsed_simfit <- (proc.time() - t_simfit)[3]
       
-      # Bind results
-      res_df <- do.call(rbind, res_list)
+      # Bind results (each element is list(df=..., example_sim=...))
+      non_null <- Filter(Negate(is.null), res_list)
+      res_df <- do.call(rbind, lapply(non_null, `[[`, "df"))
+      
+      # Retain the first non-NULL example sim for this time window
+      ex_sim <- NULL
+      for (r in non_null) {
+        if (!is.null(r$example_sim)) { ex_sim <- r$example_sim; break }
+      }
+      if (!is.null(ex_sim)) {
+        consistency_example_sims[[as.character(curr_time)]] <- ex_sim
+      }
+      
       if (is.null(res_df) || nrow(res_df) == 0) {
         cat("  WARNING: No successful fits in this window!\n")
         next
@@ -566,6 +583,7 @@ if(RUN_CONSISTENCY){
     save_list_ckpt$p_rmse <- if (exists("p_rmse")) p_rmse else NULL
     save_list_ckpt$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
     save_list_ckpt$time_windows <- time_windows
+    if (exists("consistency_example_sims")) save_list_ckpt$consistency_example_sims <- consistency_example_sims
   }
   tryCatch({
     saveRDS(save_list_ckpt, file.path(CLUSTER_OUTPUT_DIR, "results_CS_full.RDS"))
@@ -725,6 +743,7 @@ if(exists("consistency_results")){
   save_list$p_rmse <- p_rmse
   save_list$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
   save_list$time_windows <- time_windows
+  if (exists("consistency_example_sims")) save_list$consistency_example_sims <- consistency_example_sims
 }
 if(exists("sim_exp")){
   save_list$sim_exp <- sim_exp
