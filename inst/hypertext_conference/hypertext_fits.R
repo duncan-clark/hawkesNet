@@ -269,6 +269,12 @@ run_single_fit <- function(net, time_window, label,
     cat(sprintf("  GOF completed in %.1f s\n", t_gof_elapsed))
   }
 
+  # Free the intensity closure cache to avoid memory bloat across sequential fits
+  if (!is.null(fit)) {
+    fit$intens_funcs <- NULL
+  }
+  gc()
+
   list(
     fit = fit,
     gof = gof_res,
@@ -335,6 +341,22 @@ cat(sprintf("  Non-simple day-1: %d events | %d nodes | %d edges | %.2f edges/ev
 
 results <- list()
 
+save_incremental <- function() {
+  rds_tmp <- file.path(OUTPUT_DIR, "results_hypertext_partial.RDS")
+  tryCatch({
+    saveRDS(list(
+      results = results,
+      net_simple = net_simple, net_nonsimple = net_nonsimple,
+      edges_simple = obj_simple$edges, edges_nonsimple = obj_nonsimple$edges,
+      tw_simple = tw_simple, tw_nonsimple = tw_nonsimple,
+      formula_A = FORMULA_A, formula_B = FORMULA_B,
+      mark_decay = MARK_DECAY, edges_fixed = EDGES_FIXED,
+      N_GOF = N_GOF, MAX_ITER = MAX_ITER, SEED_EVENTS_GOF = SEED_EVENTS_GOF
+    ), rds_tmp)
+    cat(sprintf("  [checkpoint] Saved partial results: %s\n", rds_tmp))
+  }, error = function(e) cat("  [checkpoint] Save failed:", e$message, "\n"))
+}
+
 # --- Fit 1: Simple, tri+star ---
 if (RUN_FIT_1) {
   results$fit1 <- run_single_fit(
@@ -345,6 +367,7 @@ if (RUN_FIT_1) {
     run_gof = RUN_GOF_1, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
+  save_incremental()
 }
 
 # --- Fit 2: Non-simple, tri+star ---
@@ -357,6 +380,7 @@ if (RUN_FIT_2) {
     run_gof = RUN_GOF_2, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
+  save_incremental()
 }
 
 # --- Fit 3: Simple, gwesp+gwdegree ---
@@ -369,6 +393,7 @@ if (RUN_FIT_3) {
     run_gof = RUN_GOF_3, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
+  save_incremental()
 }
 
 # --- Fit 4: Non-simple, gwesp+gwdegree ---
@@ -381,6 +406,7 @@ if (RUN_FIT_4) {
     run_gof = RUN_GOF_4, n_gof = N_GOF, n_gof_outer = N_GOF_OUTER,
     seed_events_gof = SEED_EVENTS_GOF
   )
+  save_incremental()
 }
 
 # =============================================================================
