@@ -7,17 +7,19 @@
 #SBATCH --cpus-per-task=25
 #SBATCH --mem=32G
 
-# Hypertext 2009 conference: consolidated hawkesNet fits (2 models).
-# 2 formulas (simple data only), all with m-parameter.
-# 25 cores: fit uses all for intensity cache; GOF runs 25 sims in parallel.
+# Hypertext 2009 conference: hawkesNet fits (3 models, same formula).
+# Formula A (tri+star), varying what is fixed vs free:
+#   Fit A: K=0.5 fixed, edges=-5 fixed
+#   Fit B: K=0.5 fixed, edges free
+#   Fit C: K free, edges free
 #
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run defaults: N_GOF=25, MAX_ITER=5000, GOF for both fits.
+# Full run defaults: N_GOF=25, MAX_ITER=5000, GOF for all 3 fits.
 # Optional env (set before sbatch or in script):
 #   MAX_ITER=5000  N_GOF=25  GOF_CORES_OUTER=25
-#   RUN_FIT_1=TRUE  RUN_GOF_1=TRUE  (etc. for fits 2-4)
+#   RUN_FIT_A=TRUE  RUN_GOF_A=TRUE  (etc. for B, C)
 
 mkdir -p cluster_output
 
