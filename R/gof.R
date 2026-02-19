@@ -156,6 +156,59 @@ sanitize_net_for_binarynet <- function(net) {
   net
 }
 
+#' Waiting times for degree and ESP distributions.
+#'
+#' @param net Network object.
+#' @param type "degree" or "esp".
+#' @param k_max Maximum level to track (default 30).
+#' @param time_attr Name of time attribute.
+#' @return List of waiting time vectors.
+#' @noRd
+waiting_times_dist_fast <- function(net, type = c("degree", "esp"), k_max = 30, time_attr = "time") {
+  type <- match.arg(type)
+  el <- as.edgelist(net)
+  n <- network.size(net)
+  if (nrow(el) == 0) return(setNames(rep(list(numeric(0)), k_max + 1), paste0(type, 0:k_max)))
+
+  edge_times <- NULL
+  if (time_attr %in% list.edge.attributes(net)) {
+    edge_times <- get.edge.attribute(net, time_attr)
+  }
+  if (is.null(edge_times)) {
+    vtimes <- get.vertex.attribute(net, time_attr)
+    edge_times <- pmax(vtimes[el[, 1]], vtimes[el[, 2]], na.rm = TRUE)
+  }
+  
+  ord <- order(edge_times)
+  el <- el[ord, , drop = FALSE]
+  edge_times <- edge_times[ord]
+  
+  g <- network.initialize(n, directed = is.directed(net))
+  stat_times <- rep(list(numeric()), k_max + 1)
+  
+  # Initial counts (usually all 0 except degree 0 which is n)
+  prev_counts <- if(type == "degree") degree_dist(g, k_max) else esp_dist(g, k_max)
+  
+  unique_times <- unique(edge_times)
+  for (t in unique_times) {
+    idx <- which(edge_times == t)
+    for (j in idx) {
+      add.edges(g, tail = el[j, 1], head = el[j, 2])
+    }
+    curr_counts <- if(type == "degree") degree_dist(g, k_max) else esp_dist(g, k_max)
+    for (k in 0:k_max) {
+      if (curr_counts[k+1] > prev_counts[k+1]) {
+        stat_times[[k+1]] <- c(stat_times[[k+1]], t)
+      }
+    }
+    prev_counts <- curr_counts
+  }
+  
+  out <- lapply(stat_times, function(x) if(length(x) >= 2) diff(x) else numeric(0))
+  names(out) <- paste0(type, 0:k_max)
+  out
+}
+
 #' Waiting times between consecutive structure formations.
 #'
 #' Replays the network event-by-event (grouped by event time) and records
@@ -414,7 +467,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   # Initialize results early (will be populated even if some computations fail)
   GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_sim = NULL,
-                      geodist_obs = NULL, geodist_sim = NULL, wait_obs = NULL, wait_sim = NULL,
+                      geodist_obs = NULL, geodist_sim = NULL, 
+                      wait_obs = NULL, wait_sim = NULL,
+                      wait_degree_obs = NULL, wait_degree_sim = NULL,
+                      wait_esp_obs = NULL, wait_esp_sim = NULL,
                       nodemix_obs = NULL, nodemix_sim = NULL, nets_sim = NULL, plots = list())
   
   if (is.null(fit)) {
@@ -743,16 +799,31 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       wait_formula_standard <- "edges + triangles + star(c(2,3))"
       wait_obs_raw <- waiting_times_between_formations(net_obs, formula_RHS = wait_formula_standard)
       
-  # Standard statistic names for these waiting times
-  stat_names_standard <- c("edges", "triangles", "star2", "star3")
-  if (length(stat_names_standard) == length(wait_obs_raw)) {
-    names(wait_obs_raw) <- stat_names_standard
-  }
-  wait_obs_raw
-}, error = function(e) {
-  if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
-  NULL
-})
+      # Standard statistic names for these waiting times
+      stat_names_standard <- c("edges", "triangles", "star2", "star3")
+      if (length(stat_names_standard) == length(wait_obs_raw)) {
+        names(wait_obs_raw) <- stat_names_standard
+      }
+      wait_obs_raw
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed waiting times:", e$message, "\n")
+      NULL
+    })
+
+    # Observed waiting times for degree and ESP distributions
+    GOF_results$wait_degree_obs <- tryCatch({
+      waiting_times_dist_fast(net_obs, type = "degree", k_max = 30)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed degree waiting times:", e$message, "\n")
+      NULL
+    })
+    
+    GOF_results$wait_esp_obs <- tryCatch({
+      waiting_times_dist_fast(net_obs, type = "esp", k_max = 30)
+    }, error = function(e) {
+      if (verbose) cat("      Warning: Could not compute observed ESP waiting times:", e$message, "\n")
+      NULL
+    })
 
 # Observed nodeMix statistics (if gender attribute exists)
 # Fail gracefully: if nodal covariates cause errors (encoding, ernm C++, etc.), skip nodeMix entirely
@@ -794,57 +865,61 @@ n_esp_bins <- k_esp - esp + 1L
 # We can't easily export the ERNM model object itself, but we can ensure
 # the workers are as lean as possible.
 
-if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-message(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s",
-                length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
-
-# Combined distributional statistics: Degree, ESP, Geodist, nodeMix
-# Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
-has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
-needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
-
-dist_stats_fun <- function(n) {
-    tryCatch({
-      if (is.null(n)) return(NULL)
-      n_clean <- n
-      if (needs_gender) {
-        n_clean <- tryCatch({
-          ensure_vertex_attribute(n, "gender", default_value = "unknown")
-        }, error = function(e) n)
+    if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
+    message(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s",
+                    length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
+    
+    # Combined distributional statistics: Degree, ESP, Geodist, nodeMix, and waiting times for degree/ESP
+    # Pre-calculate observed nodeMix presence to avoid repeated grepl/list.vertex.attributes
+    has_nodemix_obs <- !is.null(GOF_results$nodemix_obs)
+    needs_gender <- any(grepl("nodeMix|nodeMatch", formula_RHS))
+    
+    dist_stats_fun <- function(n) {
+        tryCatch({
+          if (is.null(n)) return(NULL)
+          n_clean <- n
+          if (needs_gender) {
+            n_clean <- tryCatch({
+              ensure_vertex_attribute(n, "gender", default_value = "unknown")
+            }, error = function(e) n)
+          }
+          nodemix_val <- NULL
+          if (has_nodemix_obs) {
+            nodemix_val <- tryCatch({
+              as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
+            }, error = function(e) NULL)
+          }
+          list(
+            degree = degree_dist(n, max_deg, min_deg = degree),
+            esp = esp_dist(n, k_esp, min_esp = esp),
+            geodist = geodist_dist(n),
+            nodemix = nodemix_val,
+            wait_degree = waiting_times_dist_fast(n, type = "degree", k_max = 30),
+            wait_esp = waiting_times_dist_fast(n, type = "esp", k_max = 30)
+          )
+        }, error = function(e) {
+          list(degree = rep(NA_real_, n_deg_bins), 
+               esp = rep(NA_real_, n_esp_bins), 
+               geodist = numeric(0), 
+               nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL,
+               wait_degree = setNames(rep(list(numeric(0)), 31), paste0("degree", 0:30)),
+               wait_esp = setNames(rep(list(numeric(0)), 31), paste0("esp", 0:30)))
+        })
+    }
+    dist_stats_sim <- tryCatch({
+      if (!is.null(cl_gof)) {
+        parallel::clusterExport(cl_gof, c("max_deg", "degree", "k_esp", "esp", "has_nodemix_obs", "needs_gender",
+                                         "n_deg_bins", "n_esp_bins", "GOF_results"), envir = environment())
+        parallel::clusterExport(cl_gof, c("degree_dist", "esp_dist", "geodist_dist", "ensure_vertex_attribute", "waiting_times_dist_fast"),
+                                envir = asNamespace("hawkesNet"))
+        parallel::parLapply(cl_gof, sim_nets, dist_stats_fun)
+      } else {
+        safe_parallel_lapply(sim_nets, dist_stats_fun, mc.cores = n_workers, parallel_type = "auto")
       }
-      nodemix_val <- NULL
-      if (has_nodemix_obs) {
-        nodemix_val <- tryCatch({
-          as.vector(calculateStatistics(n_clean ~ nodeMix('gender')))
-        }, error = function(e) NULL)
-      }
-      list(
-        degree = degree_dist(n, max_deg, min_deg = degree),
-        esp = esp_dist(n, k_esp, min_esp = esp),
-        geodist = geodist_dist(n),
-        nodemix = nodemix_val
-      )
     }, error = function(e) {
-      list(degree = rep(NA_real_, n_deg_bins), 
-           esp = rep(NA_real_, n_esp_bins), 
-           geodist = numeric(0), 
-           nodemix = if (has_nodemix_obs) rep(NA_real_, length(GOF_results$nodemix_obs)) else NULL)
+      if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
+      NULL
     })
-}
-dist_stats_sim <- tryCatch({
-  if (!is.null(cl_gof)) {
-    parallel::clusterExport(cl_gof, c("max_deg", "degree", "k_esp", "esp", "has_nodemix_obs", "needs_gender",
-                                     "n_deg_bins", "n_esp_bins", "GOF_results"), envir = environment())
-    parallel::clusterExport(cl_gof, c("degree_dist", "esp_dist", "geodist_dist", "ensure_vertex_attribute"),
-                            envir = asNamespace("hawkesNet"))
-    parallel::parLapply(cl_gof, sim_nets, dist_stats_fun)
-  } else {
-    safe_parallel_lapply(sim_nets, dist_stats_fun, mc.cores = n_workers, parallel_type = "auto")
-  }
-}, error = function(e) {
-  if (verbose) cat("      Warning: Parallel distributional stats failed:", e$message, "\n")
-  NULL
-})
     
     if (!is.null(dist_stats_sim)) {
       # Filter out NULLs and atomic vectors (error messages) if any task failed
@@ -859,6 +934,12 @@ dist_stats_sim <- tryCatch({
         }))
         GOF_results$geodist_sim <- lapply(dist_stats_sim, function(x) {
           if (is.list(x) && !is.null(x$geodist)) x$geodist else numeric(0)
+        })
+        GOF_results$wait_degree_sim <- lapply(dist_stats_sim, function(x) {
+          if (is.list(x)) x$wait_degree else NULL
+        })
+        GOF_results$wait_esp_sim <- lapply(dist_stats_sim, function(x) {
+          if (is.list(x)) x$wait_esp else NULL
         })
         nodemix_list <- lapply(dist_stats_sim, function(x) {
           if (is.list(x)) x$nodemix else NULL
@@ -1255,6 +1336,87 @@ create_gof_plots <- function(GOF_results) {
           strip.text = ggplot2::element_text(face = "bold")
         )
     }
+  }
+  
+  # Waiting times for degree and ESP distributions (ordered boxplots)
+  # For each degree/ESP level, show distribution of waiting times (Observed vs Simulated)
+  create_wait_dist_plot <- function(obs_list, sim_list_list, type_name) {
+    if (is.null(obs_list) || is.null(sim_list_list) || length(sim_list_list) == 0) return(NULL)
+    
+    # Flatten simulated list of lists into a single data frame
+    # We want to show the distribution of ALL waiting times for each level
+    df_list <- list()
+    
+    # Levels (0 to 30)
+    levels <- names(obs_list)
+    if (is.null(levels)) levels <- paste0(type_name, 0:(length(obs_list)-1))
+    
+    for (lvl in levels) {
+      # Observed waits for this level
+      obs_waits <- obs_list[[lvl]]
+      if (length(obs_waits) > 0) {
+        df_list[[paste0(lvl, "_obs")]] <- data.frame(
+          waiting_time = obs_waits,
+          level = lvl,
+          type = "Observed"
+        )
+      }
+      
+      # Simulated waits for this level (across all simulations)
+      sim_waits <- unlist(lapply(sim_list_list, function(s) s[[lvl]]))
+      if (length(sim_waits) > 0) {
+        df_list[[paste0(lvl, "_sim")]] <- data.frame(
+          waiting_time = sim_waits,
+          level = lvl,
+          type = "Simulated"
+        )
+      }
+    }
+    
+    if (length(df_list) == 0) return(NULL)
+    
+    df_all <- do.call(rbind, df_list)
+    df_all$level_num <- as.integer(gsub("[^0-9]", "", df_all$level))
+    
+    # Filter to levels that actually have data to keep plot clean
+    active_levels <- unique(df_all$level[is.finite(df_all$waiting_time) & df_all$waiting_time > 0])
+    df_plot <- df_all[df_all$level %in% active_levels, ]
+    
+    if (nrow(df_plot) == 0) return(NULL)
+    
+    ggplot2::ggplot(df_plot, ggplot2::aes(x = factor(level_num), y = waiting_time, fill = type)) +
+      ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, position = ggplot2::position_dodge(width = 0.8)) +
+      ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+      ggplot2::scale_y_log10() +
+      ggplot2::labs(
+        title = paste("Waiting Times for", tools::toTitleCase(type_name), "Formations"),
+        subtitle = "Side-by-side boxplots of observed and simulated waiting times for each level",
+        x = tools::toTitleCase(type_name),
+        y = "Waiting Time (log scale)",
+        fill = "Data Type"
+      ) +
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
+        legend.position = "bottom",
+        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = ggplot2::element_text(hjust = 0.5)
+      )
+  }
+  
+  if (!is.null(GOF_results$wait_degree_obs) && !is.null(GOF_results$wait_degree_sim)) {
+    plots$waiting_times_degree_plot <- create_wait_dist_plot(
+      GOF_results$wait_degree_obs,
+      GOF_results$wait_degree_sim,
+      "degree"
+    )
+  }
+  
+  if (!is.null(GOF_results$wait_esp_obs) && !is.null(GOF_results$wait_esp_sim)) {
+    plots$waiting_times_esp_plot <- create_wait_dist_plot(
+      GOF_results$wait_esp_obs,
+      GOF_results$wait_esp_sim,
+      "esp"
+    )
   }
   
   plots
