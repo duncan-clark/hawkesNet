@@ -4,8 +4,8 @@
 #SBATCH --error=cluster_output/hypertext_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=25
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=100
+#SBATCH --mem=128G
 
 # Hypertext 2009 conference: hawkesNet publication fit (single model).
 # Formula A (tri+star):
@@ -14,9 +14,9 @@
 # Submit from the package root (directory containing R/, inst/, DESCRIPTION):
 #   mkdir -p cluster_output && sbatch inst/hypertext_conference/run_hypertext.slurm
 #
-# Full run defaults: N_GOF=25, MAX_ITER=5000, GOF for Fits A, B, C, D.
+# Full run defaults: N_GOF=100, MAX_ITER=5000, GOF for Fits A, B, C, D.
 # Optional env (set before sbatch or in script):
-#   MAX_ITER=5000  N_GOF=25  GOF_CORES_OUTER=25  K_FIXED=1
+#   MAX_ITER=5000  N_GOF=100  GOF_CORES_OUTER=100  K_FIXED=1
 #   RUN_FIT_A=TRUE  RUN_GOF_A=TRUE
 #   RUN_FIT_B=TRUE  RUN_GOF_B=TRUE
 #   RUN_FIT_C=TRUE  RUN_GOF_C=TRUE
@@ -49,8 +49,8 @@ cd "$PACKAGE_ROOT"
 echo "Working directory: $(pwd)"
 echo "Git status:"
 echo "=========================================="
-export N_GOF=25
-export GOF_CORES_OUTER=25
+export N_GOF=100
+export GOF_CORES_OUTER=100
 export K_FIXED=1
 export RUN_FIT_A=TRUE
 export RUN_GOF_A=TRUE

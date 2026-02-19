@@ -1114,53 +1114,86 @@ create_gof_plots <- function(GOF_results) {
     }
     
     df_wait_list <- list()
+    df_wait_dist_list <- list() # For binned counts (like degree/ESP)
+    
+    # Define global bins for all statistics to allow comparison (log-spaced)
+    all_waits_all_stats <- unlist(c(GOF_results$wait_obs, GOF_results$wait_sim))
+    all_waits_all_stats <- all_waits_all_stats[all_waits_all_stats > 0 & is.finite(all_waits_all_stats)]
+    
+    if (length(all_waits_all_stats) > 0) {
+      # Use 10 log-spaced bins
+      w_min <- min(all_waits_all_stats)
+      w_max <- max(all_waits_all_stats)
+      breaks <- exp(seq(log(w_min), log(w_max), length.out = 11))
+      bin_mids <- exp(seq(log(w_min) + diff(log(breaks))[1]/2, log(w_max) - diff(log(breaks))[1]/2, length.out = 10))
+      bin_labels <- sprintf("%.1e", bin_mids)
+    }
+
     for (i in seq_along(wait_names)) {
       stat_name <- wait_names[i]
       obs_wait <- GOF_results$wait_obs[[i]]
       if (is.null(obs_wait)) obs_wait <- numeric(0)
       
-      # For simulated, we want to keep the individual simulation IDs to allow boxplots
-      # if we had multiple simulations. However, wait_sim is a list of lists.
-      # Let's flatten it but keep the simulation ID.
-      sim_wait_df <- do.call(rbind, lapply(seq_along(GOF_results$wait_sim), function(sim_id) {
+      # Flatten simulated waits for this statistic
+      sim_wait_vals <- lapply(seq_along(GOF_results$wait_sim), function(sim_id) {
         x <- GOF_results$wait_sim[[sim_id]]
         vals <- if (is.list(x) && stat_name %in% names(x)) {
           x[[stat_name]]
         } else if (is.list(x) && i <= length(x)) {
           x[[i]]
         } else {
-          NULL
+          numeric(0)
         }
-        if (length(vals) > 0) {
-          data.frame(waiting_time = vals, sim_id = sim_id)
-        } else {
-          NULL
-        }
-      }))
+        vals
+      })
       
-      if (length(obs_wait) > 0 || (!is.null(sim_wait_df) && nrow(sim_wait_df) > 0)) {
-        if (length(obs_wait) > 0) {
-          df_obs <- data.frame(
-            waiting_time = obs_wait,
-            type = "Observed",
-            statistic = stat_name
+      # 1. Standard side-by-side boxplots (Distribution of values)
+      if (length(obs_wait) > 0) {
+        df_wait_list[[paste0(stat_name, "_obs")]] <- data.frame(
+          waiting_time = obs_wait, type = "Observed", statistic = stat_name
+        )
+      }
+      sim_wait_flat <- unlist(sim_wait_vals)
+      if (length(sim_wait_flat) > 0) {
+        df_wait_list[[paste0(stat_name, "_sim")]] <- data.frame(
+          waiting_time = sim_wait_flat, type = "Simulated", statistic = stat_name
+        )
+      }
+      
+      # 2. Binned counts (Distribution of counts across simulations, like degree/ESP)
+      if (length(all_waits_all_stats) > 0) {
+        # Observed counts in bins
+        obs_counts <- as.vector(table(cut(obs_wait, breaks = breaks, include.lowest = TRUE)))
+        if (length(obs_counts) < 10) obs_counts <- c(obs_counts, rep(0, 10 - length(obs_counts)))
+        
+        # Simulated counts in bins (one row per simulation)
+        sim_counts_mat <- do.call(rbind, lapply(sim_wait_vals, function(w) {
+          counts <- as.vector(table(cut(w, breaks = breaks, include.lowest = TRUE)))
+          if (length(counts) < 10) counts <- c(counts, rep(0, 10 - length(counts)))
+          counts
+        }))
+        
+        if (!is.null(sim_counts_mat) && nrow(sim_counts_mat) > 0) {
+          df_sim_binned <- data.frame(
+            count = as.vector(sim_counts_mat),
+            bin = rep(bin_labels, each = nrow(sim_counts_mat)),
+            statistic = stat_name,
+            type = "Simulated"
           )
-          df_wait_list[[paste0(stat_name, "_obs")]] <- df_obs
-        }
-        if (!is.null(sim_wait_df) && nrow(sim_wait_df) > 0) {
-          df_sim <- data.frame(
-            waiting_time = sim_wait_df$waiting_time,
-            type = "Simulated",
-            statistic = stat_name
+          df_obs_binned <- data.frame(
+            count = obs_counts,
+            bin = bin_labels,
+            statistic = stat_name,
+            type = "Observed"
           )
-          df_wait_list[[paste0(stat_name, "_sim")]] <- df_sim
+          df_wait_dist_list[[stat_name]] <- list(sim = df_sim_binned, obs = df_obs_binned)
         }
       }
     }
     
+    # Plot 1: Side-by-side boxplots (log scale)
     if (length(df_wait_list) > 0) {
       df_wait <- do.call(rbind, df_wait_list)
-      
       plots$waiting_times_plot <- ggplot2::ggplot(df_wait, ggplot2::aes(x = type, y = waiting_time, fill = type)) +
         ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
         ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
@@ -1175,6 +1208,50 @@ create_gof_plots <- function(GOF_results) {
         ggplot2::theme(
           legend.position = "none",
           plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+          strip.text = ggplot2::element_text(face = "bold")
+        )
+
+      # Plot 1b: Explicitly logged waiting times (distribution of log values)
+      df_wait_log <- df_wait
+      df_wait_log$log_waiting_time <- log10(df_wait_log$waiting_time)
+      plots$waiting_times_log_plot <- ggplot2::ggplot(df_wait_log, ggplot2::aes(x = type, y = log_waiting_time, fill = type)) +
+        ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
+        ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
+        ggplot2::facet_wrap(~statistic, scales = "free_y") +
+        ggplot2::labs(
+          title = "Log10 Waiting Times Between Structure Formations",
+          x = "",
+          y = "Log10(Waiting Time)"
+        ) +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+          legend.position = "none",
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+          strip.text = ggplot2::element_text(face = "bold")
+        )
+    }
+    
+    # Plot 2: Binned counts (like degree/ESP)
+    if (length(df_wait_dist_list) > 0) {
+      all_sim_binned <- do.call(rbind, lapply(df_wait_dist_list, `[[`, "sim"))
+      all_obs_binned <- do.call(rbind, lapply(df_wait_dist_list, `[[`, "obs"))
+      
+      plots$waiting_times_dist_plot <- ggplot2::ggplot(all_sim_binned, ggplot2::aes(x = factor(bin, levels = bin_labels), y = count)) +
+        ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
+        ggplot2::geom_point(data = all_obs_binned, ggplot2::aes(x = factor(bin, levels = bin_labels), y = count),
+                           color = "#E69F00", size = 2, shape = 19) +
+        ggplot2::facet_wrap(~statistic, scales = "free_y") +
+        ggplot2::labs(
+          title = "Waiting Time Distribution (Binned Counts)",
+          subtitle = "Boxplots show distribution of counts across simulations; dots show observed counts",
+          x = "Waiting Time Interval (Log-spaced)",
+          y = "Number of Formations"
+        ) +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+          axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+          plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+          plot.subtitle = ggplot2::element_text(hjust = 0.5),
           strip.text = ggplot2::element_text(face = "bold")
         )
     }

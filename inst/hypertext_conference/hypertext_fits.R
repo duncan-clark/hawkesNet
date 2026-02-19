@@ -41,7 +41,7 @@ dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 ON_SLURM <- nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE" else "TRUE")))
 
-N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 25L)))
+N_CORES  <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", 100L)))
 MAX_ITER <- as.integer(Sys.getenv("MAX_ITER", if (LOCAL_QUICK) 200L else 5000L))
 
 N_GOF       <- max(1L, as.integer(Sys.getenv("N_GOF", N_CORES)))
