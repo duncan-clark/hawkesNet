@@ -3,11 +3,11 @@
 # RUNTIME ESTIMATE (16 cores, cluster):
 #   One sim at TIME=50 is ~6 min (gives ~600 events); fit typically similar or longer.
 #   Main study (SIMULATE):  N_SIMS=100  -> ~1-2 h total.
-#   Consistency:            9 windows x 50 reps = 450 (sim+fit) pairs;
-#                            T=500 window is expensive (~hours per rep).
-#                            Expect 8-16+ h total depending on cores.
+#   Consistency:            10 windows x 50 reps = 500 (sim+fit) pairs;
+#                            T=1000 window is expensive (~hours per rep).
+#                            Expect 12-24+ h total depending on cores.
 #   Explosive:               2 sims only, T=5 -> ~2-5 min.
-#   Total (all blocks):      ~10-20 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 64+).
+#   Total (all blocks):      ~15-30 h. Set N_CORES via SLURM_CPUS_PER_TASK (e.g. 64+).
 
 library(spatstat)
 library(ggplot2)
@@ -276,8 +276,8 @@ if(SIMULATE){
 
 if(RUN_CONSISTENCY){
 
-  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic, T=500 for large-sample)
-  time_windows <- c(5, 10, 20, 25, 50, 75, 100, 200, 500)
+  # 1. Define Time Windows to test (include T=20 for consistency with diagnostic, T=1000 for large-sample)
+  time_windows <- c(5, 10, 20, 25, 50, 75, 100, 200, 500, 1000)
   N_SIMS_CONSISTENCY <- 50
 
   # Parameters (Standard/Stable regime) - CS model
@@ -442,6 +442,7 @@ if(RUN_CONSISTENCY){
             keep = keep,
             sim_id = i,
             time_window = curr_time,
+            event_count = length(sim_res$events$t),
             param = par_names,
             estimate = estimates,
             true_value = t_vals
@@ -520,6 +521,7 @@ if(RUN_CONSISTENCY){
             sd_est = sd(estimate),
             rmse = sqrt(mean((estimate - true_value)^2)),
             true_val = mean(true_value),
+            mean_events = mean(event_count),
             n_conv = n(),
             .groups = "drop"
           )
@@ -540,6 +542,23 @@ if(RUN_CONSISTENCY){
         
         print(p_cons)
         
+        # Plot 1b: Boxplots of convergence vs Event Count
+        # Bin event counts into deciles for boxplotting
+        converged_results$event_bin <- cut(converged_results$event_count, breaks = 10)
+        p_cons_ev <- ggplot(converged_results, aes(x = event_bin, y = estimate)) +
+          geom_boxplot(outlier.shape = NA, alpha = 0.5, fill = "lightgreen") +
+          geom_jitter(width = 0.2, alpha = 0.3) +
+          geom_hline(aes(yintercept = true_value), color = "red", linetype = "dashed", linewidth = 1) +
+          facet_wrap(~param, scales = "free_y") +
+          labs(title = "Parameter Consistency vs Event Count - CS model",
+               subtitle = "Red dashed line indicates true parameter value",
+               x = "Event Count (Binned)",
+               y = "Parameter Estimate") +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        
+        print(p_cons_ev)
+        
         # Plot 2: RMSE decay (The "Getting Better" plot)
         p_rmse <- ggplot(summary_stats, aes(x = time_window, y = rmse)) +
           geom_line(linewidth = 1) +
@@ -551,17 +570,33 @@ if(RUN_CONSISTENCY){
           theme_bw()
         
         print(p_rmse)
+
+        # Plot 2b: RMSE decay vs Mean Event Count
+        p_rmse_ev <- ggplot(summary_stats, aes(x = mean_events, y = rmse)) +
+          geom_line(linewidth = 1, color = "darkgreen") +
+          geom_point(size = 3, color = "darkgreen") +
+          facet_wrap(~param, scales = "free_y") +
+          labs(title = "RMSE Decay vs Mean Event Count (CS model)",
+               x = "Mean Event Count",
+               y = "Root Mean Squared Error") +
+          theme_bw()
+        
+        print(p_rmse_ev)
       } else {
         cat("  WARNING: No converged fits. Skipping consistency plots.\n")
         summary_stats <- NULL
         p_cons <- NULL
+        p_cons_ev <- NULL
         p_rmse <- NULL
+        p_rmse_ev <- NULL
       }
     } else {
       cat("  WARNING: consistency_results is empty. Skipping consistency plots.\n")
       summary_stats <- NULL
       p_cons <- NULL
+      p_cons_ev <- NULL
       p_rmse <- NULL
+      p_rmse_ev <- NULL
     }
   }
 
@@ -580,7 +615,9 @@ if(RUN_CONSISTENCY){
     save_list_ckpt$consistency_results <- consistency_results
     save_list_ckpt$summary_stats <- if (exists("summary_stats")) summary_stats else NULL
     save_list_ckpt$p_cons <- if (exists("p_cons")) p_cons else NULL
+    save_list_ckpt$p_cons_ev <- if (exists("p_cons_ev")) p_cons_ev else NULL
     save_list_ckpt$p_rmse <- if (exists("p_rmse")) p_rmse else NULL
+    save_list_ckpt$p_rmse_ev <- if (exists("p_rmse_ev")) p_rmse_ev else NULL
     save_list_ckpt$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
     save_list_ckpt$time_windows <- time_windows
     if (exists("consistency_example_sims")) save_list_ckpt$consistency_example_sims <- consistency_example_sims
@@ -740,7 +777,9 @@ if(exists("consistency_results")){
   save_list$consistency_results <- consistency_results
   save_list$summary_stats <- summary_stats
   save_list$p_cons <- p_cons
+  save_list$p_cons_ev <- p_cons_ev
   save_list$p_rmse <- p_rmse
+  save_list$p_rmse_ev <- p_rmse_ev
   save_list$N_SIMS_CONSISTENCY <- N_SIMS_CONSISTENCY
   save_list$time_windows <- time_windows
   if (exists("consistency_example_sims")) save_list$consistency_example_sims <- consistency_example_sims
@@ -927,7 +966,9 @@ if(PAPER_OUTPUT){
     print(prop_keep)
     if (!is.null(summary_stats)) print(summary_stats)
     if (!is.null(p_cons)) print(p_cons)
+    if (!is.null(p_cons_ev)) print(p_cons_ev)
     if (!is.null(p_rmse)) print(p_rmse)
+    if (!is.null(p_rmse_ev)) print(p_rmse_ev)
   }
 
   # ---------- Explosive study output ----------
@@ -954,7 +995,9 @@ if(PAPER_OUTPUT){
   if (exists("temp_p_vals"))                      save_list$temp_p_vals     <- temp_p_vals
   # Consistency plots (already in save_list from earlier, but re-add for safety)
   if (exists("p_cons") && !is.null(p_cons))       save_list$p_cons          <- p_cons
+  if (exists("p_cons_ev") && !is.null(p_cons_ev)) save_list$p_cons_ev       <- p_cons_ev
   if (exists("p_rmse") && !is.null(p_rmse))       save_list$p_rmse          <- p_rmse
+  if (exists("p_rmse_ev") && !is.null(p_rmse_ev)) save_list$p_rmse_ev       <- p_rmse_ev
   # Re-save
   tryCatch({
     saveRDS(save_list, file.path(CLUSTER_OUTPUT_DIR, "results_CS_full.RDS"))
