@@ -1081,7 +1081,8 @@ create_gof_plots <- function(GOF_results) {
     p <- ggplot2::ggplot(df_sim, ggplot2::aes(x = factor(x, levels = x_levels), y = value)) +
       ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
       ggplot2::geom_point(data = df_obs, ggplot2::aes(x = factor(x, levels = x_levels), y = value),
-                          color = "#E69F00", size = 2, shape = 19) +
+                          color = "#E69F00", size = 3, shape = 19) +
+      ggplot2::coord_cartesian(ylim = c(0, max(obs, na.rm = TRUE) * 1.5)) +
       ggplot2::labs(
         title = paste(stat_name, "Distribution"),
         x = x_lab,
@@ -1161,7 +1162,8 @@ create_gof_plots <- function(GOF_results) {
     plots$geodist_plot <- ggplot2::ggplot(df_sim_box, ggplot2::aes(x = factor(distance), y = proportion)) +
       ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
       ggplot2::geom_point(data = df_obs_dot, ggplot2::aes(x = factor(distance), y = proportion),
-                         color = "#E69F00", size = 2, shape = 19) +
+                         color = "#E69F00", size = 3, shape = 19) +
+      ggplot2::coord_cartesian(ylim = c(0, max(df_obs_dot$proportion, na.rm = TRUE) * 1.5)) +
       ggplot2::labs(
         title = "Geodesic Distance Distribution (Relative Proportions)",
         x = "Geodesic Distance",
@@ -1320,7 +1322,8 @@ create_gof_plots <- function(GOF_results) {
       plots$waiting_times_dist_plot <- ggplot2::ggplot(all_sim_binned, ggplot2::aes(x = factor(bin, levels = bin_labels), y = count)) +
         ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, fill = "#56B4E9") +
         ggplot2::geom_point(data = all_obs_binned, ggplot2::aes(x = factor(bin, levels = bin_labels), y = count),
-                           color = "#E69F00", size = 2, shape = 19) +
+                           color = "#E69F00", size = 3, shape = 19) +
+        ggplot2::coord_cartesian(ylim = c(0, max(all_obs_binned$count, na.rm = TRUE) * 1.5)) +
         ggplot2::facet_wrap(~statistic, scales = "free_y") +
         ggplot2::labs(
           title = "Waiting Time Distribution (Binned Counts)",
@@ -1388,6 +1391,8 @@ create_gof_plots <- function(GOF_results) {
       ggplot2::geom_boxplot(alpha = 0.7, outlier.size = 0.5, position = ggplot2::position_dodge(width = 0.8)) +
       ggplot2::scale_fill_manual(values = c("Observed" = "#E69F00", "Simulated" = "#56B4E9")) +
       ggplot2::scale_y_log10() +
+      ggplot2::coord_cartesian(ylim = c(min(df_plot$waiting_time[df_plot$type == "Observed"], na.rm = TRUE) / 10,
+                                        max(df_plot$waiting_time[df_plot$type == "Observed"], na.rm = TRUE) * 10)) +
       ggplot2::labs(
         title = paste("Waiting Times for", tools::toTitleCase(type_name), "Formations"),
         subtitle = "Side-by-side boxplots of observed and simulated waiting times for each level",
