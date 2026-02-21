@@ -303,14 +303,28 @@ run_single_fit <- function(net, time_window, label,
   )
 }
 
-# =============================================================================
-# Load data
-# =============================================================================
-t_wall_start <- proc.time()
-cat("\n=== Loading Data ===\n")
-raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
-
-# --- Simple data (jittered so each event = 1 edge) ---
+  # =============================================================================
+  # Load data
+  # =============================================================================
+  t_wall_start <- proc.time()
+  
+  # Check for existing results to allow just loading and running KS/GOF
+  rds_path <- file.path(OUTPUT_DIR, "results_hypertext.RDS")
+  LOAD_ONLY <- isTRUE(as.logical(Sys.getenv("LOAD_ONLY", "FALSE")))
+  
+  if (LOAD_ONLY && file.exists(rds_path)) {
+    cat("\n=== Loading Existing Results (LOAD_ONLY=TRUE) ===\n")
+    dat <- readRDS(rds_path)
+    results <- dat$results
+    net_simple <- dat$net_simple
+    tw_simple <- dat$tw_simple
+    # Skip fit logic
+    RUN_FIT_A <- RUN_FIT_B <- RUN_FIT_C <- RUN_FIT_D <- FALSE
+  } else {
+    cat("\n=== Loading Data ===\n")
+    raw <- read.table(system.file("extdata", "ht09_contact_list.dat", package = "hawkesNet"))
+    
+    # --- Simple data (jittered so each event = 1 edge) ---
 df_simple <- data.frame(
   time = raw$V1 / 3600,
   from = raw$V2,
@@ -437,21 +451,53 @@ if (RUN_FIT_D) {
   save_incremental()
 }
 
-# results$ernm_fit <- ernm(net_simple ~ edges + gwesp(0.5) + gwdegree(0.5))
+  # results$ernm_fit <- ernm(net_simple ~ edges + gwesp(0.5) + gwdegree(0.5))
+  
+  # =============================================================================
+  # KS Test (Time-to-event residuals)
+  # =============================================================================
+  cat("\n######################################################################\n")
+  cat("## KS TEST (Residuals)\n")
+  cat("######################################################################\n")
+  
+  for (nm in names(results)) {
+    res <- results[[nm]]
+    if (is.null(res) || is.null(res$fit) || is.null(res$fit$params)) next
+    
+    cat(sprintf("\n--- %s ---\n", res$label))
+    pval <- tryCatch({
+      ks_test_pval_hawkesNet(
+        params = res$fit$params,
+        time_window = res$time_window,
+        mark_filtration = res$net
+      )
+    }, error = function(e) {
+      cat(sprintf("  KS TEST FAILED: %s\n", e$message))
+      NA
+    })
+    
+    if (!is.na(pval)) {
+      cat(sprintf("  KS p-value: %.4f\n", pval))
+      results[[nm]]$ks_p_value <- pval
+    }
+  }
 
-# =============================================================================
-# Summary table
-# =============================================================================
+  # =============================================================================
+  # SUMMARY
+  # =============================================================================
 cat("\n######################################################################\n")
 cat("## SUMMARY\n")
 cat("######################################################################\n")
 
-for (nm in names(results)) {
-  res <- results[[nm]]
-  if (is.null(res)) next
-  cat(sprintf("\n--- %s ---\n", res$label))
-  cat(sprintf("  Fit time: %.1f s | GOF time: %.1f s\n", res$time_fit, res$time_gof))
-  if (!is.null(res$fit) && !is.null(res$fit$fit_table)) {
+  for (nm in names(results)) {
+    res <- results[[nm]]
+    if (is.null(res)) next
+    cat(sprintf("\n--- %s ---\n", res$label))
+    cat(sprintf("  Fit time: %.1f s | GOF time: %.1f s\n", res$time_fit, res$time_gof))
+    if (!is.null(res$ks_p_value)) {
+      cat(sprintf("  KS p-value: %.4f\n", res$ks_p_value))
+    }
+    if (!is.null(res$fit) && !is.null(res$fit$fit_table)) {
     print(res$fit$fit_table)
   }
 }

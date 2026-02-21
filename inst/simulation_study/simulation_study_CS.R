@@ -226,7 +226,8 @@ if(SIMULATE){
         cores = N_CORES_INNER,
         cache_intensity = TRUE,
         combine_intensity = TRUE,
-        verbose = FALSE
+        verbose = FALSE,
+        run_sim = FALSE
       )
     }, error = function(e) {
       message(sprintf("  [Outer Worker %d] ERROR: %s", worker_id, e$message))
@@ -376,7 +377,8 @@ if(RUN_CONSISTENCY){
                               fixed_params = c("CS_params1", "node_lambda"),
                               parscale = p_scale,
                               cores = N_CONS_INNER,
-                              method = "Nelder-Mead")
+                              method = "Nelder-Mead",
+                              run_sim = FALSE)
       }, error = function(e) return(NULL))
         
         if(is.null(fit_res) || is.null(fit_res$fit)) return(NULL)
