@@ -2,10 +2,11 @@
 #SBATCH --job-name=sim_study_CS
 #SBATCH --output=cluster_output/CS_sim_%j.out
 #SBATCH --error=cluster_output/CS_sim_%j.err
-#SBATCH --time=50:00:00
+#SBATCH --time=72:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=128
-#SBATCH --mem=128G
+#SBATCH --mem=256G
+#SBATCH --partition=milan
 
 # NeSI scheduling note:
 # - Very large CPU/RAM requests often wait much longer in queue.

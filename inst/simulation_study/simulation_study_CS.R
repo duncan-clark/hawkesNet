@@ -321,10 +321,19 @@ if(RUN_CONSISTENCY){
       clusterExport(cl, "curr_time", envir = environment())
       
       # Parallel Simulation & Fitting Loop
-      cat("  Running", N_SIMS_CONSISTENCY, "sim+fit pairs:", N_CONS_OUTER, "parallel x",
+      # Adjust settings for large T to prevent OOM and timeout
+      if (curr_time >= 500) {
+        N_SIMS_WINDOW <- 25
+        MU_MULT <- 1.5
+      } else {
+        N_SIMS_WINDOW <- N_SIMS_CONSISTENCY
+        MU_MULT <- 3
+      }
+
+      cat("  Running", N_SIMS_WINDOW, "sim+fit pairs:", N_CONS_OUTER, "parallel x",
           N_CONS_INNER, "inner cores...\n")
       t_simfit <- proc.time()
-      res_list <- parLapply(cl = cl, X = 1:N_SIMS_CONSISTENCY, fun = function(i){
+      res_list <- parLapply(cl = cl, X = 1:N_SIMS_WINDOW, fun = function(i){
         worker_id <- Sys.getpid()
         t_start_pair <- proc.time()
         
@@ -335,7 +344,7 @@ if(RUN_CONSISTENCY){
                               PMF_mark = PMF_mark_CS,
                               cond_intensity = cond_intensity,
                               hashed_edges = TRUE,
-                              mu_multiplier = 3,
+                              mu_multiplier = MU_MULT,
                               verbose = FALSE,
                               truncation = TRUNCATION,
                               formula_RHS = "edges + triangles + star(c(2,3))",
@@ -473,12 +482,12 @@ if(RUN_CONSISTENCY){
         next
       }
       n_success <- length(unique(res_df$sim_id))
-      n_fail <- N_SIMS_CONSISTENCY - n_success
+      n_fail <- N_SIMS_WINDOW - n_success
       consistency_results <- rbind(consistency_results, res_df)
       
       elapsed_window <- (proc.time() - t_window)[3]
       cat("  Sim+fit:", round(elapsed_simfit, 1), "s |",
-          "Success:", n_success, "/", N_SIMS_CONSISTENCY,
+          "Success:", n_success, "/", N_SIMS_WINDOW,
           "(", n_fail, "failed)\n")
       cat("  Window total:", round(elapsed_window, 1), "s (",
           round(elapsed_window / 60, 1), "min)\n")
