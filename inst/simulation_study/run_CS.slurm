@@ -5,12 +5,14 @@
 #SBATCH --time=72:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=128
-#SBATCH --mem=256G
-#SBATCH --partition=milan
+#SBATCH --mem=200G
 
-# NeSI scheduling note:
-# - Very large CPU/RAM requests often wait much longer in queue.
-# - Requesting 128 cores for maximum parallel throughput.
+# NeSI (Mahuika) notes:
+# - Do not set --partition: let Slurm choose (default "large").
+# - "milan" is opt-in only; requesting it can cause "configuration not available".
+# - large: 72 CPUs/node, 105 GB/node, 3 days max → 128 CPUs = 2 nodes, 210 GB max; we request 200G.
+# - For more memory (e.g. 256G) use: --partition=bigmem (if available), same --mem and --cpus-per-task.
+# - Very large CPU/RAM requests often wait longer in queue.
 #
 # Overrides:
 #   CORES_OVERRIDE=<int>        (force N_CORES in the R script)
