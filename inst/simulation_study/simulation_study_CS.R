@@ -317,10 +317,6 @@ if(RUN_CONSISTENCY){
       cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
           length(time_windows), ") ---\n")
       
-      # Export current time to cluster
-      clusterExport(cl, "curr_time", envir = environment())
-      
-      # Parallel Simulation & Fitting Loop
       # Adjust settings for large T to prevent OOM and timeout
       if (curr_time >= 500) {
         N_SIMS_WINDOW <- 25
@@ -329,6 +325,9 @@ if(RUN_CONSISTENCY){
         N_SIMS_WINDOW <- N_SIMS_CONSISTENCY
         MU_MULT <- 3
       }
+
+      # Export current time and mu multiplier to cluster
+      clusterExport(cl, c("curr_time", "MU_MULT"), envir = environment())
 
       cat("  Running", N_SIMS_WINDOW, "sim+fit pairs:", N_CONS_OUTER, "parallel x",
           N_CONS_INNER, "inner cores...\n")
