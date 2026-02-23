@@ -317,10 +317,19 @@ if(RUN_CONSISTENCY){
       cat("\n--- T =", curr_time, "(", which(time_windows == curr_time), "/",
           length(time_windows), ") ---\n")
       
-      # Adjust settings for large T to prevent OOM and timeout
+      # Adjust settings for large T to prevent OOM and timeout (fewer workers + sims)
       if (curr_time >= 500) {
-        N_SIMS_WINDOW <- 25
+        N_SIMS_WINDOW <- 16L
         MU_MULT <- 1.5
+        # Use 16 outer workers for T=500 and T=1000 (first time: recreate cluster)
+        if (N_CONS_OUTER != 16L) {
+          stopCluster(cl)
+          N_CONS_OUTER <- 16L
+          N_CONS_INNER <- max(1L, floor(N_CORES / N_CONS_OUTER))
+          cl <- make_cluster(N_CONS_OUTER)
+          clusterExport(cl, c("params_true", "TRUNCATION", "N_CONS_INNER", "MAX_ITER", "p_scale"), envir = environment())
+          cat("  Recreated cluster: 16 outer workers x", N_CONS_INNER, "inner (for T>=500)\n")
+        }
       } else {
         N_SIMS_WINDOW <- N_SIMS_CONSISTENCY
         MU_MULT <- 3
@@ -516,7 +525,7 @@ if(RUN_CONSISTENCY){
     if (nrow(consistency_results) > 0) {
       prop_keep <- consistency_results %>%
         group_by(time_window, param) %>%
-        summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY, .groups = "drop")
+        summarise(prop_keep = sum(keep) / n(), .groups = "drop")
       print(prop_keep)
       
       # Filter to converged fits only
@@ -972,7 +981,7 @@ if(PAPER_OUTPUT){
 
   # ---------- Consistency study output ----------
   if(!is.null(dat$consistency_results) && nrow(dat$consistency_results) > 0){
-    prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / N_SIMS_CONSISTENCY)
+    prop_keep <- consistency_results %>% group_by(time_window, param) %>% summarise(prop_keep = sum(keep) / n(), .groups = "drop")
     print(prop_keep)
     if (!is.null(summary_stats)) print(summary_stats)
     if (!is.null(p_cons)) print(p_cons)
