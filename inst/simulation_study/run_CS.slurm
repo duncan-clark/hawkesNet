@@ -5,13 +5,12 @@
 #SBATCH --time=72:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=128
-#SBATCH --mem=200G
+#SBATCH --mem=400G
+#SBATCH --partition=bigmem
 
 # NeSI (Mahuika) notes:
-# - Do not set --partition: let Slurm choose (default "large").
-# - "milan" is opt-in only; requesting it can cause "configuration not available".
-# - large: 72 CPUs/node, 105 GB/node, 3 days max → 128 CPUs = 2 nodes, 210 GB max; we request 200G.
-# - For more memory (e.g. 256G) use: --partition=bigmem (if available), same --mem and --cpus-per-task.
+# - bigmem: 72 CPUs/node, 460 GB/node, 7 days max → 128 CPUs = 2 nodes, 920 GB; we request 400G to avoid OOM during T=500/T=1000 consistency (intensity caches ~11k closures).
+# - If "Requested node configuration is not available": you may not have bigmem; remove the --partition line to use default "large" (max 200G for 128 cores) and consider reducing CORES_OUTER or N_SIMS for large T.
 # - Very large CPU/RAM requests often wait longer in queue.
 #
 # Overrides:
