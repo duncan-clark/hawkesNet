@@ -32,7 +32,7 @@ This directory contains the main simulation studies for the **Barabási–Albert
    source("inst/simulation_study/simulation_study_CS.R")  # CS model
    ```
 
-Results and saved state will be written in the **current working directory** (e.g. `results_BA_full.RDS` / `results_CS_full.RDS`). For long runs (consistency study), consider using the SLURM option instead.
+Results are written to **`HAWKESNET_OUTPUT_DIR`** (see top-level README), not into the package checkout. On a laptop this usually resolves to the project-level `cluster_output/` folder. For long runs (consistency study), prefer the SLURM option.
 
 ---
 
