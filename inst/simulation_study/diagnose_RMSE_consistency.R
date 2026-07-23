@@ -255,7 +255,8 @@ p_rmse <- ggplot(summary_for_plot, aes(x = time_window, y = rmse)) +
 print(p_rmse)
 
 # Save for inspection
-out_dir <- file.path(PKG_ROOT, "cluster_output")
+source(file.path(PKG_ROOT, "inst", "resolve_output_dir.R"))
+out_dir <- hawkesnet_resolve_output_dir(PKG_ROOT)
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 saveRDS(list(
   all_results = all_results,

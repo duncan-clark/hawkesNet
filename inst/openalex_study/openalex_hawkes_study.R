@@ -128,17 +128,18 @@ t_total <- proc.time()
 cat("=== OpenAlex Hawkes Study ===\n")
 
 # Standard results path
-cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+source(file.path(PKG_ROOT, "inst", "resolve_output_dir.R"))
+cluster_output_dir <- hawkesnet_resolve_output_dir(PKG_ROOT)
 rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
 
 cat("  Search:", SEARCH_STRING, "| Pages:", PAGES, "| Cores:", N_CORES, "\n")
 cat("  Date range:", MIN_DATE, "to", MAX_DATE, "\n")
 cat("  Package root:", PKG_ROOT, "\n")
 cat("  Working directory:", getwd(), "\n")
-cat("  Cluster output dir:", file.path(PKG_ROOT, "cluster_output"), "\n")
+cat("  Cluster output dir:", cluster_output_dir, "\n")
 
 # Test write permissions early
-test_dir <- file.path(PKG_ROOT, "cluster_output")
+test_dir <- cluster_output_dir
 if (!dir.exists(test_dir)) {
   test_create <- tryCatch({
     dir.create(test_dir, showWarnings = TRUE, recursive = TRUE)
@@ -191,7 +192,7 @@ cat("  Step 1 took:", round((proc.time() - t_step)[3], 1), "s\n\n")
 if (STOP_AFTER_FETCH) {
   cat("=== STOP_AFTER_FETCH = TRUE: Stopping study after network preparation ===\n")
   # Save the raw network so it can be reloaded later if needed
-  raw_net_path <- file.path(PKG_ROOT, "cluster_output", "raw_network.RDS")
+  raw_net_path <- file.path(cluster_output_dir, "raw_network.RDS")
   saveRDS(list(net_raw = net_raw, edges = edges), raw_net_path)
   cat("  Raw network saved to:", raw_net_path, "\n")
   # Exit script gracefully
@@ -212,7 +213,7 @@ gc()
 cat("--- Step 2: Inhomogeneous (KDE) + CS fits ---\n")
 
 # Check if we should load previous results instead of re-fitting
-cluster_output_dir <- file.path(PKG_ROOT, "cluster_output")
+cluster_output_dir <- cluster_output_dir
 rds_path_primary <- file.path(cluster_output_dir, "results_openalex_full.RDS")
 if (LOAD_PREVIOUS_RESULTS && file.exists(rds_path_primary)) {
   cat("  LOAD_PREVIOUS_RESULTS = TRUE: Loading existing results from", rds_path_primary, "\n")
@@ -399,9 +400,9 @@ if (!is.null(inhom_bg) && RUN_FIT_NODEMATCH) {
   )
   
   # Save structural fit to disk and drop from memory (rehydrate for GOF and save_list)
-  structural_fit_cache <- file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")
+  structural_fit_cache <- file.path(cluster_output_dir, "structural_fit_cache.RDS")
   if (!is.null(fit_inhom_structural)) {
-    dir.create(file.path(PKG_ROOT, "cluster_output"), showWarnings = FALSE, recursive = TRUE)
+    dir.create(cluster_output_dir, showWarnings = FALSE, recursive = TRUE)
     fit_to_cache <- fit_inhom_structural
     fit_to_cache$intens_funcs <- NULL
     tryCatch(
@@ -732,7 +733,7 @@ GOF_results <- list(degree_obs = NULL, degree_sim = NULL, esp_obs = NULL, esp_si
                     wait_obs = NULL, wait_sim = NULL)
 
 # Rehydrate structural fit from cache if it was dropped for memory
-structural_fit_cache <- file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")
+structural_fit_cache <- file.path(cluster_output_dir, "structural_fit_cache.RDS")
 if (is.null(fit_inhom_structural) && file.exists(structural_fit_cache)) {
   fit_inhom_structural <- tryCatch(readRDS(structural_fit_cache), error = function(e) NULL)
   if (!is.null(fit_inhom_structural)) cat("  Rehydrated structural fit from cache for GOF/save\n")
@@ -901,8 +902,8 @@ cat("  Step 4 total:", round((proc.time() - t_step)[3], 1), "s\n\n")
 # =============================================================================
 cat("--- Step 5: Save full state ---\n")
 # Rehydrate structural fit from cache if needed (e.g. still null after Step 4)
-if (is.null(fit_inhom_structural) && file.exists(file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS"))) {
-  fit_inhom_structural <- tryCatch(readRDS(file.path(PKG_ROOT, "cluster_output", "structural_fit_cache.RDS")), error = function(e) NULL)
+if (is.null(fit_inhom_structural) && file.exists(file.path(cluster_output_dir, "structural_fit_cache.RDS"))) {
+  fit_inhom_structural <- tryCatch(readRDS(file.path(cluster_output_dir, "structural_fit_cache.RDS")), error = function(e) NULL)
 }
 
 # Strip intensity caches from fits so RDS stays small (low cost to re-run intensity if needed)
@@ -991,7 +992,7 @@ if (PAPER_OUTPUT) {
   # If not, try to load them from the results file.
   if (!exists("net_raw") || !exists("GOF_results_structural")) {
     # Use the path where we just saved it, or the default path
-    rds_file <- if (exists("rds_path_primary") && !is.null(rds_path_primary)) rds_path_primary else file.path(PKG_ROOT, "cluster_output", "results_openalex_full.RDS")
+    rds_file <- if (exists("rds_path_primary") && !is.null(rds_path_primary)) rds_path_primary else file.path(cluster_output_dir, "results_openalex_full.RDS")
     if (!file.exists(rds_file)) rds_file <- "results_openalex_full.RDS"
     
     if (file.exists(rds_file)) {

@@ -6,8 +6,7 @@ paper_dump
 *.RDS
 *.rds
 .lib_local/
-# Ignore job logs; keep cluster_output/ in repo via .gitkeep
-cluster_output/*
-!cluster_output/.gitkeep
+# Run products live outside the package (HAWKESNET_OUTPUT_DIR). Ignore if present.
+cluster_output/
 Rplots.pdf
 tests/testthat/Rplots.pdf

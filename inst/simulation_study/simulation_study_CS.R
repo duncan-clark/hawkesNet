@@ -27,8 +27,9 @@ library(hawkesNet)
 # Paths: run from package root (directory containing inst/).
 # Under SLURM, use submit dir so path stays valid if getwd() breaks later.
 PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) Sys.getenv("SLURM_SUBMIT_DIR") else getwd()
-CLUSTER_OUTPUT_DIR <- file.path(PKG_ROOT, "cluster_output")
-dir.create(CLUSTER_OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
+source(file.path(PKG_ROOT, "inst", "resolve_output_dir.R"))
+CLUSTER_OUTPUT_DIR <- hawkesnet_resolve_output_dir(PKG_ROOT)
+cat("CLUSTER_OUTPUT_DIR:", CLUSTER_OUTPUT_DIR, "\n")
 
 # ===================================================
 # Change Statistic Mark Generation
@@ -814,7 +815,7 @@ if(exists("sim_exp")){
   save_list$max_deg_exp <- max_deg_exp
 }
 # Ensure output dir exists (getwd() can become invalid on some clusters)
-out_dir <- file.path(PKG_ROOT, "cluster_output")
+out_dir <- CLUSTER_OUTPUT_DIR
 out_file <- file.path(out_dir, "results_CS_full.RDS")
 ok <- tryCatch({
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)

@@ -5,6 +5,8 @@
 
 **New users:** try the minimal examples first — see [**Try the examples first**](#new-users-try-the-examples-first) below.
 
+**Branch note:** `main` is the JASA Paper 1 package line (tag `v0.1.0-jasa`). The previous bipartite / `hawkesGrowthNet`-named tip is preserved on `pre-jasa-main`.
+
 **hawkesNet** is an R package that provides tools for simulating and analyzing networks that grow with **Hawkes process** arrival times.
 
 - Generate events under various Hawkesian network growth formulations
@@ -47,6 +49,16 @@ devtools::install_github("duncan-clark/hawkesNet")
 After `git pull`, you can run the BA and CS simulation studies from an **interactive RStudio session** (e.g. in the cloud) or via **SLURM** on a cluster.
 
 - **Interactive (RStudio):** From the package root, run `devtools::load_all()` then `source("inst/simulation_study/simulation_study_BA.R")` or `simulation_study_CS.R`.
-- **SLURM:** From the package root, run `sbatch inst/simulation_study/run_BA.slurm` or `sbatch inst/simulation_study/run_CS.slurm`.
+- **SLURM:** From the package root, `source inst/cluster_env.sh` then `sbatch inst/simulation_study/run_BA.slurm` or `run_CS.slurm`.
 
-Full details (paths, options, outputs) are in **[inst/simulation_study/README.md](inst/simulation_study/README.md)**.
+### Where outputs go (not inside the git repo)
+
+Set **`HAWKESNET_OUTPUT_DIR`** to a durable directory outside the package checkout.
+
+- **NeSI default:** `/nesi/project/uoo04008/Duncan/hawkes_net/cluster_output` (sibling of the clone; see `inst/cluster_env.sh`)
+- **Laptop sync:** project-level `cluster_output/` (resolved automatically if found by walking up from the package)
+- Helpers: `hawkesnet_output_dir()`, `hawkesnet_paper_figures_dir()`, and `inst/resolve_output_dir.R`
+
+Suggested layout under that directory: `runs/`, `logs/`, `paper_figures/`, `diagnostics/`.
+
+Full details (paths, options, outputs) are in **[inst/simulation_study/README.md](inst/simulation_study/README.md)** and **[inst/NESI_OUTPUT_CUTOVER.md](inst/NESI_OUTPUT_CUTOVER.md)**.

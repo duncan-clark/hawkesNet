@@ -35,8 +35,9 @@ PKG_ROOT <- if (nzchar(Sys.getenv("SLURM_SUBMIT_DIR"))) {
 }
 if (!file.exists(file.path(PKG_ROOT, "DESCRIPTION"))) PKG_ROOT <- getwd()
 
-OUTPUT_DIR <- file.path(PKG_ROOT, "cluster_output")
-dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
+source(file.path(PKG_ROOT, "inst", "resolve_output_dir.R"))
+OUTPUT_DIR <- hawkesnet_resolve_output_dir(PKG_ROOT)
+cat("OUTPUT_DIR:", OUTPUT_DIR, "\n")
 
 ON_SLURM <- nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("SLURM_CPUS_PER_TASK"))
 LOCAL_QUICK <- isTRUE(as.logical(Sys.getenv("LOCAL_QUICK", if (ON_SLURM) "FALSE" else "TRUE")))
