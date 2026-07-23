@@ -16,6 +16,9 @@ BugReports: https://github.com/duncan-clark/hawkesNet/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+Remotes:
+    github::fellstat/ernm,
+    github::duncan-clark/timeNet
 Config/testthat/edition: 3
 Depends: 
     R (>= 3.5.0),
@@ -40,4 +43,7 @@ Suggests:
     numDeriv,
     RhpcBLASctl,
     gender,
-    genderdata
+    genderdata,
+    bigrquery,
+    jsonlite,
+    timeNet

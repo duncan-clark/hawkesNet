@@ -6,7 +6,13 @@ paper_dump
 *.RDS
 *.rds
 .lib_local/
-# Run products live outside the package (HAWKESNET_OUTPUT_DIR). Ignore if present.
 cluster_output/
 Rplots.pdf
 tests/testthat/Rplots.pdf
+
+# Experimental study outputs (sync separately)
+amlsim_study_results_*/
+ethereum_study_results_*/
+*_study_results_*/
+.Rcheck/
+*.tar.gz

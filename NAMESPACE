@@ -2,6 +2,11 @@
 
 export(PMF_mark_BA)
 export(PMF_mark_CS)
+export(score_RHEM)
+export(loglik_RHEM)
+export(fit_RHEM)
+export(PMF_mark_RHEM)
+export(PMF_mark)
 export(compensator_temporal_hawkes)
 export(compensators_hawkesNet)
 export(cond_intensity)

@@ -1,3 +1,780 @@
+# Generated merge: JASA main mark PMFs + RHEM / timeNet experimental backend
+# See inst/RHEM_TIMENET.md
+
+#' Mark probability mass function for the network generation process
+#'
+#' Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi-Albert, Change Statistic Hawkes, and BA-bipartite). 
+#'
+#' @references
+#' Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
+#' @param time Numeric. The time at which to evaluate the PMF.
+#' @param params Named list. Model parameter values required for the chosen \code{type}:
+#'   - For \code{type = "BA"}: \code{beta_edges} (numeric).
+#'   - For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
+#'   - For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.
+#' @param mark_filtration Network or compatible object. The network history (filtration) up to the current time.
+#' @param type Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"BA-bip"}. Default: \code{"BA"}.
+#' @param mark Network or NULL. The current mark/network structure. If \code{NULL}, derived from \code{mark_filtration}.
+#' @param generate_mark Logical. If \code{TRUE}, generates a new mark/sample; otherwise computes density for the supplied mark. Default: \code{FALSE}.
+#' @param generate_density Logical. If \code{TRUE}, computes the density for the provided mark. Default: \code{TRUE}.
+#' @param grad Logical. If \code{TRUE}, also computes gradients of the mark density. Default: \code{FALSE}.
+#' @param new_edge_hash Hash or NULL. Optional hashed edge list for fast lookup. Default: \code{NULL}.
+#' @param truncation Integer or NULL. For \code{"CS"} models, controls which edges are considered (e.g., \code{1} means only new-to-old). Default: \code{NULL}.
+#' @param formula_RHS Character or formula. For \code{"CS"} models, specifies the right-hand-side for change statistics calculation. Default: \code{NULL}.
+#' @param mark_decay Character or NULL. How edge decay is modeled, e.g. \code{"node_entrance"}, \code{"activity"}, etc. Default: \code{NULL}.
+#' @param model Object or NULL. Preconstructed model object (for efficiency); if \code{NULL}, will be built internally. Default: \code{NULL}.
+#' @param max_node_time Numeric. The last time at which a node can enter the network (CS model). Default: \code{10}.
+#' @param ... Additional arguments, passed to model-specific PMF functions.
+#' @return Named list containing:
+#'   \item{mark_density}{Numeric. Density of the provided or generated mark.}
+#'   \item{log_mark_density}{Numeric. Log-density of the mark.}
+#'   \item{edge_probs}{Numeric vector. Probabilities for each possible edge.}
+#'   \item{mark_grad}{Numeric vector. Gradient of the mark density (if \code{grad = TRUE}).}
+#'   \item{decay_grad}{Numeric vector. Gradient with respect to decay (if \code{grad = TRUE}).}
+#'   \item{mark_sample}{Network. The sampled mark/network object.}
+#'   \item{mark_sample_density}{Numeric. Density of the sampled mark.}
+#'   \item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
+#'
+#' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
+#' Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
+#'
+#' For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
+#' \deqn{
+#'   q(m \mid t, \mathcal{H}_t) =
+#'   \prod_{i=1}^{N_{t-}} \left(p_i^{BA}\right)^{e_i} \cdot
+#'   \left(1 - p_i^{BA}\right)^{1 - e_i}.
+#' }
+#' Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
+#' \deqn{
+#'   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
+#' }
+#' where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}}, 
+#' and \eqn{d_{i}^{t}} is the sna::degree of node \eqn{i} just before time \eqn{t}.
+#' 
+#' For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
+#' \deqn{
+#'   q(m \mid t, \mathcal{H}_t) =
+#'   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
+#'   \left(1 - p_i^{CS}\right)^{1 - e_i}.
+#' }
+#' where the attachment probability, \eqn{p_i^{CS}}, is defined as
+#' \deqn{
+#' p_i^{CS} = \left(\nu + \exp(\tau \cdot(t - t_i))\right)\cdot\frac{1}{1 + \exp(-\theta^{\top} \cdot C_{i,N_t})}
+#' }
+#' @examples
+#' \dontrun{
+#' if(interactive()){
+#'  data(net, package = "hawkesNet")
+#' time <- get_times(net)$times
+#' ## BA
+#' params_ba <-  list( beta_edges = 0.1)
+#' mark_filtration <-  filtration_to_net(net,10)
+#' pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
+#' ## CS
+#' devtools::install_github("duncan-clark/ernm", ref = "R_change_stats")
+#' require(ernm)
+#' params_cs <-  list(beta_edges = 0.1,node_lambda = 1,CS_params =  c(-10,0,0,0))
+#' pmf_cs <- PMF_mark(time = time[10],  params = params_cs,
+#' mark_filtration = mark_filtration, type = "CS",  truncation = 1,
+#' formula_RHS = "edges + triangles + star(c(2,3))",
+#' max_node_time = 1)
+#'  }
+#' }
+#' @seealso
+#' \code{\link{cond_intensity}}
+#' \code{\link{PMF_mark_BA}}
+#' \code{\link{PMF_mark_CS}}
+#' \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
+#' \code{\link[ernm]{as.BinaryNet}}
+#' @rdname PMF_mark
+#' @export
+PMF_mark <- function(time,
+                     params,
+                     mark_filtration,
+                     type = c("BA", "CS", "RHEM"),
+                     mark = NULL,
+                     generate_mark = FALSE,
+                     generate_density = TRUE,
+                     grad = FALSE,
+                     new_edge_hash = NULL,
+                     truncation = NULL,
+                     formula_RHS = NULL,
+                     mark_decay = 'node_entrance',
+                     model = NULL,
+                     max_node_time = 10,
+                     ...){
+    type <- type[1]
+    if (!(type %in% c("BA", "CS", "BA-bip", "RHEM"))) {
+        stop("type can only be one of `BA` for Barabasi-Albert, `CS` for change statistic Hawkes, `BA-bip` for bipartite Barabasi-Albert, or `RHEM` for repeated edge-hit models.")
+    }
+    if(type == "BA"){
+        pmf <- PMF_mark_BA(time, params, mark_filtration, mark,
+                           generate_mark, generate_density, grad,
+                           new_edge_hash, truncation, ...)
+    }else{
+        if(type == "BA-bip"){
+            pmf <- PMF_mark_BA_bipartite(time, params,  mark_filtration,
+                                      mark, generate_mark, generate_density,
+                                      grad, new_edge_hash, truncation, ...)
+        }else{
+            if(type == "CS"){
+                pmf <- PMF_mark_CS(time, params, mark_filtration,
+                                   mark, generate_mark, generate_density,
+                                   grad,  new_edge_hash, truncation, formula_RHS,
+                                   mark_decay, model, max_node_time, ...)
+            }else{
+                if(type == "RHEM"){
+                    pmf <- PMF_mark_RHEM(time, params, mark_filtration,
+                                         mark, generate_mark, generate_density,
+                                         grad, formula_RHS = formula_RHS, ...)
+                }
+            }
+        }
+    }
+    return(pmf)
+}
+
+
+#' Repeated edge-hit mark probability mass function
+#'
+#' Computes a softmax mark PMF for recurrent directed edge hits. The filtration is
+#' a data frame with columns \code{t}, \code{i}, and \code{j}; an optional
+#' \code{weight} column contributes to decayed edge states. The mark distribution
+#' follows the change-statistic paradigm: each candidate dyad receives statistics
+#' computed from the left-continuous hit history and is scored by
+#' \code{RHEM_params}.
+#'
+#' @inheritParams PMF_mark
+#' @param actors Optional vector of actor IDs defining the directed risk set.
+#' @param hit_features Character vector of supported features. Defaults to
+#'   \code{names(params$RHEM_params)} when named, otherwise
+#'   \code{c("intercept", "repetition", "reciprocity")}.
+#' @param weight_col Name of the optional hit-weight column. Default:
+#'   \code{"weight"}.
+#' @return Named list with the same shape as \code{\link{PMF_mark}}.
+#' @rdname PMF_mark_RHEM
+#' @export
+PMF_mark_RHEM <- function(time,
+                          params,
+                          mark_filtration,
+                          mark = NULL,
+                          generate_mark = FALSE,
+                          generate_density = TRUE,
+                          grad = FALSE,
+                          formula_RHS = NULL,
+                          actors = NULL,
+                          hit_features = NULL,
+                          weight_col = "weight",
+                          hit_delta = 1,
+                          rhem_stats_cache = NULL,
+                          rhem_streaming_threshold = Inf,
+                          backend = c("auto", "simple", "ernm", "timeNet"),
+                          timeNet_state = NULL,
+                          ...){
+    hits <- .rhem_as_hits(mark_filtration)
+    mark_hits <- if (is.null(mark)) hits else .rhem_as_hits(mark)
+    current <- .rhem_current_mark(mark_hits, time)
+    history <- hits[hits$t < time, , drop = FALSE]
+
+    if (is.null(actors)) {
+        actors <- sort(unique(c(hits$i, hits$j, mark_hits$i, mark_hits$j)))
+    }
+    actors <- sort(unique(actors))
+    if (length(actors) < 2) {
+        stop("PMF_mark_RHEM requires at least two actors in `actors` or the hit history.")
+    }
+
+    backend <- .rhem_select_backend(backend, formula_RHS)
+    if (backend == "timeNet") {
+        pmf <- .rhem_timeNet_pmf(time = time,
+                                 params = params,
+                                 history = history,
+                                 current = current,
+                                 actors = actors,
+                                 formula_RHS = formula_RHS,
+                                 generate_mark = generate_mark,
+                                 generate_density = generate_density,
+                                 grad = grad,
+                                 weight_col = weight_col,
+                                 hit_delta = hit_delta,
+                                 rhem_streaming_threshold = rhem_streaming_threshold,
+                                 rhem_stats_cache = rhem_stats_cache,
+                                 timeNet_state = timeNet_state)
+        return(pmf)
+    }
+
+    edge_state <- .rhem_edge_state(history, time, actors, params$beta_edges %||% 0, weight_col)
+
+    risk <- .rhem_risk_set(actors)
+    if (!is.null(formula_RHS)) {
+        stats <- .rhem_ernm_change_stats(risk, edge_state, actors, formula_RHS,
+                                         hit_delta, rhem_stats_cache)
+        theta <- .rhem_theta(params, colnames(stats))
+    } else {
+        features <- .rhem_features(params, hit_features)
+        theta <- .rhem_theta(params, features)
+        stats <- .rhem_candidate_stats(risk, edge_state, features)
+    }
+    eta <- as.vector(stats %*% theta)
+    probs <- .rhem_softmax(eta)
+
+    out <- list(mark_density = 1,
+                log_mark_density = 0,
+                edge_probs = probs,
+                mark_grad = NULL,
+                decay_grad = 0)
+
+    if (generate_density && !is.null(current)) {
+        idx <- which(risk$i == current$i[1] & risk$j == current$j[1])
+        if (length(idx) != 1) {
+            stop("Observed repeated-hit mark is not in the RHEM risk set.")
+        }
+        log_density <- log(probs[idx])
+        out$mark_density <- exp(log_density)
+        out$log_mark_density <- log_density
+        if (grad) {
+            expected_stats <- colSums(stats * probs)
+            out$mark_grad <- stats[idx, ] - expected_stats
+        }
+    }
+
+    if (generate_mark) {
+        idx <- sample.int(nrow(risk), size = 1, prob = probs)
+        sample_hit <- data.frame(t = time,
+                                 i = risk$i[idx],
+                                 j = risk$j[idx])
+        sample_hit[[weight_col]] <- 1
+        mark_sample <- rbind(hits, sample_hit)
+        out$mark_sample <- mark_sample
+        out$mark_sample_density <- probs[idx]
+        out$log_mark_sample_density <- log(probs[idx])
+    } else {
+        out$mark_sample <- NULL
+        out$mark_sample_density <- NULL
+        out$log_mark_sample_density <- NULL
+    }
+
+    out
+}
+
+.rhem_as_hits <- function(x) {
+    if (is.null(x)) {
+        return(data.frame(t = numeric(0), i = integer(0), j = integer(0)))
+    }
+    if (!inherits(x, "data.frame")) {
+        stop("RHEM mark filtrations must be data frames with columns `t`, `i`, and `j`.")
+    }
+    if (!all(c("t", "i", "j") %in% names(x))) {
+        stop("RHEM mark filtrations must include columns `t`, `i`, and `j`.")
+    }
+    x <- x[order(x$t), , drop = FALSE]
+    rownames(x) <- NULL
+    x
+}
+
+.rhem_current_mark <- function(hits, time) {
+    current <- hits[hits$t == time, , drop = FALSE]
+    if (nrow(current) == 0) {
+        return(NULL)
+    }
+    if (nrow(current) > 1) {
+        stop("PMF_mark_RHEM expects at most one observed hit at each event time.")
+    }
+    current
+}
+
+.rhem_features <- function(params, hit_features) {
+    if (!is.null(hit_features)) {
+        return(hit_features)
+    }
+    if (!is.null(names(params$RHEM_params)) && all(nzchar(names(params$RHEM_params)))) {
+        return(names(params$RHEM_params))
+    }
+    c("intercept", "repetition", "reciprocity")
+}
+
+.rhem_theta <- function(params, features) {
+    theta <- params$RHEM_params
+    if (is.null(theta)) {
+        stop("params$RHEM_params is required for PMF_mark_RHEM.")
+    }
+    if (!is.null(names(theta)) && all(features %in% names(theta))) {
+        theta <- theta[features]
+    }
+    if (length(theta) != length(features)) {
+        stop("Length of params$RHEM_params must match the selected hit features.")
+    }
+    as.numeric(theta)
+}
+
+.rhem_risk_set <- function(actors) {
+    risk <- expand.grid(i = actors, j = actors,
+                        KEEP.OUT.ATTRS = FALSE,
+                        stringsAsFactors = FALSE)
+    risk <- risk[risk$i != risk$j, , drop = FALSE]
+    rownames(risk) <- NULL
+    risk
+}
+
+.rhem_edge_state <- function(history, time, actors, beta_edges, weight_col) {
+    state <- matrix(0, nrow = length(actors), ncol = length(actors),
+                    dimnames = list(as.character(actors), as.character(actors)))
+    if (nrow(history) == 0) {
+        return(state)
+    }
+    weights <- if (weight_col %in% names(history)) history[[weight_col]] else rep(1, nrow(history))
+    weights[is.na(weights)] <- 1
+    decays <- exp(-beta_edges * (time - history$t))
+    vals <- weights * decays
+    idx_i <- match(history$i, actors)
+    idx_j <- match(history$j, actors)
+    keep <- !is.na(idx_i) & !is.na(idx_j) & idx_i != idx_j
+    for (k in which(keep)) {
+        state[idx_i[k], idx_j[k]] <- state[idx_i[k], idx_j[k]] + vals[k]
+    }
+    state
+}
+
+.rhem_candidate_stats <- function(risk, edge_state, features) {
+    stats <- matrix(0, nrow = nrow(risk), ncol = length(features))
+    colnames(stats) <- features
+    for (feature in features) {
+        stats[, feature] <- switch(feature,
+            intercept = 1,
+            repetition = edge_state[cbind(as.character(risk$i), as.character(risk$j))],
+            reciprocity = edge_state[cbind(as.character(risk$j), as.character(risk$i))],
+            sender_activity = rowSums(edge_state)[as.character(risk$i)],
+            receiver_activity = colSums(edge_state)[as.character(risk$j)],
+            stop("Unsupported RHEM hit feature: ", feature)
+        )
+    }
+    stats
+}
+
+.rhem_softmax <- function(eta) {
+    eta <- eta - max(eta)
+    probs <- exp(eta)
+    probs / sum(probs)
+}
+
+.rhem_select_backend <- function(backend = c("auto", "simple", "ernm", "timeNet"), formula_RHS) {
+    backend <- match.arg(backend)
+    if (backend != "auto") {
+        return(backend)
+    }
+    if (is.null(formula_RHS)) {
+        return("simple")
+    }
+    if (.rhem_has_timeNet_terms(formula_RHS) || .rhem_has_legacy_valued_terms(formula_RHS)) {
+        return("timeNet")
+    }
+    "ernm"
+}
+
+.rhem_formula_rhs <- function(formula_RHS) {
+    if (inherits(formula_RHS, "formula")) {
+        return(as.character(formula_RHS)[length(formula_RHS)])
+    }
+    as.character(formula_RHS)
+}
+
+.rhem_formula_terms <- function(formula_RHS) {
+    rhs <- .rhem_formula_rhs(formula_RHS)
+    attr(stats::terms(stats::as.formula(paste("~", rhs))), "term.labels")
+}
+
+.rhem_has_timeNet_terms <- function(formula_RHS) {
+    if (is.null(formula_RHS)) {
+        return(FALSE)
+    }
+    supported <- c("decayedEdgeValue", "decayedRecipValue",
+                   "decayedSenderActivity", "decayedReceiverActivity",
+                   "decayedTransitiveValue", "decayedCycleValue",
+                   "decayedCommonSourceValue", "decayedCommonTargetValue",
+                   "edgeAge", "timeSinceLastEdge")
+    rhs <- .rhem_formula_rhs(formula_RHS)
+    any(vapply(supported, function(term) grepl(paste0("\\b", term, "\\b"), rhs), logical(1)))
+}
+
+.rhem_legacy_valued_map <- function() {
+    c(edgeValue = "decayedEdgeValue",
+      recipValue = "decayedRecipValue",
+      senderValueActivity = "decayedSenderActivity",
+      receiverValueActivity = "decayedReceiverActivity",
+      transitiveValue = "decayedTransitiveValue",
+      cycleValue = "decayedCycleValue",
+      commonSourceValue = "decayedCommonSourceValue",
+      commonTargetValue = "decayedCommonTargetValue")
+}
+
+.rhem_has_legacy_valued_terms <- function(formula_RHS) {
+    if (is.null(formula_RHS)) {
+        return(FALSE)
+    }
+    terms <- .rhem_formula_terms(formula_RHS)
+    length(terms) > 0 && all(terms %in% names(.rhem_legacy_valued_map()))
+}
+
+.rhem_timeNet_term_spec <- function(formula_RHS, params) {
+    if (!requireNamespace("timeNet", quietly = TRUE)) {
+        stop("The `timeNet` package is required for temporal RHEM change stats.")
+    }
+    if (.rhem_has_legacy_valued_terms(formula_RHS)) {
+        terms <- .rhem_formula_terms(formula_RHS)
+        mapped <- unname(.rhem_legacy_valued_map()[terms])
+        out <- data.frame(term = mapped,
+                          beta = rep(params$beta_edges %||% 0, length(terms)),
+                          weight_col = rep("weight", length(terms)),
+                          param_name = terms,
+                          stringsAsFactors = FALSE)
+        return(out)
+    }
+    out <- timeNet::parse_time_formula(formula_RHS)
+    out$param_name <- out$term
+    out
+}
+
+.rhem_timeNet_state <- function(history, actors, weight_col, timeNet_state = NULL) {
+    if (!requireNamespace("timeNet", quietly = TRUE)) {
+        stop("The `timeNet` package is required for temporal RHEM change stats.")
+    }
+    if (!is.null(timeNet_state)) {
+        return(timeNet_state)
+    }
+    net <- timeNet::temporal_directed_net(length(actors))
+    if (nrow(history) > 0) {
+        tails <- match(history$i, actors)
+        heads <- match(history$j, actors)
+        weights <- if (weight_col %in% names(history)) history[[weight_col]] else rep(1, nrow(history))
+        keep <- !is.na(tails) & !is.na(heads) & tails != heads
+        if (any(keep)) {
+            net$addEvents(history$t[keep], tails[keep], heads[keep], weights[keep])
+        }
+    }
+    net
+}
+
+.rhem_timeNet_cache_key <- function(time, history, actors, term_spec, hit_delta) {
+    if (nrow(history) == 0) {
+        history_fingerprint <- c(0, 0, 0, 0, 0)
+    } else {
+        history_fingerprint <- c(
+            nrow(history),
+            sum(history$t),
+            sum(history$t * history$t),
+            sum(as.numeric(history$i) * seq_len(nrow(history))),
+            sum(as.numeric(history$j) * seq_len(nrow(history)))
+        )
+    }
+    paste(c("timeNet",
+            "time", format(time, digits = 17),
+            "terms", paste(term_spec$term, collapse = ","),
+            "params", paste(term_spec$param_name %||% term_spec$term, collapse = ","),
+            "beta", paste(format(term_spec$beta, digits = 17), collapse = ","),
+            "hit_delta", format(hit_delta, digits = 17),
+            "actors", paste(actors, collapse = ","),
+            "history", paste(format(history_fingerprint, digits = 17, scientific = TRUE),
+                             collapse = ",")),
+          collapse = "\r")
+}
+
+.rhem_timeNet_change_stats <- function(temporal_net,
+                                       time,
+                                       risk,
+                                       actors,
+                                       term_spec,
+                                       hit_delta,
+                                       history,
+                                       stats_cache = NULL) {
+    cache_key <- NULL
+    if (!is.null(stats_cache)) {
+        if (!is.environment(stats_cache)) {
+            stop("`rhem_stats_cache` must be an environment when supplied.")
+        }
+        cache_key <- .rhem_timeNet_cache_key(time, history, actors, term_spec, hit_delta)
+        if (exists(cache_key, envir = stats_cache, inherits = FALSE)) {
+            return(get(cache_key, envir = stats_cache, inherits = FALSE))
+        }
+    }
+    stats <- timeNet::time_change_stats(
+        temporal_net,
+        time,
+        match(risk$i, actors),
+        match(risk$j, actors),
+        term_spec,
+        hit_delta
+    )
+    stats <- as.matrix(stats)
+    if (!is.null(stats_cache)) {
+        assign(cache_key, stats, envir = stats_cache)
+    }
+    stats
+}
+
+.rhem_timeNet_pmf <- function(time,
+                              params,
+                              history,
+                              current,
+                              actors,
+                              formula_RHS,
+                              generate_mark,
+                              generate_density,
+                              grad,
+                              weight_col,
+                              hit_delta,
+                              rhem_streaming_threshold,
+                              rhem_stats_cache = NULL,
+                              timeNet_state = NULL) {
+    term_spec <- .rhem_timeNet_term_spec(formula_RHS, params)
+    param_names <- term_spec$param_name %||% term_spec$term
+    theta <- .rhem_theta(params, param_names)
+    temporal_net <- .rhem_timeNet_state(history, actors, weight_col, timeNet_state)
+    risk_size <- length(actors) * (length(actors) - 1)
+
+    if (generate_density && !grad && !generate_mark && !is.null(current) &&
+        is.finite(rhem_streaming_threshold) && risk_size > rhem_streaming_threshold) {
+        tail_idx <- match(current$i[1], actors)
+        head_idx <- match(current$j[1], actors)
+        log_prob <- timeNet::time_log_prob(
+            temporal_net, time, tail_idx, head_idx, theta, term_spec, hit_delta
+        )
+        return(list(mark_density = exp(log_prob[["log_probability"]]),
+                    log_mark_density = log_prob[["log_probability"]],
+                    edge_probs = NULL,
+                    mark_grad = NULL,
+                    decay_grad = 0,
+                    mark_sample = NULL,
+                    mark_sample_density = NULL,
+                    log_mark_sample_density = NULL))
+    }
+
+    risk <- .rhem_risk_set(actors)
+    stats <- .rhem_timeNet_change_stats(temporal_net, time, risk, actors, term_spec,
+                                        hit_delta, history, rhem_stats_cache)
+    colnames(stats) <- param_names
+    eta <- as.vector(stats %*% theta)
+    probs <- .rhem_softmax(eta)
+
+    out <- list(mark_density = 1,
+                log_mark_density = 0,
+                edge_probs = probs,
+                mark_grad = NULL,
+                decay_grad = 0)
+    if (generate_density && !is.null(current)) {
+        idx <- which(risk$i == current$i[1] & risk$j == current$j[1])
+        if (length(idx) != 1) {
+            stop("Observed repeated-hit mark is not in the RHEM risk set.")
+        }
+        log_density <- log(probs[idx])
+        out$mark_density <- exp(log_density)
+        out$log_mark_density <- log_density
+        if (grad) {
+            expected_stats <- colSums(stats * probs)
+            out$mark_grad <- stats[idx, ] - expected_stats
+        }
+    }
+    if (generate_mark) {
+        idx <- sample.int(nrow(risk), size = 1, prob = probs)
+        sample_hit <- data.frame(t = time, i = risk$i[idx], j = risk$j[idx])
+        sample_hit[[weight_col]] <- 1
+        out$mark_sample <- rbind(history, sample_hit)
+        out$mark_sample_density <- probs[idx]
+        out$log_mark_sample_density <- log(probs[idx])
+    } else {
+        out$mark_sample <- NULL
+        out$mark_sample_density <- NULL
+        out$log_mark_sample_density <- NULL
+    }
+    out
+}
+
+.rhem_fast_valued_terms <- function(formula_RHS) {
+    supported <- c("edgeValue", "recipValue", "senderValueActivity",
+                   "receiverValueActivity", "transitiveValue", "cycleValue",
+                   "commonSourceValue", "commonTargetValue")
+    terms <- .rhem_formula_terms(formula_RHS)
+    if (length(terms) == 0 || !all(terms %in% supported)) {
+        return(NULL)
+    }
+    terms
+}
+
+.rhem_ernm_cache_key <- function(edge_state, actors, formula_RHS, hit_delta) {
+    edge_vec <- as.vector(edge_state)
+    weights <- seq_along(edge_vec)
+    paste(c("formula", as.character(formula_RHS),
+            "hit_delta", format(hit_delta, digits = 17),
+            "actors", as.character(actors),
+            "dim", dim(edge_state),
+            "nnz", sum(edge_vec != 0),
+            "sum", format(sum(edge_vec), digits = 17, scientific = TRUE),
+            "sumsq", format(sum(edge_vec * edge_vec), digits = 17, scientific = TRUE),
+            "weighted", format(sum(edge_vec * weights), digits = 17, scientific = TRUE),
+            "weighted_squares", format(sum(edge_vec * weights * weights), digits = 17, scientific = TRUE)),
+          collapse = "\r")
+}
+
+.rhem_ernm_change_stats <- function(risk, edge_state, actors, formula_RHS, hit_delta,
+                                    stats_cache = NULL) {
+    if (!requireNamespace("ernm", quietly = TRUE)) {
+        stop("The `ernm` package is required for formula-based RHEM change stats.")
+    }
+    cache_key <- NULL
+    if (!is.null(stats_cache)) {
+        if (!is.environment(stats_cache)) {
+            stop("`rhem_stats_cache` must be an environment when supplied.")
+        }
+        cache_key <- .rhem_ernm_cache_key(edge_state, actors, formula_RHS, hit_delta)
+        if (exists(cache_key, envir = stats_cache, inherits = FALSE)) {
+            return(get(cache_key, envir = stats_cache, inherits = FALSE))
+        }
+    }
+
+    state_net <- .rhem_state_network(edge_state, actors)
+    model <- ernm::createCppModel(stats::as.formula(paste("state_net ~", formula_RHS)))
+    tails <- match(risk$i, actors)
+    heads <- match(risk$j, actors)
+    stats <- model$computeChangeStats(tails, heads)
+    stats <- as.matrix(stats)
+    if (is.null(colnames(stats))) {
+        stat_names <- names(model$statistics())
+        colnames(stats) <- if (!is.null(stat_names) && length(stat_names) == ncol(stats)) {
+            stat_names
+        } else {
+            paste0("stat", seq_len(ncol(stats)))
+        }
+    }
+    if (!is.null(stats_cache)) {
+        assign(cache_key, stats, envir = stats_cache)
+    }
+    stats
+}
+
+.rhem_state_network <- function(edge_state, actors) {
+    n <- length(actors)
+    net <- network::network(matrix(0, nrow = n, ncol = n), directed = TRUE)
+    network::set.vertex.attribute(net, "vertex.names", as.character(actors))
+    nz <- which(edge_state > 0, arr.ind = TRUE)
+    if (nrow(nz) > 0) {
+        network::add.edges(net, tail = nz[, 1], head = nz[, 2])
+        network::set.edge.attribute(net, "value", edge_state[nz])
+    }
+    net
+}
+
+
+#' Internal function to prepare for mark PMFs
+#' @inheritParams PMF_mark
+#' @noRd
+mark_setup <- function(mark, mark_filtration, time){
+    if(is.null(mark)){
+        mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+    }
+    last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
+    new_net <- last_net
+    if(last_net %n% 'n' != 0){
+        new_nodes <- mark %n% 'n'
+        old_nodes <- last_net %n% 'n'
+        network::add.vertices(new_net, nv = new_nodes)
+        set.vertex.attribute(new_net, "time", c(get.vertex.attribute(last_net, "time"), rep(time, new_nodes)))
+    } else {
+        last_net <- NULL
+        new_net <- network(matrix(0, 1, 1), directed = FALSE)
+        set.vertex.attribute(new_net, "time", time)
+        old_nodes <- 0
+        new_nodes <- 1
+    }
+    ## get the possible edges for the given truncation
+    
+    # ====================
+    # THIS IS A BUG WHEN old_nodes = new_nodes!!!!!
+    # ====================
+    poss_tails <- seq.int((old_nodes + 1), new_nodes)
+    
+    poss_tails <- poss_tails[poss_tails>0]
+    poss_heads <- 1:old_nodes
+    poss_heads <- poss_heads[poss_heads>0]
+    poss_edges <- expand.grid(poss_tails,poss_heads)
+    poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
+    tails <- poss_edges[,1]
+    heads <- poss_edges[,2]
+    ## only consider edges that were not already in the old network
+    if(!is.null(last_net)){
+        in_old_net <- sapply(1:length(heads),function(i){
+            length(get.edgeIDs(last_net, heads[i],tails[i])) !=0
+        })
+        tails <- tails[!in_old_net]
+        heads <- heads[!in_old_net]
+    }
+    
+    return(list(mark = mark, new_net = new_net, last_net = last_net,
+                poss_tails = poss_tails, poss_heads = poss_heads,
+                poss_edges = poss_edges,
+                tails = tails, heads = heads, new_nodes = new_nodes,
+                old_nodes = old_nodes))
+}
+#' Internal function to prepare for bipartite mark PMFs
+#' @inheritParams PMF_mark
+#' @noRd
+mark_setup_bipartite <- function(mark = NULL, mark_filtration, time){
+    if(is.null(mark)){
+        mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+    }
+    last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
+    new_net <- last_net
+    if(is.null(last_net) || (last_net %n% "n") == 0){
+        last_net <- NULL
+        new_net <- network::network(matrix(0, 1, 1), directed = FALSE, bipartite = 0)
+        set.vertex.attribute(new_net, "time", time)
+        set.vertex.attribute(new_net, "role", "event")  
+        old_nodes <- 0
+        new_nodes <- 1
+    } else {
+        new_nodes <- mark %n% "n"
+        old_nodes <- last_net %n% "n"
+        network::add.vertices(new_net, nv = new_nodes - old_nodes)
+        set.vertex.attribute(new_net, "time",
+                             c(get.vertex.attribute(last_net, "time"),
+                               rep(time, new_nodes - old_nodes)))
+        roles <- get.vertex.attribute(last_net, "role")
+        if(is.null(roles)) roles <- rep("perp", old_nodes)
+        new_roles <- c(roles, rep("event", new_nodes - old_nodes))
+        set.vertex.attribute(new_net, "role", new_roles)
+    }
+    if(is.null(last_net)){
+        last_net <- network::network(matrix(0, 0, 0), directed = FALSE, bipartite = 0)
+        set.vertex.attribute(last_net, "time", numeric(0))
+        set.vertex.attribute(last_net, "role", character(0))
+    }
+    perp_nodes <- which(get.vertex.attribute(new_net, "role") == "perp")
+    event_nodes <- which(get.vertex.attribute(new_net, "role") == "event")
+    poss_tails <- seq.int(from = old_nodes + 1, to = new_nodes)
+    poss_tails <- poss_tails[poss_tails > 0]
+    poss_heads <- perp_nodes
+    poss_heads <- poss_heads[poss_heads > 0]
+    poss_edges <- expand.grid(poss_tails, poss_heads)
+    colnames(poss_edges) <- c("tail", "head")
+    tails <- poss_edges[, "tail"]
+    heads <- poss_edges[, "head"]
+    if(!is.null(last_net) && length(heads) > 0){
+        in_old_net <- sapply(1:length(heads), function(i){
+            length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
+        })
+        tails <- tails[!in_old_net]
+        heads <- heads[!in_old_net]
+    }
+    return(list(mark = mark,
+                new_net = new_net,
+                last_net = last_net,
+                poss_tails = poss_tails,
+                poss_heads = poss_heads,
+                poss_edges = poss_edges,
+                tails = tails,
+                heads = heads,
+                new_nodes = new_nodes,
+                old_nodes = old_nodes))
+}
+
 #' Mark PMF for Barabási–Albert-style (degree-weighted) attachment
 #'
 #' Probability mass function for the mark at each event: one new node and K edges from that node to existing nodes,

@@ -379,6 +379,14 @@ events_to_net <- function(events_list,
 filtration_to_net <- function(net,
                               t,
                               equals = FALSE){
+  if (inherits(net, "data.frame") && all(c("t", "i", "j") %in% names(net))) {
+    keep <- if (equals) net$t <= t else net$t < t
+    out <- net[keep, , drop = FALSE]
+    out <- out[order(out$t), , drop = FALSE]
+    rownames(out) <- NULL
+    return(out)
+  }
+
   # CRITICAL: network objects can be modified in-place by delete.edges/vertices.
   # We must work on a copy to avoid corrupting the original network, especially
   # when this is called inside parallel workers or loops.
@@ -412,6 +420,13 @@ filtration_to_net <- function(net,
 #' @rdname get_times
 #' @export
 get_times <- function(net, time_name = 'time'){
+  if (inherits(net, "data.frame") && all(c("t", "i", "j") %in% names(net))) {
+    times <- sort(unique(net$t))
+    return(list(node_times = numeric(0),
+                edge_times = times,
+                times = times))
+  }
+
   if (is.null(net)) return(list(node_times = numeric(0), edge_times = numeric(0), times = numeric(0)))
   node_times <- get.vertex.attribute(net,time_name)
   edge_times <- get.edge.attribute(net,time_name)

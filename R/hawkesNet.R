@@ -611,7 +611,10 @@ loglik_hawkesNet = function(params,
   t<-proc.time()
   use_inhom <- !is.null(mu_vec) && !is.null(integral_bg)
   # don't allow negative parameters in first 2 (homogeneous only)
-  if(!use_inhom && any(sapply(params[1:min(length(params),4)],function(x){x<0}))){
+  positive_params <- intersect(c("mu", "beta_overall", "K", "beta_edges",
+                                 "node_lambda", "lambda_new"), names(params))
+  if(!use_inhom && length(positive_params) > 0 &&
+     any(unlist(params[positive_params], use.names = FALSE) < 0)){
     return(list(loglik = -(10**(100)),
                 intens_funcs = NULL))
   }
@@ -656,7 +659,7 @@ loglik_hawkesNet = function(params,
                  "parallel_type", "cache_intensity")] <- NULL
     intens_func <- function(i){
       current_net <- filtration_to_net(mark_filtration, times[i], equals = TRUE)
-      model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs)) {
+      model <- if (!is.null(shared_model)) shared_model else if (!is.null(formula_rhs) && !inherits(current_net, "data.frame")) {
         createCppModel(as.formula(paste("current_net ~ ", formula_rhs)))
       } else NULL
       if (use_inhom) {
