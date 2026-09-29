@@ -580,9 +580,10 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
 
 #' Check whether point process parameters are in valid regions
 #'
-#' Returns \code{FALSE} if any of \code{mu}, \code{beta_overall}, \code{K},
-#' \code{beta_edges}, \code{node_lambda} are present but not strictly positive
-#' and finite, or if \code{vertex_categorical} probabilities are not valid
+#' Returns \code{FALSE} if \code{mu} or \code{beta_overall}
+#' are present but not strictly positive and finite; if \code{K}, \code{beta_edges},
+#' \code{node_lambda}, or \code{m} are present but not finite and nonnegative; or if
+#' \code{vertex_categorical} probabilities are not valid
 #' (non-negative, finite, and sum < 1 so the reference level gets a positive
 #' probability). Uses the n-1 parametrization: user supplies n-1 probabilities
 #' and the last level's probability is \code{1 - sum(p)}.
@@ -594,13 +595,17 @@ normalize_times_01 <- function(net, attr = "time", keep_na = TRUE, constant_valu
 point_process_params_valid <- function(params, eps = 1e-10) {
   if (is.null(params) || length(params) == 0) return(TRUE)
   eps <- max(eps, .Machine$double.eps)
-  scalar_ok <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x > eps
-  if (!is.null(params$mu) && !scalar_ok(params$mu)) return(FALSE)
-  if (!is.null(params$beta_overall) && !scalar_ok(params$beta_overall)) return(FALSE)
-  if (!is.null(params$K) && !scalar_ok(params$K)) return(FALSE)
-  if (!is.null(params$beta_edges) && !scalar_ok(params$beta_edges)) return(FALSE)
-  if (!is.null(params$node_lambda) && !scalar_ok(params$node_lambda)) return(FALSE)
-  if (!is.null(params$m) && !scalar_ok(params$m)) return(FALSE)
+  # Strictly positive rates/scales (used as intensities or denominators).
+  scalar_pos <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x > eps
+  # Non-negative scalars: K = 0 (no excitation) and beta_edges = 0 (no decay)
+  # are valid and required by no-excitation / permanent-memory RHEM fits.
+  scalar_nonneg <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0
+  if (!is.null(params$mu) && !scalar_pos(params$mu)) return(FALSE)
+  if (!is.null(params$beta_overall) && !scalar_pos(params$beta_overall)) return(FALSE)
+  if (!is.null(params$K) && !scalar_nonneg(params$K)) return(FALSE)
+  if (!is.null(params$beta_edges) && !scalar_nonneg(params$beta_edges)) return(FALSE)
+  if (!is.null(params$node_lambda) && !scalar_nonneg(params$node_lambda)) return(FALSE)
+  if (!is.null(params$m) && !scalar_nonneg(params$m)) return(FALSE)
   if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
     for (attr_name in names(params$vertex_categorical)) {
       p <- params$vertex_categorical[[attr_name]]
@@ -745,14 +750,16 @@ repair_vertex_categorical_params <- function(params, eps = 1e-6) {
 
 #' Validate point process parameters and stop if invalid
 #'
-#' Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
-#' \code{node_lambda} are strictly positive and finite when present, and that
+#' Checks that \code{mu} and \code{beta_overall} are strictly
+#' positive and finite when present; \code{K}, \code{beta_edges}, \code{node_lambda}, and \code{m}
+#' are finite and nonnegative; and that
 #' \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
 #' finite, and sum to strictly less than 1 (so the reference level gets positive
 #' probability).  If any check fails, \code{stop()} is called with a message.
 #'
 #' @param params List of parameters (e.g. passed to \code{sim_hawkesNet}).
-#' @param eps Scalar params must be \code{> eps} (default \code{1e-10}).
+#' @param eps Strictly positive rate/scale parameters must be \code{> eps}
+#'   (default \code{1e-10}); zero is allowed for \code{K}, \code{beta_edges}, \code{node_lambda}, and \code{m}.
 #' @return \code{invisible(params)} if valid.
 #' @examples
 #' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
@@ -762,7 +769,7 @@ validate_point_process_params <- function(params, eps = 1e-10) {
   if (is.null(params) || length(params) == 0) return(invisible(params))
   eps <- max(eps, .Machine$double.eps)
   msg <- character(0L)
-  scalar_check <- function(name, x) {
+  scalar_check <- function(name, x, allow_zero = FALSE) {
     if (is.null(x)) return(invisible(NULL))
     if (!is.numeric(x) || length(x) != 1L) {
       msg <<- c(msg, paste0(name, " must be a numeric scalar"))
@@ -772,18 +779,19 @@ validate_point_process_params <- function(params, eps = 1e-10) {
       msg <<- c(msg, paste0(name, " must be finite (got ", x, ")"))
       return(invisible(NULL))
     }
-    if (x <= eps) {
-      msg <<- c(msg, paste0(name, " must be > ", eps, " (got ", x, ")"))
+    if ((allow_zero && x < 0) || (!allow_zero && x <= eps)) {
+      requirement <- if (allow_zero) ">= 0" else paste0("> ", eps)
+      msg <<- c(msg, paste0(name, " must be ", requirement, " (got ", x, ")"))
       return(invisible(NULL))
     }
     invisible(NULL)
   }
   scalar_check("mu", params$mu)
   scalar_check("beta_overall", params$beta_overall)
-  scalar_check("K", params$K)
-  scalar_check("beta_edges", params$beta_edges)
-  scalar_check("node_lambda", params$node_lambda)
-  scalar_check("m", params$m)
+  scalar_check("K", params$K, allow_zero = TRUE)
+  scalar_check("beta_edges", params$beta_edges, allow_zero = TRUE)
+  scalar_check("node_lambda", params$node_lambda, allow_zero = TRUE)
+  scalar_check("m", params$m, allow_zero = TRUE)
   if (!is.null(params$vertex_categorical) && is.list(params$vertex_categorical)) {
     for (attr_name in names(params$vertex_categorical)) {
       p <- params$vertex_categorical[[attr_name]]

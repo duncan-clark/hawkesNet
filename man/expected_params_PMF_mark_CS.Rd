@@ -4,12 +4,15 @@
 \alias{expected_params_PMF_mark_CS}
 \title{Expected parameter structure for PMF_mark_CS}
 \usage{
-expected_params_PMF_mark_CS(mark_filtration, formula_RHS, ...)
+expected_params_PMF_mark_CS(mark_filtration, formula_RHS, cs_mode = NULL, ...)
 }
 \arguments{
 \item{mark_filtration}{Observed network (filtration).}
 
 \item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).}
+
+\item{cs_mode}{Optional explicit CS mode; nonlegacy modes additionally require
+\code{m}. \code{NULL} retains the compatibility parameter requirements.}
 
 \item{...}{Ignored.}
 }

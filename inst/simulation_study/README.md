@@ -2,6 +2,12 @@
 
 This directory contains the main simulation studies for the **Barabási–Albert (BA)** and **change-statistic (CS)** mark models, plus SLURM job scripts to run them on a cluster.
 
+The mark laws are being revised. Historical study results do not validate the
+new specification. Start with [the bounded source-loaded smoke runner and rerun
+requirements](COLLAPSED_POISSON_REDEVELOPMENT.md) before reusing the long scripts.
+In particular, the exact interacting CS model needs a small candidate set; the
+old 100-node configuration is not feasible with subset enumeration.
+
 ## After `git pull`
 
 1. **Install or load the package** from the package root (the directory that contains `R/`, `inst/`, `DESCRIPTION`):

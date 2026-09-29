@@ -12,6 +12,7 @@ cond_intensity(
   params,
   new_edge_hash = NULL,
   times = NULL,
+  timing = hawkes_timing(),
   ...
 )
 }
@@ -29,6 +30,8 @@ cond_intensity(
 \item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
 
 \item{times}{Optional precomputed event times; if \code{NULL}, taken from \code{mark_filtration}.}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}. Defaults to M0.}
 
 \item{...}{Arguments passed to \code{PMF_mark}.}
 }

@@ -13,6 +13,7 @@ cond_intensity_inhom(
   mu_at_t,
   new_edge_hash = NULL,
   times = NULL,
+  timing = hawkes_timing(),
   ...
 )
 }
@@ -32,6 +33,8 @@ cond_intensity_inhom(
 \item{new_edge_hash}{Optional hash of existing edges}
 
 \item{times}{Precomputed times from get_times; if NULL, taken from mark_filtration}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}.}
 
 \item{...}{Passed to PMF_mark (e.g. formula_RHS, truncation)}
 }

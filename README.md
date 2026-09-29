@@ -3,6 +3,8 @@
 [![R-CMD-check](https://github.com/duncan-clark/hawkesNet/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/duncan-clark/hawkesNet/actions/workflows/R-CMD-check.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+**Redevelopment examples (September 22, 2026):** BA-1, CS-1 and CS-2 now have explicit, matched simulation/likelihood implementations. See the [mark PMF construction guide](inst/examples/MARK_PMF_CONSTRUCTIONS.md) and [runnable example](inst/examples/example_mark_constructions.R). Select the CS mode explicitly for new studies; older CS recovery results used the separate `joint` mode.
+
 **New users:** try the minimal examples first — see [**Try the examples first**](#new-users-try-the-examples-first) below.
 
 **Branch note:** `main` is the JASA Paper 1 package line (tag `v0.1.0-jasa`). The previous bipartite / `hawkesGrowthNet`-named tip is preserved on `pre-jasa-main`.

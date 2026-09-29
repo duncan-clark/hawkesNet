@@ -99,106 +99,67 @@ test_that("cond_intensity returns list with result and func", {
   expect_true(out$result > 0)
 })
 
-test_that("CS fit with p_scale (formula names) does not error on parscale NA", {
-  # Regression: parscale with formula names (edges, triangles, star.2, star.3) but
-  # flat_par uses CS_params1,2,3,4 -> parscale[names(flat_par)] gave NA -> optim error.
-  params_true <- list(mu = 10, beta_overall = 2, K = 0.5, beta_edges = 1, node_lambda = 1,
-                      CS_params = c(-6.7, 2, 0.1, -0.1))
+# The former fixtures used the historical no-m CS law and skipped when its
+# simulator failed. They did not validate a normalized model. These fixtures
+# explicitly exercise CS-1 with one fixed candidate rule in simulation and fit;
+# an error now fails the regression rather than silently skipping it.
+make_cs1_fit_fixture <- function() {
+  params <- list(mu=10,beta_overall=2,K=.5,beta_edges=.5,m=1.4,
+                 node_lambda=.8,CS_params=c(0,.6,.1,-.03))
+  options <- list(cs_mode="independent",truncation=4L,
+    formula_RHS="edges + triangles + star(c(2,3))",
+    mark_decay="node_entrance",growth_only=FALSE)
   set.seed(42)
-  sim <- tryCatch(
-    sim_hawkesNet(params = params_true, time_window = c(0, 5),
-                  PMF_mark = PMF_mark_CS, cond_intensity = cond_intensity,
-                  hashed_edges = TRUE, verbose = FALSE, truncation = 500L,
-                  formula_RHS = "edges + triangles + star(c(2,3))",
-                  mark_decay = "node_entrance", growth_only = FALSE),
-    error = function(e) NULL
-  )
-  skip_if(is.null(sim), "Simulation produced full networks with these params")
-  skip_if(network::network.edgecount(sim$net) < 5, "Need at least 5 edges")
-  n_nodes <- network::network.size(sim$net)
-  params_init <- list(mu = 10, beta_overall = 1, K = 0.5, beta_edges = 1, node_lambda = 1,
-                     CS_params = c(-10, 0, 0, 0))
-  p_scale <- c(mu = 1, beta_overall = 0.1, beta_edges = 0.1, node_lambda = 0.1,
-               edges = 1, triangles = 0.1, star.2 = 0.1, star.3 = 0.1)
-  suppressMessages({
-    fit <- fit_hawkesNet(params_init = params_init,
-                         time_window = c(0, 5),
-                         mark_filtration = sim$net,
-                         PMF_mark = PMF_mark_CS,
-                         formula_RHS = "edges + triangles + star(c(2,3))",
-                         maxit = 100,
-                         trace = 0,
-                         truncation = n_nodes,
-                         mark_decay = "node_entrance",
-                         growth_only = FALSE,
-                         fixed_params = c("K"),
-                         parscale = p_scale,
-                         cores = 1,
-                         cache_intensity = TRUE,
-                         combine_intensity = TRUE,
-                         verbose = FALSE)
-  })
-  expect_type(fit, "list")
-  expect_true("fit" %in% names(fit))
+  sim <- do.call(sim_hawkesNet,c(list(params=params,time_window=c(0,5),
+    PMF_mark=PMF_mark_CS,cond_intensity=cond_intensity,verbose=FALSE),options))
+  list(params=params,options=options,sim=sim)
+}
+
+test_that("CS-1 fit with formula-name parscale maps free structural coefficients", {
+  # Regression: formula names (edges, triangles, star.2, star.3) must map to
+  # CS_params1,2,3,4 after fixed parameters are removed, without introducing NA.
+  fixture <- make_cs1_fit_fixture()
+  expect_gte(network::network.edgecount(fixture$sim$net),5)
+  initial <- fixture$params; initial$m <- .9; initial$CS_params[2:4] <- 0
+  p_scale <- c(mu=1,beta_overall=.1,beta_edges=.1,node_lambda=.1,m=1,
+               edges=1,triangles=.1,star.2=.1,star.3=.1)
+  common <- c(list(time_window=c(0,5),mark_filtration=fixture$sim$net,
+                  PMF_mark=PMF_mark_CS,verbose=FALSE),fixture$options)
+  initial_ll <- do.call(loglik_hawkesNet,c(list(params=initial),common))$loglik
+  fit <- suppressMessages(do.call(fit_hawkesNet,c(list(params_init=initial,
+    maxit=100,method="L-BFGS-B",get_hessian=FALSE,parscale=p_scale,
+    fixed_params=c("mu","K","beta_overall","beta_edges","node_lambda","CS_params1"),
+    cache_intensity=TRUE,combine_intensity=TRUE,cores=1),common)))
+  expect_type(fit,"list")
   expect_true(all(is.finite(fit$fit$par)))
+  expect_setequal(names(fit$fit$par),c("m","CS_params2","CS_params3","CS_params4"))
+  expect_gte(fit$fit$value,initial_ll-1e-8)
+  direct <- do.call(loglik_hawkesNet,c(list(params=fit$params),common))$loglik
+  expect_equal(fit$fit$value,direct,tolerance=1e-8)
 })
 
-test_that("CS model sim+fit at T=5 converges (truncation = network size)", {
-  # Same setup as simulation_study_CS consistency study - package should easily fit these.
-  params_true <- list(mu = 10, beta_overall = 2, K = 0.5, beta_edges = 1, node_lambda = 1,
-                      CS_params = c(-6.7, 2, 0.1, -0.1))
-  set.seed(42)
-  sim <- tryCatch(
-    sim_hawkesNet(
-      params = params_true,
-      time_window = c(0, 5),
-      PMF_mark = PMF_mark_CS,
-      cond_intensity = cond_intensity,
-      hashed_edges = TRUE,
-      verbose = FALSE,
-      truncation = 500L,
-      formula_RHS = "edges + triangles + star(c(2,3))",
-      mark_decay = "node_entrance",
-      growth_only = FALSE
-    ),
-    error = function(e) NULL
-  )
-  skip_if(is.null(sim), "Simulation produced full networks with these params")
-  skip_if(network::network.edgecount(sim$net) < 5, "Need at least 5 edges for CS fit test")
-  n_nodes <- network::network.size(sim$net)
-  # Init near true with small perturbation (as in consistency study)
-  set.seed(2)
-  params_init <- list(
-    mu = params_true$mu,
-    beta_overall = max(0.1, params_true$beta_overall * exp(rnorm(1, 0, 0.2))),
-    K = params_true$K,
-    beta_edges = max(0.1, params_true$beta_edges * exp(rnorm(1, 0, 0.2))),
-    node_lambda = max(0.1, params_true$node_lambda * exp(rnorm(1, 0, 0.2))),
-    CS_params = params_true$CS_params + rnorm(4, 0, 0.3)
-  )
-  params_init$CS_params[!is.finite(params_init$CS_params)] <- params_true$CS_params[!is.finite(params_init$CS_params)]
-  suppressMessages({
-    fit <- fit_hawkesNet(
-      params_init = params_init,
-      time_window = c(0, 5),
-      mark_filtration = sim$net,
-      PMF_mark = PMF_mark_CS,
-      formula_RHS = "edges + triangles + star(c(2,3))",
-      maxit = 1500,
-      trace = 0,
-      truncation = n_nodes,
-      mark_decay = "node_entrance",
-      growth_only = FALSE,
-      fixed_params = c("K"),
-      method = "Nelder-Mead",
-      cores = 1,
-      cache_intensity = TRUE,
-      combine_intensity = TRUE,
-      verbose = FALSE
-    )
-  })
-  expect_type(fit, "list")
-  expect_true("fit" %in% names(fit))
-  expect_true(all(is.finite(fit$fit$par)), info = "All fitted params should be finite")
-  expect_equal(fit$fit$convergence, 0, info = "CS fit at T=5 should converge (truncation = network size)")
+test_that("CS-1 simulation and cached fitting converge with a fixed candidate rule", {
+  fixture <- make_cs1_fit_fixture()
+  expect_gte(length(fixture$sim$events$t),20)
+  initial <- fixture$params
+  initial$mu <- 8; initial$m <- .9; initial$node_lambda <- 1.1
+  initial$CS_params[2] <- .1
+  # T=5 is an integration fixture, not a full-parameter consistency experiment.
+  # Fit a baseline rate plus count, birth and triangle effects; hold the decay,
+  # excitation and other structural coefficients at their specified values.
+  fixed <- c("K","beta_overall","beta_edges","CS_params1","CS_params3","CS_params4")
+  common <- c(list(time_window=c(0,5),mark_filtration=fixture$sim$net,
+                  PMF_mark=PMF_mark_CS,verbose=FALSE),fixture$options)
+  initial_ll <- do.call(loglik_hawkesNet,c(list(params=initial),common))$loglik
+  fit <- suppressMessages(do.call(fit_hawkesNet,c(list(params_init=initial,
+    maxit=300,method="L-BFGS-B",get_hessian=FALSE,fixed_params=fixed,
+    cores=1,cache_intensity=TRUE,combine_intensity=TRUE),common)))
+  expect_type(fit,"list")
+  expect_true(all(is.finite(fit$fit$par)))
+  expect_setequal(names(fit$fit$par),c("mu","m","node_lambda","CS_params2"))
+  expect_equal(fit$fit$convergence,0)
+  expect_gt(fit$fit$value,initial_ll)
+  direct <- do.call(loglik_hawkesNet,c(list(params=fit$params),common))$loglik
+  expect_equal(fit$fit$value,direct,tolerance=1e-8)
+  expect_equal(fit$params$CS_params[c(1,3,4)],initial$CS_params[c(1,3,4)])
 })

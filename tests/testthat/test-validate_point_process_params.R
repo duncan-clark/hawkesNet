@@ -30,25 +30,41 @@ test_that("validate_point_process_params errors when beta_overall <= 0", {
   )
 })
 
-test_that("validate_point_process_params errors when K <= 0", {
+test_that("validate_point_process_params allows K = 0 but rejects negative excitation", {
+  expect_invisible(validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0)))
   expect_error(
-    validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0)),
+    validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = -0.1)),
     "K must be"
   )
 })
 
-test_that("validate_point_process_params errors when beta_edges <= 0 when present", {
+test_that("validate_point_process_params allows zero edge decay but rejects negative decay", {
+  expect_invisible(validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0.5, beta_edges = 0)))
   expect_error(
-    validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0.5, beta_edges = 0)),
+    validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0.5, beta_edges = -0.1)),
     "beta_edges must be"
   )
 })
 
-test_that("validate_point_process_params errors when node_lambda <= 0 when present", {
+test_that("both validators accept zero attempts and reject negative attempts", {
+  params <- list(mu = 1, beta_overall = 1, K = 0, beta_edges = 0, m = 0)
+  expect_invisible(validate_point_process_params(params))
+  expect_true(point_process_params_valid(params))
+  params$m <- -0.1
+  expect_error(validate_point_process_params(params), "m must be")
+  expect_false(point_process_params_valid(params))
+})
+
+test_that("validators allow no node births but reject negative node rates", {
+  params <- list(mu = 0.1, beta_overall = 1, K = 0.5, node_lambda = 0)
+  expect_invisible(validate_point_process_params(params))
+  expect_true(point_process_params_valid(params))
+  params$node_lambda <- -0.1
   expect_error(
-    validate_point_process_params(list(mu = 0.1, beta_overall = 1, K = 0.5, node_lambda = 0)),
+    validate_point_process_params(params),
     "node_lambda must be"
   )
+  expect_false(point_process_params_valid(params))
 })
 
 test_that("validate_point_process_params errors when mu is NA or non-finite", {

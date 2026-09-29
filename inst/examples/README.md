@@ -16,3 +16,8 @@ source("inst/examples/example_CS.R")  # Change-statistic (ERGM-style) model
 | **example_CS.R** | CS (change statistics / ERGM-style) | One simulation + one fit (K fixed); prints true vs fitted parameters | ~2 min |
 
 For full simulation studies (many replicates, consistency, explosive regime, SLURM), see [inst/simulation_study/README.md](../simulation_study/README.md).
+
+For M0/M1/M2 timing comparisons, run
+`source("inst/examples/example_timing_feedback.R")`. The
+[timing feedback guide](TIMING_FEEDBACK.md) explains the degree and triangle
+amplitude models, exact likelihoods, fitting, residuals and current scope.

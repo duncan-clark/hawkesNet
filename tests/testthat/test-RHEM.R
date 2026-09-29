@@ -22,6 +22,8 @@ test_that("RHEM repeated-hit PMF favors repeated edges", {
     expect_equal(sum(pmf$edge_probs), 1)
     expect_gt(pmf$mark_density, 1 / 6)
     expect_named(pmf$mark_grad, names(params$RHEM_params))
+    expect_true(is.function(pmf$log_density_func))
+    expect_equal(pmf$log_density_func(params), pmf$log_mark_density, tolerance = 1e-10)
 
     pmf_dispatch <- PMF_mark(time = 0.2,
                              params = params,

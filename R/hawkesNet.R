@@ -78,7 +78,7 @@ merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
   pfit <- as.list(params_init)
   pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
   par_names <- names(par_vec)
-  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m")
+  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m", "feedback_gamma")
   for (nm in scalar_names) {
     if (nm %in% par_names) pfit[[nm]] <- as.numeric(par_vec[nm])
   }
@@ -90,6 +90,20 @@ merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
       if (k >= 1L && k <= length(pfit$CS_params))
         pfit$CS_params[k] <- as.numeric(par_vec[cs_idx[j]])
     }
+  }
+  # Nested RHEM mark coefficients (RHEM_params.repetition, ...)
+  rhem_idx <- grep("^RHEM_params\\.", par_names)
+  if (length(rhem_idx) > 0) {
+    if (is.null(pfit$RHEM_params)) {
+      pfit$RHEM_params <- stats::setNames(numeric(0), character(0))
+    }
+    for (j in rhem_idx) {
+      nm <- sub("^RHEM_params\\.", "", par_names[j])
+      pfit$RHEM_params[nm] <- as.numeric(par_vec[j])
+    }
+  } else if ("RHEM_params" %in% par_names && !is.null(pfit$RHEM_params)) {
+    # Flat single-name case (rare)
+    pfit$RHEM_params[] <- as.numeric(par_vec["RHEM_params"])
   }
   vc_idx <- grep("^vertex_categorical\\.", par_names)
   if (length(vc_idx) > 0 && !is.null(pfit$vertex_categorical)) {
@@ -117,6 +131,7 @@ merge_fit_params <- function(par_vec, params_init, fixed_params = NULL) {
 #' @param params List of parameters (\code{mu}, \code{beta_overall}, \code{K}, etc.).
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
 #' @param times Optional precomputed event times; if \code{NULL}, taken from \code{mark_filtration}.
+#' @param timing Ground model from \code{\link{hawkes_timing}}. Defaults to M0.
 #' @param ... Arguments passed to \code{PMF_mark}.
 #' @return List with \code{result} (intensity value), \code{func} (function to evaluate intensity at new params), and optional debug fields.
 #' @examples
@@ -138,7 +153,9 @@ cond_intensity <- function(new_net,
                            params,
                            new_edge_hash = NULL,
                            times = NULL,
+                           timing = hawkes_timing(),
                            ...) {
+  .network_timing_validate(timing)
   tmp <- PMF_mark(time = t,
                   params = params,
                   mark_filtration = mark_filtration,
@@ -146,6 +163,8 @@ cond_intensity <- function(new_net,
                   generate_mark = FALSE,
                   new_edge_hash = new_edge_hash,
                   ...)
+  if (timing$model != "M0")
+    return(.feedback_cond_intensity(tmp, t, params, mark_filtration, timing))
   if (is.null(times)) times <- get_times(mark_filtration)
   tt <- times$times
   tt <- tt[tt < t]
@@ -154,6 +173,10 @@ cond_intensity <- function(new_net,
   # Pull ONLY what we need out of tmp (do NOT keep tmp in the closure)
   log_mark_density0 <- tmp$log_mark_density
   log_density_func  <- tmp$log_density_func
+  if (!is.function(log_density_func)) {
+    stop("PMF_mark must return a callable `log_density_func` for intensity caching; ",
+         "got ", if (is.null(log_density_func)) "NULL" else typeof(log_density_func), ".")
+  }
   
   decays0 <- exp(-params$beta_overall * diffs)
   log_result0 <- log_mark_density0 + log(params$mu + params$K * sum(decays0))
@@ -162,7 +185,8 @@ cond_intensity <- function(new_net,
   # Create a minimal environment for the closure to save memory
   e_tiny <- new.env(parent = baseenv()) 
   e_tiny$diffs_local <- diffs
-  e_tiny$ldf_local   <- log_density_func
+  # Use assign(): `e$x <- NULL` removes the binding in R environments.
+  assign("ldf_local", log_density_func, envir = e_tiny)
   e_tiny$dpois       <- stats::dpois
   
   func_template <- function(params) {
@@ -176,6 +200,8 @@ cond_intensity <- function(new_net,
   out <- list(
     result = result0,
     func   = func,
+    log_result = log_result0,
+    mark_log_func = log_density_func,
     lambda = params$mu,
     kernel_sum = params$K * sum(decays0),
     decays = decays0,
@@ -185,10 +211,97 @@ cond_intensity <- function(new_net,
   out
 }
 
+# Rare complete marks must remain in log space. The exact ground recurrence
+# avoids revisiting every event's temporal history at each parameter evaluation.
+.m0_log_intensity_cache <- function(mark_funcs, times, mu_vec = NULL) {
+  force(mark_funcs); force(times); force(mu_vec)
+  function(params) {
+    n <- length(times)
+    history <- numeric(n)
+    if (n > 1L) for (i in 2L:n) {
+      history[i] <- (history[i - 1L] + 1) *
+        exp(-params$beta_overall * (times[i] - times[i - 1L]))
+    }
+    baseline <- if (is.null(mu_vec)) params$mu else mu_vec
+    ground <- baseline + params$K * history
+    if (any(!is.finite(ground)) || any(ground <= 0)) return(rep(-Inf, n))
+    vapply(mark_funcs, function(f) f(params), numeric(1)) + log(ground)
+  }
+}
+
+# Exact homogeneous ground simulation for normalized, ground-autonomous marks.
+# Generate the temporal path first, so mark draws cannot change future times.
+simulate_normalized_hawkes_homogeneous <- function(params, time_window, PMF_mark,
+                                                   seed_net = NULL, seed_times = NULL,
+                                                   stop_on_full_network = TRUE,
+                                                   verbose = FALSE, ...) {
+  started <- proc.time()[3L]
+  current_net <- if (is.null(seed_net)) network::network.initialize(0, directed = FALSE) else
+    network::network.copy(seed_net)
+  if (is.null(seed_times)) seed_times <- if (is.null(seed_net)) numeric(0) else get_times(seed_net)$times
+  if (!is.numeric(seed_times) || any(!is.finite(seed_times))) stop("seed_times must be finite numeric event times")
+  t <- max(c(time_window[1L], seed_times))
+  if (t > time_window[2L]) stop("seed history extends beyond the simulation window")
+  network_times <- get_times(current_net)$times
+  if (length(network_times) && any(network_times > t)) stop("seed_net contains events after the conditional start")
+  beta <- params$beta_overall
+  kernel_R <- sum(exp(-beta * (t - seed_times)))
+  event_times <- numeric(256L)
+  accept_probs <- numeric(256L)
+  n_events <- 0L
+  n_proposed <- 0L
+  while (t < time_window[2L]) {
+    bound <- params$mu + params$K * kernel_R
+    if (!is.finite(bound) || bound <= 0) stop("non-finite homogeneous Hawkes thinning bound")
+    proposed <- t + stats::rexp(1L, rate = bound)
+    if (proposed > time_window[2L]) break
+    if (proposed <= t) stop("Hawkes event spacing is below numerical precision")
+    kernel_R <- kernel_R * exp(-beta * (proposed - t))
+    acceptance <- (params$mu + params$K * kernel_R) / bound
+    n_proposed <- n_proposed + 1L
+    if (n_proposed > length(accept_probs)) length(accept_probs) <- 2L * length(accept_probs)
+    accept_probs[n_proposed] <- acceptance
+    t <- proposed
+    if (stats::runif(1L) <= acceptance) {
+      n_events <- n_events + 1L
+      if (n_events > length(event_times)) length(event_times) <- 2L * length(event_times)
+      event_times[n_events] <- t
+      # The new event contributes one immediately, without decay at its birth.
+      kernel_R <- kernel_R + 1
+    }
+  }
+  event_times <- event_times[seq_len(n_events)]
+  mark_density <- log_mark_density <- numeric(n_events)
+  for (i in seq_len(n_events)) {
+    sampled <- PMF_mark(time = event_times[i], params = params,
+                        mark_filtration = current_net, mark = NULL,
+                        generate_mark = TRUE, generate_density = FALSE,
+                        new_edge_hash = NULL, stop_on_full_network = stop_on_full_network, ...)
+    current_net <- sampled$mark_sample
+    if (is.null(current_net)) stop("mark sampler did not return mark_sample")
+    log_q <- sampled$log_mark_sample_density
+    q <- sampled$mark_sample_density
+    if (is.null(log_q) && !is.null(q)) log_q <- log(q)
+    if (length(log_q) != 1L || !is.finite(log_q) || log_q > 1e-8)
+      stop("mark sampler returned an invalid generated log probability")
+    log_mark_density[i] <- log_q
+    mark_density[i] <- exp(log_q)
+  }
+  if (verbose) {
+    message("Simulated ", n_events, " events with exact homogeneous adaptive thinning in ",
+            round(proc.time()[3L] - started, 2), " seconds")
+  }
+  list(events = list(n = n_events, t = event_times, mark_density = mark_density,
+                     log_mark_density = log_mark_density),
+       net = current_net, accept_probs = accept_probs[seq_len(n_proposed)])
+}
+
 #' Simulate a Hawkes-driven network growth process
 #'
-#' Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
-#' Supports both homogeneous (constant mu) and inhomogeneous (time-varying mu) background rates.
+#' Uses exact adaptive thinning for a homogeneous Hawkes ground process, then
+#' samples complete normalized network-update marks at the accepted times.
+#' The legacy inhomogeneous path uses a grid-based background envelope and stops
+#' if a bound violation is detected; that grid alone does not certify domination.
 #'
 #' @param params List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).
 #'   For inhomogeneous background, \code{mu} is ignored and \code{mu_at_t} is used instead.
@@ -198,16 +311,24 @@ cond_intensity <- function(new_net,
 #'   If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automatically.
 #' @param hashed_edges If \code{TRUE}, use a hash for edge lookup (default \code{FALSE}).
 #' @param verbose Print progress (default \code{FALSE}).
-#' @param mu_multiplier Multiplier for thinning upper bound (default 10).
-#' @param joint_accept Logical (default \code{FALSE}); joint acceptance for mark and time.
-#' @param n_mark_sample Optional number of mark samples per proposal.
+#' @param mu_multiplier Legacy inhomogeneous envelope multiplier (default 10).
+#'   Homogeneous adaptive thinning does not use this parameter.
+#' @param joint_accept Must be \code{FALSE}: normalized marks are sampled after
+#'   ground-event acceptance, without applying their probability a second time.
+#' @param n_mark_sample Must be \code{NULL}; mark importance sampling is not used
+#'   for the normalized ground-autonomous model.
 #' @param stop_on_full_network If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.
 #' @param inhom_bg Optional inhomogeneous background object from \code{prepare_inhomogeneous_background}.
 #'   If provided, uses \code{cond_intensity_inhom} with time-varying background rate.
 #' @param seed_net Optional initial network state to start simulation from.
 #' @param seed_times Optional numeric vector of event times corresponding to \code{seed_net}.
-#'   Used to initialize the Hawkes kernel state for conditional simulation.
+#'   Used to initialize the Hawkes kernel state for conditional simulation; if
+#'   omitted, derived from \code{seed_net}. Conditional simulation starts after
+#'   the later of the window start and last seed event.
 #' @param ... Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).
+#' @param timing Ground model from \code{\link{hawkes_timing}}. M1/M2 draw each
+#'   complete update before simulating subsequent times. For inhomogeneous M1/M2
+#'   simulation, supply a global background bound in \code{inhom_bg$mu_fit$mu_bound}.
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
 #' @examples
 #' \donttest{
@@ -234,15 +355,40 @@ sim_hawkesNet <- function(params,
                                 inhom_bg = NULL, # optional inhomogeneous background object
                                 seed_net = NULL,
                                 seed_times = NULL,
+                                timing = hawkes_timing(),
                                 ... # to be past to PMF_mark
 
 
 ){
   t1 <- proc.time()
   validate_point_process_params(params)
+  if (length(time_window) != 2L || any(!is.finite(time_window)) || time_window[2L] < time_window[1L])
+    stop("time_window must be two ordered finite times")
+  if (isTRUE(joint_accept) || !is.null(n_mark_sample))
+    stop("normalized mark simulation requires joint_accept = FALSE and n_mark_sample = NULL")
+  .network_timing_validate(timing)
+  if (timing$model != "M0") {
+    seed_cache <- .prepare_network_timing(seed_net, timing)
+    .network_timing_bound(params, timing)
+    if (!is.null(seed_times) && (!is.numeric(seed_times) || any(!is.finite(seed_times)) ||
+        !isTRUE(all.equal(sort(unique(seed_times)), seed_cache$times, check.attributes = FALSE))))
+      stop("M1/M2 seed_times must match the complete updates recorded in seed_net")
+    gamma <- if (is.null(params$feedback_gamma)) 0 else params$feedback_gamma
+    if (gamma != 0 || !is.null(inhom_bg))
+      return(.simulate_network_timing(params, time_window, PMF_mark, timing,
+        seed_net = seed_net, seed_times = seed_times, inhom_bg = inhom_bg,
+        stop_on_full_network = stop_on_full_network, verbose = verbose, ...))
+  }
   
   # Determine if using inhomogeneous background
   use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
+  if (!use_inhom) {
+    out <- simulate_normalized_hawkes_homogeneous(params, time_window, PMF_mark,
+      seed_net = seed_net, seed_times = seed_times,
+      stop_on_full_network = stop_on_full_network, verbose = verbose, ...)
+    out$timing <- timing
+    return(out)
+  }
   
   if (use_inhom) {
     # Inhomogeneous: get mu_fun and compute max mu for thinning bound
@@ -338,128 +484,19 @@ sim_hawkesNet <- function(params,
     curr_idx <- n_proposed + 1L
     event_queue <- event_queue[-1, ,drop = FALSE]  # Remove the processed event
 
-    if(is.null(current_net %v% 'n')){
-      mark_sample <- PMF_mark(time = current_event$time,
-                              params = params,
-                              mark_filtration = current_net,
-                              mark = NULL,
-                              generate_mark = TRUE,
-                              new_edge_hash = NULL,
-                              stop_on_full_network = stop_on_full_network,
-                              ...)
-      net <- mark_sample$mark_sample
-      accept <- 1
-    }
-    else{
-      # get the mark samples
-      mark_sample <- PMF_mark(time = current_event$time,
-                              params = params,
-                              mark_filtration = current_net,
-                              mark = NULL,
-                              generate_mark = TRUE,
-                              generate_density = FALSE,
-                              new_edge_hash = NULL,
-                              stop_on_full_network = stop_on_full_network,
-                              ...)
-      net <- mark_sample$mark_sample
-      if(hashed_edges && network::network.edgecount(net)!=0){
-        # hash the network edge list for fast lookup:
-        edges <- as.edgelist(net)
-        keys_vec <- paste(edges[,1], edges[,2], sep = "-")
-        edge_hash <- hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
-      }else{
-        edge_hash <- NULL
-      }
-      
-      if(joint_accept){
-        # Joint acceptance: need full conditional intensity (mark density * ground intensity)
-        # Get mu_at_t for inhomogeneous case
-        mu_at_t <- if (use_inhom) {
-          mu_proposed[curr_idx]
-        } else { NULL }
-        if (use_inhom) {
-          intensity <- cond_intensity_inhom(new_net = net,
-                                           t = current_event$time,
-                                           mark_filtration = current_net,
-                                           PMF_mark = PMF_mark,
-                                           params = params,
-                                           mu_at_t = mu_at_t,
-                                           new_edge_hash = edge_hash,
-                                           ...
-          )$result
-        } else {
-          intensity <- cond_intensity(new_net = net,
-                                     t = current_event$time,
-                                     mark_filtration = current_net,
-                                     PMF_mark = PMF_mark,
-                                     params = params,
-                                     new_edge_hash = edge_hash,
-                                     ...
-          )$result
-        }
-      }else{
-        if(!is.null(n_mark_sample)){
-          # Importance sampling path: need full cond_intensity
-          mu_at_t <- if (use_inhom) {
-            mu_proposed[curr_idx]
-          } else { NULL }
-          imp_sample <- sapply(1:n_mark_sample,function(i){
-            mark_sample <- PMF_mark(time = current_event$time,
-                                    params = params,
-                                    mark_filtration = current_net,
-                                    mark = NULL,
-                                    generate_mark = TRUE,
-                                    new_edge_hash = TRUE,
-                                    stop_on_full_network = stop_on_full_network,
-                                    ...
-            )
-            net <- mark_sample$mark_sample
-          if(hashed_edges){
-            edges <- as.edgelist(net)
-            keys_vec <- paste(edges[,1], edges[,2], sep = "-")
-            edge_hash <- hash(keys = keys_vec, values = rep(TRUE, length(keys_vec)))
-          }else{
-            edge_hash <- NULL
-          }
-            if (use_inhom) {
-              intensity <- cond_intensity_inhom(new_net = net,
-                                               t = current_event$time,
-                                               mark_filtration = current_net,
-                                               PMF_mark = PMF_mark,
-                                               params = params,
-                                               mu_at_t = mu_at_t,
-                                               new_edge_hash = edge_hash,
-                                               ...
-              )
-            } else {
-              intensity <- cond_intensity(new_net = net,
-                                         t = current_event$time,
-                                         mark_filtration = current_net,
-                                         PMF_mark = PMF_mark,
-                                         params = params,
-                                         new_edge_hash = edge_hash,
-                                         ...
-              )
-            }
-            return(intensity$result/mark_sample$mark_sample_density)
-          })
-          intensity <- mean(imp_sample)
-        }else{
-          # === FAST PATH: ground intensity only (no PMF_mark_CS recomputation) ===
-          # For non-joint thinning, acceptance uses ground intensity = mu + K * kernel_sum.
-          # The mark is already sampled above; no need to call cond_intensity (which would
-          # redundantly call PMF_mark again just to compute mark density we don't use).
-          # Use O(1) kernel recurrence instead of O(N) sum.
-          dt <- current_event$time - t_last_accepted
-          kernel_sum_at_t <- kernel_R * exp(-beta_overall * dt)
-          mu_ground <- if (use_inhom) mu_proposed[curr_idx] else params$mu
-          intensity <- mu_ground + params$K * kernel_sum_at_t
-        }
-        # Use the same proposed mark for acceptance and for updating (do not resample)
-      }
-
-      accept <- intensity/lambda
-    }
+    # This retained path is only for the legacy inhomogeneous envelope.
+    dt <- current_event$time - t_last_accepted
+    kernel_sum_at_t <- kernel_R * exp(-beta_overall * dt)
+    intensity <- mu_proposed[curr_idx] + params$K * kernel_sum_at_t
+    accept <- intensity / lambda
+    if (!is.finite(accept) || accept < 0 || accept > 1 + 1e-10)
+      stop("inhomogeneous thinning envelope violated; increase mu_multiplier or supply a certified bound")
+    mark_sample <- PMF_mark(time = current_event$time, params = params,
+                            mark_filtration = current_net, mark = NULL,
+                            generate_mark = TRUE, generate_density = FALSE,
+                            new_edge_hash = NULL,
+                            stop_on_full_network = stop_on_full_network, ...)
+    net <- mark_sample$mark_sample
     n_proposed <- n_proposed + 1L
     accept_probs_buf[n_proposed] <- accept
 
@@ -506,12 +543,10 @@ sim_hawkesNet <- function(params,
       event_times_buf[n_accepted] <- current_event$time
       # --- Update O(1) kernel recurrence ---
       dt_acc <- current_event$time - t_last_accepted
-      kernel_R <- (kernel_R + 1) * exp(-beta_overall * dt_acc)
+      kernel_R <- kernel_R * exp(-beta_overall * dt_acc) + 1
       t_last_accepted <- current_event$time
-      if(n_accepted > 2L){
-        n_mark_dens <- n_mark_dens + 1L
-        mark_density_buf[n_mark_dens] <- mark_sample$mark_density
-      }
+      n_mark_dens <- n_mark_dens + 1L
+      mark_density_buf[n_mark_dens] <- mark_sample$mark_sample_density
     }
     if(verbose == 1 && (n_proposed %% 10 == 0)){
       cat(sprintf("[Sim] t=%.4f, iter_time=%.2fs\n", 
@@ -580,6 +615,8 @@ sim_hawkesNet <- function(params,
 #' @param edge_hash_list Optional list of edge hashes per event (for internal use).
 #' @param verbose Print timing (default \code{FALSE}).
 #' @param intens_funcs Precomputed intensity functions (for fitting).
+#' @param timing Ground model from \code{\link{hawkes_timing}}. M1/M2 use an exact
+#'   interval compensator and cache structural features for parameter fitting.
 #' @param ... Passed to \code{\link{cond_intensity}} or \code{\link{cond_intensity_inhom}}
 #'   and to \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}, \code{cores},
 #'   \code{combine_intensity}, \code{parallel_type}).
@@ -606,8 +643,15 @@ loglik_hawkesNet = function(params,
                                   edge_hash_list = NULL,
                                   verbose = FALSE,
                                   intens_funcs = NULL,
+                                  timing = hawkes_timing(),
                                   ...
 ){
+  .network_timing_validate(timing)
+  if (timing$model != "M0")
+    return(.loglik_network_timing(params, time_window, mark_filtration, PMF_mark,
+      timing, mu_vec, integral_bg, intens_funcs, edge_hash_list, ...))
+  if (!is.null(attr(intens_funcs, "timing")))
+    stop("a feedback intensity cache cannot be used with timing model M0")
   t<-proc.time()
   use_inhom <- !is.null(mu_vec) && !is.null(integral_bg)
   # don't allow negative parameters in first 2 (homogeneous only)
@@ -621,13 +665,18 @@ loglik_hawkesNet = function(params,
   times <- get_times(mark_filtration)
   times <- times$times
 
+  if (length(time_window) != 2L || any(!is.finite(time_window)) ||
+      time_window[2L] < time_window[1L]) stop("time_window must contain finite ordered endpoints")
   tval <- time_window[2]-time_window[1]
-  max_t <- max(times)
-  if(tval < max(times) - min(times)){
+  if (any(times < time_window[1L] | times > time_window[2L])) {
     stop("realization has points outside time window")
   }
   if(use_inhom && length(mu_vec) != length(times)){
     stop("mu_vec must have same length as event times")
+  }
+  if (!length(times)) {
+    integral <- if (use_inhom) integral_bg else params$mu * tval
+    return(list(loglik = -integral, intens_funcs = list()))
   }
   
   if(is.null(intens_funcs)){
@@ -639,9 +688,12 @@ loglik_hawkesNet = function(params,
     parallel_type <- if (!is.null(dot_args$parallel_type)) dot_args$parallel_type else "auto"
     use_parallel <- !is.null(cores) && is.numeric(cores) && cores > 1
     combine_intensity <- isTRUE(dot_args$combine_intensity)
-    # Reuse one ERNM model when running sequentially (avoids createCppModel per event)
+    # Reuse one ERNM model when running sequentially (avoids createCppModel per event).
+    # Skip for RHEM data.frame filtrations / timeNet formulas (not ERNM networks).
     shared_model <- NULL
-    if (!use_parallel && !is.null(formula_rhs)) {
+    mark_is_hits <- inherits(mark_filtration, "data.frame")
+    rhem_type <- identical(dot_args$type, "RHEM")
+    if (!use_parallel && !is.null(formula_rhs) && !mark_is_hits && !rhem_type) {
       # Use the full mark_filtration to initialize the model if it has vertex attributes
       g0 <- filtration_to_net(mark_filtration, times[1], equals = TRUE)
       if ("na" %in% list.vertex.attributes(g0)) delete.vertex.attribute(g0, "na")
@@ -671,7 +723,8 @@ loglik_hawkesNet = function(params,
                return_combined_inputs = combine_intensity),
           extra_args)
         intensity <- do.call(cond_intensity_inhom, call_args)
-        out <- list(result = intensity$result, func = intensity$func)
+        out <- list(result = intensity$result, func = intensity$func,
+                    mark_log_func = intensity$mark_log_func)
         if (combine_intensity) {
           out$combined_inputs <- intensity$combined_inputs
           out$diffs_kernel <- intensity$diffs
@@ -684,7 +737,8 @@ loglik_hawkesNet = function(params,
                return_combined_inputs = combine_intensity),
           extra_args)
         intensity <- do.call(cond_intensity, call_args)
-        out <- list(result = intensity$result, func = intensity$func)
+        out <- list(result = intensity$result, func = intensity$func,
+                    mark_log_func = intensity$mark_log_func)
         if (combine_intensity) {
           out$combined_inputs <- intensity$combined_inputs
           out$diffs_kernel <- intensity$diffs
@@ -731,6 +785,9 @@ loglik_hawkesNet = function(params,
     }
     intens_vec <- vapply(intens_list, function(x) x$result, numeric(1))
     intens_funcs <- lapply(intens_list, function(x) x$func)
+    mark_funcs <- lapply(intens_list, function(x) x$mark_log_func)
+    log_evaluator <- .m0_log_intensity_cache(mark_funcs, times,
+                                           if (use_inhom) mu_vec else NULL)
     # Combine per-event closures into one vectorized closure (CS path)
     if (combine_intensity) {
       ci <- lapply(intens_list, function(x) x$combined_inputs)
@@ -760,12 +817,16 @@ loglik_hawkesNet = function(params,
       # Even without combine, free intens_list (per-event closures stay in intens_funcs)
       rm(intens_list)
     }
+    if (!is.function(attr(intens_funcs, "log_intensities")))
+      attr(intens_funcs, "log_intensities") <- log_evaluator
     # Reclaim memory so subsequent parallel calls don't fork a bloated process
     gc()
   }else{
     # Evaluate pre-cached closures
     t1 <- proc.time()
-    if (length(intens_funcs) == 1L) {
+    if (is.function(attr(intens_funcs, "log_intensities"))) {
+      intens_vec <- NULL
+    } else if (length(intens_funcs) == 1L) {
       v <- intens_funcs[[1]](params)
       intens_vec <- if (length(v) > 1L) v else v[1]
     } else {
@@ -777,20 +838,20 @@ loglik_hawkesNet = function(params,
     }
   }
 
-  tmp <- intens_vec
-  if(any(is.na(tmp))){
-    tmp[is.na(tmp)] <- min(tmp[!is.na(tmp)])/2
+  log_evaluator <- attr(intens_funcs, "log_intensities")
+  log_values <- if (is.function(log_evaluator)) log_evaluator(params) else {
+    # Old external caches may expose probabilities only. Never replace zero
+    # or invalid probability by an invented positive likelihood contribution.
+    if (any(!is.finite(intens_vec)) || any(intens_vec <= 0))
+      return(list(loglik = -Inf, intens_funcs = intens_funcs))
+    log(intens_vec)
   }
-  
-  if(sum(tmp<=0)!=0){
-    warning("some of the intens lists have zero")
-    tmp[tmp<=0] <- min(tmp[tmp>0])/2
-  }
-  intens_sum <- sum(log(tmp))
+  if (length(log_values) != length(times) || any(!is.finite(log_values)))
+    return(list(loglik = -Inf, intens_funcs = intens_funcs))
+  intens_sum <- sum(log_values)
 
   # Integral (compensator):
-  max_t <- max(times)
-  pieces <- 1 - exp(-params$beta_overall * (tval - times))
+  pieces <- -expm1(-params$beta_overall * (time_window[2L] - times))
   # Guard against division by zero or very small beta_overall
   if (!is.finite(params$beta_overall) || params$beta_overall <= 0 || params$beta_overall < 1e-10) {
     return(list(loglik = -1e10, intens_funcs = intens_funcs))
@@ -850,6 +911,12 @@ loglik_hawkesNet = function(params,
 #' @param integral_bg Optional scalar: integral of the background rate over
 #'   the observation window.  Required when \code{mu_vec} is supplied.
 #' @param ... Passed to \code{\link{loglik_hawkesNet}} and \code{PMF_mark}
+#' @param timing Ground model from \code{\link{hawkes_timing}}. For M1/M2 include
+#'   \code{feedback_gamma} in \code{params_init} to estimate the feedback effect.
+#' @param inhom_bg Background object for optional \code{run_sim} after an
+#'   inhomogeneous fit. Must supply \code{mu_fit$mu_fun}, and a certified
+#'   \code{mu_bound} for M1/M2. Event-wise \code{mu_vec} alone cannot define a
+#'   background at new simulated times.
 #'   (e.g. \code{truncation}, \code{formula_RHS}, \code{cores}).
 #' @return List with:
 #'   \describe{
@@ -893,8 +960,21 @@ fit_hawkesNet <- function(params_init,
                                 mu_vec = NULL,
                                 integral_bg = NULL,
                                 run_sim = FALSE,
+                                get_hessian = TRUE,
+                                timing = hawkes_timing(),
+                                inhom_bg = NULL,
                                 ...){
+  .network_timing_validate(timing)
+  if (timing$model != "M0") {
+    .prepare_network_timing(mark_filtration, timing)
+    .network_timing_bound(params_init, timing)
+  }
+  if (timing$model == "M0" && !is.null(params_init$feedback_gamma) &&
+      !("feedback_gamma" %in% fixed_params))
+    stop("feedback_gamma is unidentified under M0; omit it or hold it fixed")
   use_inhom <- !is.null(mu_vec) && !is.null(integral_bg)
+  if (isTRUE(run_sim) && use_inhom && !is.function(inhom_bg$mu_fit$mu_fun))
+    stop("run_sim after an inhomogeneous fit requires inhom_bg$mu_fit$mu_fun")
   # Helper: write to stderr (unbuffered even inside optim's C code) and flush
   vcat <- function(...) if (verbose) { cat(..., file = stderr()); flush(stderr()) }
 
@@ -936,7 +1016,11 @@ fit_hawkesNet <- function(params_init,
   # Free parameters only -- these go to optim
   flat_par <- flat_par_full[!elem_fixed_mask]
   if (is.null(parscale)) {
-    parscale <- rep(1, length(flat_par))
+    # Scale large rate params (esp. mu) so Nelder-Mead / FD steps can explore
+    # O(1) mark coefficients. Without this, mu~n_events dominates the simplex
+    # and RHEM_params initialized at 0 never leave the null with small maxit.
+    parscale <- pmax(abs(as.numeric(flat_par)), 1)
+    names(parscale) <- names(flat_par)
   } else if (length(parscale) != length(flat_par)) {
     # parscale may include fixed params; subset to match free params only
     par_names <- names(flat_par)
@@ -981,6 +1065,21 @@ fit_hawkesNet <- function(params_init,
   
   # Validate that params match the mark PMF (required names and, for CS, CS_params length)
   validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)
+  # CS-2 conditions on the edge count, so its edge coefficient is exactly
+  # absent from the likelihood. Refuse to optimize this flat direction.
+  mark_options <- list(...)
+  if (identical(PMF_mark, PMF_mark_CS) &&
+      identical(mark_options$cs_mode, "size_conditional")) {
+    info <- expected_params_PMF_mark_CS(mark_filtration, mark_options$formula_RHS,
+                                        cs_mode = "size_conditional")
+    edge_index <- which(info$CS_params_names == "edges")
+    cs_names <- names(unlist(list(CS_params = params_init_old$CS_params)))
+    free_edge <- intersect(cs_names[edge_index], names(flat_par))
+    if (length(free_edge)) {
+      stop("CS-2 conditions on edge count: fix ", paste(free_edge, collapse = ", "),
+           " via fixed_params, or omit the edges statistic; its coefficient cancels.")
+    }
+  }
   
   t_fit_start <- proc.time()[3]
   
@@ -999,6 +1098,7 @@ fit_hawkesNet <- function(params_init,
                                      PMF_mark = PMF_mark,
                                      mu_vec = mu_vec,
                                      integral_bg = integral_bg,
+                                     timing = timing,
                                      combine_intensity = combine_intensity,
                                      parallel_type = parallel_type,
                                      ...)
@@ -1056,27 +1156,38 @@ fit_hawkesNet <- function(params_init,
     if (!point_process_params_valid(params_curr)) return(-1e10)
     if (params_curr$beta_overall > 100 || (!is.null(params_curr$beta_edges) && params_curr$beta_edges > 100)) return(-1e10)
 
+    feedback_ll <- attr(cached_funcs, "feedback_loglik")
+    if (is.function(feedback_ll)) {
+      ll <- tryCatch(feedback_ll(params_curr), error = function(e) -Inf)
+      if (!is.finite(ll)) return(-1e10)
+      if (ll > eval_env$best_ll) eval_env$best_ll <- ll
+      return(ll)
+    }
+
     if (!is.null(cached_funcs)) {
       # Fast path: evaluate cached closures directly (no tryCatch -- params validated above)
       if (should_time) t1 <- proc.time()[3]
-      intens_vec <- if (is_combined) cached_funcs[[1L]](params_curr)
-                    else {
-                      v <- numeric(length(cached_funcs))
-                      for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
-                      v
-                    }
+      log_evaluator <- attr(cached_funcs, "log_intensities")
+      if (is.function(log_evaluator)) {
+        log_values <- log_evaluator(params_curr)
+        if (length(log_values) != length(times_cached) || any(!is.finite(log_values)))
+          return(-1e10)
+        intens_sum <- sum(log_values)
+      } else {
+        intens_vec <- if (is_combined) cached_funcs[[1L]](params_curr) else {
+          v <- numeric(length(cached_funcs))
+          for (j in seq_along(cached_funcs)) v[j] <- cached_funcs[[j]](params_curr)
+          v
+        }
+        if (is.null(intens_vec) || !is.numeric(intens_vec) ||
+            any(!is.finite(intens_vec)) || any(intens_vec <= 0)) return(-1e10)
+        intens_sum <- sum(log(intens_vec))
+      }
       if (should_time) t_closure <- proc.time()[3] - t1
-
-      # Post-hoc error check (replaces tryCatch)
-      if (is.null(intens_vec) || !is.numeric(intens_vec)) return(-1e10)
-
-      bad <- !is.finite(intens_vec) | intens_vec <= 0
-      if (any(bad)) intens_vec[bad] <- 1e-10
-      intens_sum <- sum(log(intens_vec))
 
       b <- params_curr$beta_overall
       if (!is.finite(b) || b < 1e-10) return(-1e10)
-      pieces <- 1 - exp(-b * (tval_cached - times_cached))
+      pieces <- -expm1(-b * (time_window[2L] - times_cached))
       kernel_int <- (1 / b) * params_curr$K * sum(pieces)
       integral <- if (use_inhom) integral_bg + kernel_int
                   else params_curr$mu * tval_cached + kernel_int
@@ -1117,6 +1228,7 @@ fit_hawkesNet <- function(params_init,
                PMF_mark = PMF_mark,
                mu_vec = mu_vec,
                integral_bg = integral_bg,
+               timing = timing,
                intens_funcs = NULL),
           dot_args
         ))
@@ -1157,9 +1269,12 @@ fit_hawkesNet <- function(params_init,
                    maxit = maxit,
                    reltol = reltol,
                    parscale = parscale),
-    hessian = TRUE
+    hessian = isTRUE(get_hessian) && method != "Nelder-Mead"
   )
   if (method == "L-BFGS-B") {
+    # optim ignores reltol for this method; factr uses machine-epsilon units.
+    optim_args$control$reltol <- NULL
+    optim_args$control$factr <- reltol / .Machine$double.eps
     bounds <- build_optim_bounds(names(flat_par))
     optim_args$lower <- bounds$lower
     optim_args$upper <- bounds$upper
@@ -1214,11 +1329,13 @@ fit_hawkesNet <- function(params_init,
   # Prefer numDeriv::hessian (Richardson extrapolation) -- much more accurate
   # than optim's simple central-differences, especially for Nelder-Mead.
   # ---------------------------------------------------------------------------
-  vcat("[fit] --- Hessian / Standard-Error Computation ---\n")
-  t_hess_start <- proc.time()[3]
   hessian <- NULL
   hessian_source <- "none"
-  
+  t_hess_start <- proc.time()[3]
+  if (!isTRUE(get_hessian)) {
+    vcat("[fit] Skipping Hessian / SE computation (get_hessian = FALSE)\n")
+  } else {
+  vcat("[fit] --- Hessian / Standard-Error Computation ---\n")
   if (requireNamespace("numDeriv", quietly = TRUE)) {
     vcat("[fit] Computing Hessian via numDeriv::hessian (Richardson extrapolation)...\n")
     vcat("[fit]   n_params = ", n_par, " -> ~", 2 * n_par * n_par, " function evaluations\n")
@@ -1236,7 +1353,7 @@ fit_hawkesNet <- function(params_init,
   } else {
     vcat("[fit] numDeriv not available; install with install.packages('numDeriv') for better SEs\n")
   }
-  
+
   if (is.null(hessian)) {
     hessian <- fit$hessian
     if (!is.null(hessian)) {
@@ -1246,7 +1363,7 @@ fit_hawkesNet <- function(params_init,
       vcat("[fit] WARNING: No Hessian available at all (optim returned NULL)\n")
     }
   }
-  
+
   if (!is.null(hessian)) {
     # --- Hessian diagnostics ---
     n_h <- nrow(hessian)
@@ -1324,6 +1441,7 @@ fit_hawkesNet <- function(params_init,
     }
   }
   vcat("[fit] Hessian total time: ", round(proc.time()[3] - t_hess_start, 2), " s\n")
+  } # end get_hessian
 
   # --- Insert fixed parameters into the fit table ---
   # Element-level fixed (e.g. CS_params1): insert at their natural position
@@ -1382,16 +1500,17 @@ fit_hawkesNet <- function(params_init,
       time_window = time_window,
       PMF_mark = PMF_mark,
       cond_intensity = cond_intensity,
+      timing = timing,
       hashed_edges = TRUE,
       verbose = FALSE,
       mu_multiplier = 5,
       stop_on_full_network = FALSE,
-      inhom_bg = if (use_inhom) list(mu_vec = mu_vec, integral_bg = integral_bg) else NULL,
+      inhom_bg = if (use_inhom) inhom_bg else NULL,
       max_node_time = max(get_times(mark_filtration)$node_times)
     )
     mark_args <- dot_args[intersect(names(dot_args), c(
       "formula_RHS", "truncation", "mark_decay", "growth_only",
-      "vertex_categorical_levels"
+      "vertex_categorical_levels", "cs_mode", "max_candidates", "condition_nonempty"
     ))]
     sim_args <- c(sim_args, mark_args)
     sim_result <- tryCatch({
@@ -1419,6 +1538,7 @@ fit_hawkesNet <- function(params_init,
     fit_table = fit_table,
     hessian = hessian,
     fixed_params = fixed_params,
+    timing = timing,
     sim = sim_result
   )
 }
@@ -1429,6 +1549,7 @@ fit_hawkesNet <- function(params_init,
 #' @param params List of parameters.
 #' @param time_window Numeric \code{c(t0, t1)}.
 #' @param mark_filtration Observed network.
+#' @param timing Ground model from \code{\link{hawkes_timing}}.
 #' @return Numeric vector of compensator values at each event time.
 #' @examples
 #' \donttest{
@@ -1442,20 +1563,14 @@ fit_hawkesNet <- function(params_init,
 #' @export
 compensators_hawkesNet <- function(params,
                                          time_window,
-                                         mark_filtration){
-  times <- get_times(mark_filtration)
-  times <- times$times
-
-  tval <- time_window[2] - time_window[1]
-  max_t <- max(times)
-  if (tval < max(times) - min(times)) {
-    stop("realization has points outside time window")
-  }
-  pieces <- 1 - exp(-params$beta_overall * (tval - times))
-  incremental <- sapply(seq_along(times), function(i) {
-    params$mu * times[i] + (1/params$beta_overall)*params$K*sum(pieces[1:i])
-  })
-  return(incremental)
+                                         mark_filtration,
+                                         timing = hawkes_timing()){
+  cache <- .prepare_network_timing(mark_filtration, timing)
+  # Validate even for an empty observation window.
+  hawkes_ground_compensator(params, time_window, NULL, timing, cache)
+  times <- cache$times[cache$times >= time_window[1L] & cache$times <= time_window[2L]]
+  vapply(times, function(t) hawkes_ground_compensator(
+    params, c(time_window[1L], t), NULL, timing, cache), numeric(1))
 }
 
 #' Kolmogorov-Smirnov test p-value for time rescaling (Hawkes growth model)
@@ -1464,6 +1579,7 @@ compensators_hawkesNet <- function(params,
 #' @param time_window Numeric \code{c(t0, t1)}.
 #' @param mark_filtration Observed network.
 #' @return P-value of the KS test under the null that rescaled times are uniform.
+#' @param timing Ground model from \code{\link{hawkes_timing}}.
 #' @examples
 #' \donttest{
 #' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
@@ -1476,13 +1592,16 @@ compensators_hawkesNet <- function(params,
 #' @export
 ks_test_pval_hawkesNet <- function(params,
                                          time_window,
-                                         mark_filtration){
+                                         mark_filtration,
+                                         timing = hawkes_timing()){
   compensators <- compensators_hawkesNet(params = params,
                                                time_window = time_window,
-                                               mark_filtration = mark_filtration
+                                               mark_filtration = mark_filtration,
+                                               timing = timing
                                                )
-  compensator_incs <- diff(compensators)
-  test_dist <- 1 - exp(-compensator_incs)
+  if (!length(compensators)) return(NA_real_)
+  compensator_incs <- diff(c(0, compensators))
+  test_dist <- -expm1(-compensator_incs)
   test <- ks.test(test_dist,"punif")
   # hist(test_dist)
   # print(test$p.value)
@@ -1508,6 +1627,7 @@ ks_test_pval_hawkesNet <- function(params,
 #' @param mu_at_t Scalar background rate at time t (e.g. from KDE)
 #' @param new_edge_hash Optional hash of existing edges
 #' @param times Precomputed times from get_times; if NULL, taken from mark_filtration
+#' @param timing Ground model from \code{\link{hawkes_timing}}.
 #' @param ... Passed to PMF_mark (e.g. formula_RHS, truncation)
 #' @return List with result (intensity), func (function to evaluate intensity at new params), lambda, kernel_sum, decays, diffs
 #' @examples
@@ -1530,7 +1650,9 @@ cond_intensity_inhom <- function(new_net,
                                  mu_at_t,
                                  new_edge_hash = NULL,
                                  times = NULL,
+                                 timing = hawkes_timing(),
                                  ...) {
+  .network_timing_validate(timing)
   tmp <- PMF_mark(time = t,
                   params = params,
                   mark_filtration = mark_filtration,
@@ -1538,6 +1660,8 @@ cond_intensity_inhom <- function(new_net,
                   generate_mark = FALSE,
                   new_edge_hash = new_edge_hash,
                   ...)
+  if (timing$model != "M0")
+    return(.feedback_cond_intensity(tmp, t, params, mark_filtration, timing, mu_at_t))
   if (is.null(times)) times <- get_times(mark_filtration)
   tt <- times$times
   tt <- tt[tt < t]
@@ -1545,6 +1669,10 @@ cond_intensity_inhom <- function(new_net,
 
   log_mark_density0 <- tmp$log_mark_density
   log_density_func  <- tmp$log_density_func
+  if (!is.function(log_density_func)) {
+    stop("PMF_mark must return a callable `log_density_func` for intensity caching; ",
+         "got ", if (is.null(log_density_func)) "NULL" else typeof(log_density_func), ".")
+  }
 
   decays0 <- exp(-params$beta_overall * diffs)
   log_result0 <- log_mark_density0 + log(mu_at_t + params$K * sum(decays0))
@@ -1552,7 +1680,7 @@ cond_intensity_inhom <- function(new_net,
 
   e_tiny <- new.env(parent = baseenv())
   e_tiny$diffs_local <- diffs
-  e_tiny$ldf_local   <- log_density_func
+  assign("ldf_local", log_density_func, envir = e_tiny)
   e_tiny$mu_at_t     <- mu_at_t
   e_tiny$dpois       <- stats::dpois
 
@@ -1566,6 +1694,8 @@ cond_intensity_inhom <- function(new_net,
   out <- list(
     result = result0,
     func   = func,
+    log_result = log_result0,
+    mark_log_func = log_density_func,
     lambda = mu_at_t,
     kernel_sum = params$K * sum(decays0),
     decays = decays0,
@@ -1723,7 +1853,7 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
   # ====================================================================
   # Fully vectorized closure: O(N) kernel + O(total_rows) mark density
   # ====================================================================
-  combined_closure <- function(params) {
+  combined_log_closure <- function(params) {
     # 1. Kernel sums via O(N) recurrence (Hawkes trick):
     #    R[i] = sum_{j<i} exp(-beta * (t_i - t_j))
     #         = (R[i-1] + 1) * exp(-beta * dt[i])
@@ -1764,8 +1894,6 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     if (any(needs_node)) {
       node_dens[needs_node] <- stats::dpois(new_minus_old[needs_node],
                                             params$node_lambda, log = TRUE)
-      bad <- !is.finite(node_dens)
-      if (any(bad)) node_dens[bad] <- -1e10
     }
 
     # 5. Vertex categorical: vectorized via pre-stacked level indices
@@ -1786,12 +1914,14 @@ build_combined_intensity_funcs <- function(combined_inputs_list, diffs_kernel_li
     # 6. Combine: intensity[i] = exp(log_mark_density[i]) * (mu[i] + kernel[i])
     log_dens <- log_edge_sums + node_dens
     mu_base <- if (homogeneous) rep(params$mu, N) else mu_vec
-    out <- exp(log_dens) * (mu_base + kernel_sums)
-    out[degenerate] <- mu_base[degenerate] + kernel_sums[degenerate]
-    pmax(out, eps)
+    out <- log_dens + log(mu_base + kernel_sums)
+    out[degenerate] <- log(mu_base[degenerate] + kernel_sums[degenerate])
+    out
   }
-
-  list(combined_closure)
+  combined_closure <- function(params) exp(combined_log_closure(params))
+  result <- list(combined_closure)
+  attr(result, "log_intensities") <- combined_log_closure
+  result
 }
 
 

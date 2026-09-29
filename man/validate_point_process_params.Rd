@@ -9,14 +9,16 @@ validate_point_process_params(params, eps = 1e-10)
 \arguments{
 \item{params}{List of parameters (e.g. passed to \code{sim_hawkesNet}).}
 
-\item{eps}{Scalar params must be \code{> eps} (default \code{1e-10}).}
+\item{eps}{Strictly positive rate/scale parameters must be \code{> eps}
+(default \code{1e-10}); zero is allowed for \code{K}, \code{beta_edges}, \code{node_lambda}, and \code{m}.}
 }
 \value{
 \code{invisible(params)} if valid.
 }
 \description{
-Checks that \code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges},
-\code{node_lambda} are strictly positive and finite when present, and that
+Checks that \code{mu} and \code{beta_overall} are strictly
+positive and finite when present; \code{K}, \code{beta_edges}, \code{node_lambda}, and \code{m}
+are finite and nonnegative; and that
 \code{vertex_categorical} probabilities (n-1 parametrization) are non-negative,
 finite, and sum to strictly less than 1 (so the reference level gets positive
 probability).  If any check fails, \code{stop()} is called with a message.

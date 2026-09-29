@@ -1,4 +1,9 @@
-source(test_path("..", "..", "inst", "ethereum_study", "ethereum_utils.R"))
+.eth_study_root <- normalizePath(
+    file.path(test_path("..", "..", ".."), "studies", "ethereum"),
+    mustWork = FALSE
+)
+skip_if_not(dir.exists(.eth_study_root), "Sibling studies/ethereum not found")
+source(file.path(.eth_study_root, "ethereum_utils.R"))
 
 ethereum_test_prepared <- function() {
     raw <- data.frame(
@@ -142,6 +147,43 @@ test_that("Ethereum timeNet temporal formulas initialize and score", {
 
     expect_equal(unique(scores$model), "rhem_timenet_smoke")
     expect_true(all(is.finite(scores$log_mark_density)))
+})
+
+test_that("fixed-path RHEM mark objective is invariant to ground parameters", {
+    skip_if_not_installed("ernm")
+    skip_if_not_installed("timeNet")
+    prepared <- ethereum_test_prepared()
+    hits <- prepared$hits[prepared$hits$split == "train",
+                          c("t", "i", "j", "weight"), drop = FALSE]
+    actors <- sort(unique(c(hits$i, hits$j)))
+    formula_RHS <- eth_timenet_formula(beta = 2, terms = c("edge", "recip"))
+
+    poisson <- eth_initial_params_for_formula(hits, formula_RHS)
+    poisson$K <- 0
+    hawkes <- poisson
+    hawkes$K <- 0.2
+    hawkes$beta_overall <- 3
+
+    poisson_shifted <- poisson
+    poisson_shifted$RHEM_params <- poisson$RHEM_params + c(0.1, -0.05)
+    hawkes_shifted <- hawkes
+    hawkes_shifted$RHEM_params <- poisson_shifted$RHEM_params
+
+    objective <- function(params) {
+        hawkesNet::loglik_hawkesNet(
+            params = params,
+            time_window = c(0, 1),
+            mark_filtration = hits,
+            PMF_mark = hawkesNet::PMF_mark,
+            type = "RHEM",
+            actors = actors,
+            formula_RHS = formula_RHS
+        )$loglik
+    }
+
+    mark_change_poisson <- objective(poisson_shifted) - objective(poisson)
+    mark_change_hawkes <- objective(hawkes_shifted) - objective(hawkes)
+    expect_equal(mark_change_poisson, mark_change_hawkes, tolerance = 1e-8)
 })
 
 test_that("Package-level RHEM likelihood scores repeated-hit marks", {

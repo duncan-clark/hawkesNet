@@ -36,7 +36,8 @@ test_that("RHEM repeated-hit loglik and fit run", {
                                fixed_params = c("mu", "beta_overall", "K", "beta_edges"),
                                trace = 0,
                                maxit = 2,
-                               get_hessian = FALSE)
+                               get_hessian = FALSE,
+                               verbose = FALSE)
     expect_true(all(is.finite(fit$fit$par)))
 })
 

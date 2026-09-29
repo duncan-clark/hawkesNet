@@ -23,9 +23,12 @@ devtools::install("../timeNet")
 
 Without `timeNet`, simple/ERNM backends may still run; formulas that route to the `timeNet` backend will error with a clear missing-package message.
 
-## Studies on this branch
+## Studies (outside this package)
 
-- `inst/amlsim_study/` — AMLSim SAR / transaction experiments
-- `inst/ethereum_study/` — Ethereum stablecoin dyad experiments (timeNet search)
+Study scripts live at the project root, not inside `hawkesNet`:
 
-Result folders (`amlsim_study_results_*`, `ethereum_study_results_*`) are gitignored; keep them outside the repo or sync separately.
+- `../studies/amlsim/` — AMLSim SAR / transaction experiments
+- `../studies/ethereum/` — Ethereum stablecoin dyad experiments (timeNet search)
+- `../studies/ethereum/memos/` — model-specification memo (LaTeX / PDF)
+
+Result folders go under project-level `../cluster_output/` (`amlsim_study_results_*`, `ethereum_study_results_*`, anomaly runs). Keep them outside the package tree.

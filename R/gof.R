@@ -416,6 +416,12 @@ waiting_times_between_formations <- function(net, time_attr = "time",
 #'   generates subsequent events conditional on this initial history.
 #'   Recommended for sparse networks where cold-start simulation is difficult.
 #' @param verbose Print progress messages (default TRUE).
+#' @param cs_mode Optional CS mark construction, passed unchanged to
+#'   \code{PMF_mark_CS}; use the same construction as in the fitted model.
+#' @param max_candidates Maximum candidate count for exact CS mark evaluation
+#'   (default 12); use the same support as in fitting.
+#' @param timing Ground timing specification. NULL uses \code{fit$timing} when
+#'   available, otherwise \code{hawkes_timing()} (M0).
 #' @return List with observed and simulated statistics and plots.
 #' @examples
 #' \donttest{
@@ -437,7 +443,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
                 max_node_time = 1, inhom_bg = NULL, n_sim = 50L, cores = 7L,
                 cores_outer = NULL,
                 max_deg = 15L, k_esp = 15L, degree = 0L, esp = 0L, mu_multiplier = 5,
-                seed_events = 0L, verbose = TRUE) {
+                seed_events = 0L, verbose = TRUE, cs_mode = NULL,
+                max_candidates = 12L, timing = NULL) {
   
   # -------------------------------------------------------------------------
   # Force evaluation of user-provided arguments that may be promises.
@@ -463,6 +470,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   esp <- as.integer(esp)
   mu_multiplier <- as.numeric(mu_multiplier)
   seed_events <- as.integer(seed_events)
+  cs_mode <- if (is.null(cs_mode)) NULL else as.character(cs_mode)
+  max_candidates <- as.integer(max_candidates)
   if (!is.null(formula_RHS)) formula_RHS <- as.character(formula_RHS)
   
   # Initialize results early (will be populated even if some computations fail)
@@ -477,6 +486,12 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     if (verbose) cat("  No fit available; skipping GOF\n")
     return(GOF_results)
   }
+  if (is.null(timing)) {
+    timing <- if (is.null(fit$timing)) hawkes_timing() else fit$timing
+  }
+  .network_timing_validate(timing)
+  force(timing) # Materialize caller promises before serializing sim_fun.
+  GOF_results$timing <- timing
   
   if (verbose) {
     cond_str <- if (seed_events > 0) sprintf(" (conditional on first %d events)", seed_events) else ""
@@ -513,7 +528,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   pfit$vertex_categorical_levels <- params_init$vertex_categorical_levels
   
   # Map scalar parameters directly
-  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m")
+  scalar_names <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda", "m",
+                    "feedback_gamma")
   for (nm in scalar_names) {
     if (nm %in% par_names) {
       pfit[[nm]] <- par_vec[nm]
@@ -561,25 +577,29 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   
   if (use_inhom) {
     # For inhomogeneous: mu is not used directly during simulation (mu_fun is),
-    # but we set it for thinning bound and compatibility
+    # but a scalar placeholder is retained for parameter validation.
     Tval <- time_window[2] - time_window[1]
-    pfit$mu <- inhom_bg$integral_bg / Tval  # Average mu for compatibility
+    bg_integral <- inhom_bg$integral_bg
+    if (is.numeric(bg_integral) && length(bg_integral) == 1L &&
+        is.finite(bg_integral) && bg_integral > 0 && is.finite(Tval) && Tval > 0) {
+      pfit$mu <- bg_integral / Tval
+    } else if (is.null(pfit$mu)) {
+      pfit$mu <- 1
+    }
     if (verbose) {
       cat("  Using inhomogeneous background for simulations (matches fitted model)\n")
     }
   }
   
-  # Ensure parameters are within valid ranges
-  pfit$K <- min(max(pfit$K, 0.001), 0.999)
-  pfit$mu <- max(pfit$mu, 0.001)
-  pfit$node_lambda <- max(pfit$node_lambda, 0.1)
-  pfit$beta_overall <- max(pfit$beta_overall, 0.001)
-  pfit$beta_edges <- max(pfit$beta_edges, 0.001)
+  # Validate the fitted model without changing its excitation amplitude,
+  # Poisson/no-decay boundaries, birth rate or categorical mark probabilities.
+  validate_point_process_params(pfit)
   
   # Log the actual parameters being used for GOF simulations
   if (verbose) {
     cat("  GOF simulation parameters:\n")
-    scalar_params <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda")
+    scalar_params <- c("mu", "beta_overall", "K", "beta_edges", "node_lambda",
+                       "feedback_gamma")
     for (p in scalar_params) {
       if (!is.null(pfit[[p]])) {
         src <- if (!is.null(fixed) && p %in% fixed) "(FIXED)" else "(fitted)"
@@ -619,20 +639,6 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     }
   }
   
-  # Validate and repair parameters before simulation
-  if (!point_process_params_valid(pfit)) {
-    if (verbose) cat("  WARNING: Parameters invalid after reconstruction; attempting repair...\n")
-    pfit <- tryCatch({
-      repair_vertex_categorical_params(pfit, eps = 1e-6)
-    }, error = function(e) {
-      if (verbose) cat("  WARNING: Failed to repair parameters:", e$message, "\n")
-      pfit
-    })
-    if (!point_process_params_valid(pfit)) {
-      if (verbose) cat("  ERROR: Parameters still invalid after repair; GOF may fail\n")
-    }
-  }
-  
   # Parallelize GOF simulations
   if (verbose) {
     cat("  Using", n_workers, if (use_psock) "PSOCK workers" else "cores", "for parallel GOF simulations...\n")
@@ -660,7 +666,10 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
           stop_on_full_network = FALSE,
           inhom_bg = inhom_bg,
           seed_net = seed_net,
-          seed_times = seed_times
+          seed_times = seed_times,
+          timing = timing,
+          cs_mode = cs_mode,
+          max_candidates = max_candidates
       )
     }, error = function(e) {
       return(list(net = NULL, error = paste0("Sim ", i, ": ", e$message)))
@@ -708,7 +717,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       parallel::clusterExport(cl, c("pfit", "time_window", "PMF_mark", "cond_intensity",
                                    "formula_RHS", "truncation", "mark_decay", "growth_only",
                                    "max_node_time", "inhom_bg", "seed_net", "seed_times",
-                                   "mu_multiplier"), envir = environment())
+                                   "mu_multiplier", "timing", "cs_mode",
+                                   "max_candidates"), envir = environment())
       cl
     }, error = function(e) {
       if (verbose) cat("  WARNING: PSOCK cluster failed, falling back to fork:", e$message, "\n")

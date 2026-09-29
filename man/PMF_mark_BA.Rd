@@ -20,40 +20,50 @@ PMF_mark_BA(
 \arguments{
 \item{time}{Current event time.}
 
-\item{params}{List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally
-\code{beta_overall}, \code{K}, \code{mu}, \code{vertex_categorical}, \code{vertex_categorical_levels}.}
+\item{params}{List with \code{beta_edges}, \code{m} (expected attachment attempts;
+default 1), and optionally \code{beta_overall}, \code{K}, \code{mu},
+\code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
-\item{mark_filtration}{Observed network up to \code{time}.}
+\item{mark_filtration}{Observed network history.}
 
-\item{mark}{Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.}
+\item{mark}{Optional network state after the update. If omitted, derived from
+the filtration; if it contains no event at \code{time}, evaluate an isolated
+new-node arrival. Generation always starts from the history before \code{time}.}
 
-\item{generate_mark}{If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).}
+\item{generate_mark}{If \code{TRUE}, sample the equivalent independent
+Bernoulli edge indicators (default \code{FALSE}).}
 
-\item{generate_density}{If \code{TRUE} (default), compute the log-density of the mark.}
+\item{generate_density}{Retained for API compatibility; returned densities are exact.}
 
-\item{new_edge_hash}{Optional hash of existing edges for fast lookup.}
+\item{new_edge_hash}{Optional existing-edge hash (retained for API compatibility).}
 
-\item{truncation}{Optional integer cap on the number of edges per event.}
+\item{truncation}{Optional nonnegative integer limiting the eligible old nodes,
+selected by latest entrance or activity; not a cap on Poisson attempts.}
 
-\item{mark_decay}{Character string controlling how temporal weights decay.
-One of \code{"node_entrance"} (default) or \code{"activity"}.}
+\item{mark_decay}{One of \code{"node_entrance"} (default) or \code{"activity"}.}
 
 \item{...}{Additional arguments (currently unused).}
 }
 \value{
-List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+List with exact observed/generated densities and density closures.
+  \code{edge_probs} contains inclusion probabilities; \code{attachment_probs}
+  contains normalized attempt probabilities, indexed by \code{candidate_heads}.
 }
 \description{
-Probability mass function for the mark at each event: one new node and K edges from that node to existing nodes,
-where K ~ Poisson(m). So \code{m} is the expected number of edges added per time step. Edges are sampled
-without replacement with probabilities proportional to (degree * time decay); the likelihood uses the
-approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
+Each event adds one node. An uncapped Poisson(m) number of attachment attempts
+chooses existing targets with replacement using fixed degree-decay weights.
+Repeated choices collapse to one edge: the edge indicators are independent
+Bernoulli with probabilities \code{-expm1(-m * p)} for normalized target weights
+\code{p}. Thus \code{m} is the expected number of attempts, not distinct edges.
 }
 \details{
+Weights are normalized over eligible targets. If every eligible degree is zero,
+use uniform weights. With no eligible targets the edge set is empty with
+probability one. Zero-edge arrivals are valid because the event adds a node.
 The \code{params} list may optionally include:
 \describe{
-\item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
-\item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
+  \item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
+  \item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
 }
 }
 \examples{
@@ -61,9 +71,8 @@ The \code{params} list may optionally include:
 params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
 net <- network::network.initialize(5, directed = FALSE)
 network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
-# Compute mark density for a new node at time 0.6
-pmf <- PMF_mark_BA(0.6, params, net)
-pmf$log_mark_density
+pmf <- PMF_mark_BA(0.6, params, net, generate_mark = TRUE)
+pmf$log_mark_sample_density
 }
 }
 \seealso{

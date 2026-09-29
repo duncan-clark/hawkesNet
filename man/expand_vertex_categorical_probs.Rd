@@ -11,7 +11,8 @@ expand_vertex_categorical_probs(p_n1, level_names, eps = 1e-10)
 
 \item{level_names}{Character vector of all n level names; the last element is the reference level.}
 
-\item{eps}{Small positive value used as floor for any probability (default 1e-10).}
+\item{eps}{Retained for compatibility; probabilities, including exact zeros,
+are not floored or otherwise changed.}
 }
 \value{
 Named numeric vector of length n summing to 1, or NULL if inputs are invalid.

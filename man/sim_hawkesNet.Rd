@@ -18,6 +18,7 @@ sim_hawkesNet(
   inhom_bg = NULL,
   seed_net = NULL,
   seed_times = NULL,
+  timing = hawkes_timing(),
   ...
 )
 }
@@ -36,11 +37,14 @@ If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automat
 
 \item{verbose}{Print progress (default \code{FALSE}).}
 
-\item{mu_multiplier}{Multiplier for thinning upper bound (default 10).}
+\item{mu_multiplier}{Legacy inhomogeneous envelope multiplier (default 10).
+Homogeneous adaptive thinning does not use this parameter.}
 
-\item{joint_accept}{Logical (default \code{FALSE}); joint acceptance for mark and time.}
+\item{joint_accept}{Must be \code{FALSE}: normalized marks are sampled after
+ground-event acceptance, without applying their probability a second time.}
 
-\item{n_mark_sample}{Optional number of mark samples per proposal.}
+\item{n_mark_sample}{Must be \code{NULL}; mark importance sampling is not used
+for the normalized ground-autonomous model.}
 
 \item{stop_on_full_network}{If \code{TRUE} (default), stop when there are no candidate edges (full network); if \code{FALSE}, issue a warning and continue with no new edges added for that event.}
 
@@ -50,7 +54,13 @@ If provided, uses \code{cond_intensity_inhom} with time-varying background rate.
 \item{seed_net}{Optional initial network state to start simulation from.}
 
 \item{seed_times}{Optional numeric vector of event times corresponding to \code{seed_net}.
-Used to initialize the Hawkes kernel state for conditional simulation.}
+Used to initialize the Hawkes kernel state for conditional simulation; if
+omitted, derived from \code{seed_net}. Conditional simulation starts after
+the later of the window start and last seed event.}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}. M1/M2 draw each
+complete update before simulating subsequent times. For inhomogeneous M1/M2
+simulation, supply a global background bound in \code{inhom_bg$mu_fit$mu_bound}.}
 
 \item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
@@ -58,8 +68,10 @@ Used to initialize the Hawkes kernel state for conditional simulation.}
 List with \code{events}, \code{net}, \code{accept_probs}.
 }
 \description{
-Uses thinning to simulate event times and marks (network edges) from the Hawkes growth model.
-Supports both homogeneous (constant mu) and inhomogeneous (time-varying mu) background rates.
+Uses exact adaptive thinning for a homogeneous Hawkes ground process, then
+samples complete normalized network-update marks at the accepted times.
+The legacy inhomogeneous path uses a grid-based background envelope and stops
+if a bound violation is detected; that grid alone does not certify domination.
 }
 \examples{
 \donttest{

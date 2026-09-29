@@ -1,4 +1,9 @@
-source(test_path("..", "..", "inst", "amlsim_study", "amlsim_utils.R"))
+.amlsim_study_root <- normalizePath(
+    file.path(test_path("..", "..", ".."), "studies", "amlsim"),
+    mustWork = FALSE
+)
+skip_if_not(dir.exists(.amlsim_study_root), "Sibling studies/amlsim not found")
+source(file.path(.amlsim_study_root, "amlsim_utils.R"))
 
 test_that("AMLSim sample-style transactions become repeated hits", {
     tx <- data.frame(

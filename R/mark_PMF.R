@@ -9,7 +9,7 @@
 #' Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
 #' @param time Numeric. The time at which to evaluate the PMF.
 #' @param params Named list. Model parameter values required for the chosen \code{type}:
-#'   - For \code{type = "BA"}: \code{beta_edges} (numeric).
+#'   - For \code{type = "BA"}: \code{beta_edges} and \code{m} (numeric).
 #'   - For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
 #'   - For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.
 #' @param mark_filtration Network or compatible object. The network history (filtration) up to the current time.
@@ -19,7 +19,7 @@
 #' @param generate_density Logical. If \code{TRUE}, computes the density for the provided mark. Default: \code{TRUE}.
 #' @param grad Logical. If \code{TRUE}, also computes gradients of the mark density. Default: \code{FALSE}.
 #' @param new_edge_hash Hash or NULL. Optional hashed edge list for fast lookup. Default: \code{NULL}.
-#' @param truncation Integer or NULL. For \code{"CS"} models, controls which edges are considered (e.g., \code{1} means only new-to-old). Default: \code{NULL}.
+#' @param truncation Integer or NULL. Maximum candidate node window; the whole-update CS default is 4. Default: \code{NULL}.
 #' @param formula_RHS Character or formula. For \code{"CS"} models, specifies the right-hand-side for change statistics calculation. Default: \code{NULL}.
 #' @param mark_decay Character or NULL. How edge decay is modeled, e.g. \code{"node_entrance"}, \code{"activity"}, etc. Default: \code{NULL}.
 #' @param model Object or NULL. Preconstructed model object (for efficiency); if \code{NULL}, will be built internally. Default: \code{NULL}.
@@ -38,36 +38,26 @@
 #' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
 #' Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
 #'
-#' For \code{type = "BA"} the Barabasi Albert (BA) preferential attachment model is used where the mark distribution is defined as
-#' \deqn{
-#'   q(m \mid t, \mathcal{H}_t) =
-#'   \prod_{i=1}^{N_{t-}} \left(p_i^{BA}\right)^{e_i} \cdot
-#'   \left(1 - p_i^{BA}\right)^{1 - e_i}.
-#' }
-#' Here, the attachment probability, \eqn{p_i^{BA}}, is defined as
-#' \deqn{
-#'   p_i^{BA} = \frac{\delta_i}{\sum_{k=1}^{N} \delta_k}
-#' }
-#' where \eqn{\delta_{i}^{t} = \exp(\tau \cdot (t - t_i)) \cdot d_{i}^{t}}, 
-#' and \eqn{d_{i}^{t}} is the sna::degree of node \eqn{i} just before time \eqn{t}.
-#' 
-#' For \code{type = "CS"} the change statistic (CS) model is used where the mark distribution is defined (similar to above) as
-#' \deqn{
-#'   q(m \mid t, \mathcal{H}_t) =
-#'   \prod_{i=1}^{N_{t-}} \left(p_i^{CS}\right)^{e_i} \cdot
-#'   \left(1 - p_i^{CS}\right)^{1 - e_i}.
-#' }
-#' where the attachment probability, \eqn{p_i^{CS}}, is defined as
-#' \deqn{
-#' p_i^{CS} = \left(\nu + \exp(\tau \cdot(t - t_i))\right)\cdot\frac{1}{1 + \exp(-\theta^{\top} \cdot C_{i,N_t})}
-#' }
+#' For \code{type = "BA"}, one node arrives and makes a Poisson number of
+#' independent attachment attempts with mean \code{m}. After repeated targets
+#' collapse, the edge indicators are independent Bernoulli with probabilities
+#' \eqn{1-\exp(-m p_i)}, where \eqn{p_i} normalizes degree times a decaying
+#' endpoint-age weight over eligible targets. See \code{\link{PMF_mark_BA}}.
+#'
+#' For \code{type = "CS"}, pass \code{cs_mode = "independent"} for
+#' collapsed-Poisson inclusion using frozen single-edge change-statistic weights,
+#' or \code{cs_mode = "size_conditional"} to draw the distinct-edge count first
+#' and weight whole updates conditional on that count. See
+#' \code{\link{PMF_mark_CS}} for the exact laws and nonempty conditioning.
+#' For reproducibility, omitting \code{cs_mode} retains the earlier all-subset
+#' structural tilt when \code{m} is present, and the legacy model otherwise.
 #' @examples
 #' \dontrun{
 #' if(interactive()){
 #'  data(net, package = "hawkesNet")
 #' time <- get_times(net)$times
 #' ## BA
-#' params_ba <-  list( beta_edges = 0.1)
+#' params_ba <-  list(beta_edges = 0.1, m = 2)
 #' mark_filtration <-  filtration_to_net(net,10)
 #' pmf_ba <- PMF_mark(time[10],  params_ba, mark_filtration)
 #' ## CS
@@ -108,9 +98,12 @@ PMF_mark <- function(time,
         stop("type can only be one of `BA` for Barabasi-Albert, `CS` for change statistic Hawkes, `BA-bip` for bipartite Barabasi-Albert, or `RHEM` for repeated edge-hit models.")
     }
     if(type == "BA"){
-        pmf <- PMF_mark_BA(time, params, mark_filtration, mark,
-                           generate_mark, generate_density, grad,
-                           new_edge_hash, truncation, ...)
+        pmf <- PMF_mark_BA(time = time, params = params,
+                           mark_filtration = mark_filtration, mark = mark,
+                           generate_mark = generate_mark,
+                           generate_density = generate_density,
+                           new_edge_hash = new_edge_hash,
+                           truncation = truncation, mark_decay = mark_decay, ...)
     }else{
         if(type == "BA-bip"){
             pmf <- PMF_mark_BA_bipartite(time, params,  mark_filtration,
@@ -118,10 +111,14 @@ PMF_mark <- function(time,
                                       grad, new_edge_hash, truncation, ...)
         }else{
             if(type == "CS"){
-                pmf <- PMF_mark_CS(time, params, mark_filtration,
-                                   mark, generate_mark, generate_density,
-                                   grad,  new_edge_hash, truncation, formula_RHS,
-                                   mark_decay, model, max_node_time, ...)
+                pmf <- PMF_mark_CS(time = time, params = params,
+                                   mark_filtration = mark_filtration, mark = mark,
+                                   generate_mark = generate_mark,
+                                   generate_density = generate_density,
+                                   new_edge_hash = new_edge_hash,
+                                   truncation = truncation, formula_RHS = formula_RHS,
+                                   mark_decay = mark_decay, model = model,
+                                   max_node_time = max_node_time, ...)
             }else{
                 if(type == "RHEM"){
                     pmf <- PMF_mark_RHEM(time, params, mark_filtration,
@@ -209,9 +206,11 @@ PMF_mark_RHEM <- function(time,
     if (!is.null(formula_RHS)) {
         stats <- .rhem_ernm_change_stats(risk, edge_state, actors, formula_RHS,
                                          hit_delta, rhem_stats_cache)
-        theta <- .rhem_theta(params, colnames(stats))
+        param_names <- colnames(stats)
+        theta <- .rhem_theta(params, param_names)
     } else {
         features <- .rhem_features(params, hit_features)
+        param_names <- features
         theta <- .rhem_theta(params, features)
         stats <- .rhem_candidate_stats(risk, edge_state, features)
     }
@@ -222,19 +221,25 @@ PMF_mark_RHEM <- function(time,
                 log_mark_density = 0,
                 edge_probs = probs,
                 mark_grad = NULL,
-                decay_grad = 0)
+                decay_grad = 0,
+                density_func = NULL,
+                log_density_func = NULL)
 
+    obs_idx <- NULL
     if (generate_density && !is.null(current)) {
-        idx <- which(risk$i == current$i[1] & risk$j == current$j[1])
-        if (length(idx) != 1) {
+        obs_idx <- which(risk$i == current$i[1] & risk$j == current$j[1])
+        if (length(obs_idx) != 1) {
             stop("Observed repeated-hit mark is not in the RHEM risk set.")
         }
-        log_density <- log(probs[idx])
+        log_density <- log(probs[obs_idx])
         out$mark_density <- exp(log_density)
         out$log_mark_density <- log_density
+        dens_funs <- .rhem_log_density_func(stats, obs_idx, param_names)
+        out$log_density_func <- dens_funs$log_density_func
+        out$density_func <- dens_funs$density_func
         if (grad) {
             expected_stats <- colSums(stats * probs)
-            out$mark_grad <- stats[idx, ] - expected_stats
+            out$mark_grad <- stats[obs_idx, ] - expected_stats
         }
     }
 
@@ -355,6 +360,37 @@ PMF_mark_RHEM <- function(time,
     eta <- eta - max(eta)
     probs <- exp(eta)
     probs / sum(probs)
+}
+
+.rhem_log_softmax <- function(eta) {
+    eta <- eta - max(eta)
+    eta - log(sum(exp(eta)))
+}
+
+#' Build a cached log-mark-density closure for intensity caching.
+#'
+#' Change statistics are frozen at the filtration/beta used when the PMF was
+#' evaluated; only \code{params$RHEM_params} are re-read. Keep \code{beta_edges}
+#' fixed during \code{fit_hawkesNet} intensity caching (Ethereum / RHEM default).
+#' @noRd
+.rhem_log_density_func <- function(stats, observed_idx, param_names) {
+    stats <- as.matrix(stats)
+    if (length(observed_idx) != 1L || is.na(observed_idx) ||
+        observed_idx < 1L || observed_idx > nrow(stats)) {
+        stop("RHEM log_density_func requires a valid observed risk-set index.")
+    }
+    param_names <- as.character(param_names)
+    log_density_func <- function(params) {
+        theta <- .rhem_theta(params, param_names)
+        eta <- as.vector(stats %*% theta)
+        .rhem_log_softmax(eta)[observed_idx]
+    }
+    density_func <- function(params) exp(log_density_func(params))
+    environment(density_func) <- list2env(
+        list(log_density_func = log_density_func),
+        parent = baseenv()
+    )
+    list(log_density_func = log_density_func, density_func = density_func)
 }
 
 .rhem_select_backend <- function(backend = c("auto", "simple", "ernm", "timeNet"), formula_RHS) {
@@ -538,11 +574,24 @@ PMF_mark_RHEM <- function(time,
         log_prob <- timeNet::time_log_prob(
             temporal_net, time, tail_idx, head_idx, theta, term_spec, hit_delta
         )
+        log_density_func <- function(params) {
+            th <- .rhem_theta(params, param_names)
+            timeNet::time_log_prob(
+                temporal_net, time, tail_idx, head_idx, th, term_spec, hit_delta
+            )[["log_probability"]]
+        }
+        density_func <- function(params) exp(log_density_func(params))
+        environment(density_func) <- list2env(
+            list(log_density_func = log_density_func),
+            parent = baseenv()
+        )
         return(list(mark_density = exp(log_prob[["log_probability"]]),
                     log_mark_density = log_prob[["log_probability"]],
                     edge_probs = NULL,
                     mark_grad = NULL,
                     decay_grad = 0,
+                    density_func = density_func,
+                    log_density_func = log_density_func,
                     mark_sample = NULL,
                     mark_sample_density = NULL,
                     log_mark_sample_density = NULL))
@@ -559,7 +608,9 @@ PMF_mark_RHEM <- function(time,
                 log_mark_density = 0,
                 edge_probs = probs,
                 mark_grad = NULL,
-                decay_grad = 0)
+                decay_grad = 0,
+                density_func = NULL,
+                log_density_func = NULL)
     if (generate_density && !is.null(current)) {
         idx <- which(risk$i == current$i[1] & risk$j == current$j[1])
         if (length(idx) != 1) {
@@ -568,6 +619,9 @@ PMF_mark_RHEM <- function(time,
         log_density <- log(probs[idx])
         out$mark_density <- exp(log_density)
         out$log_mark_density <- log_density
+        dens_funs <- .rhem_log_density_func(stats, idx, param_names)
+        out$log_density_func <- dens_funs$log_density_func
+        out$density_func <- dens_funs$density_func
         if (grad) {
             expected_stats <- colSums(stats * probs)
             out$mark_grad <- stats[idx, ] - expected_stats
@@ -777,38 +831,47 @@ mark_setup_bipartite <- function(mark = NULL, mark_filtration, time){
 
 #' Mark PMF for Barabási–Albert-style (degree-weighted) attachment
 #'
-#' Probability mass function for the mark at each event: one new node and K edges from that node to existing nodes,
-#' where K ~ Poisson(m). So \code{m} is the expected number of edges added per time step. Edges are sampled
-#' without replacement with probabilities proportional to (degree * time decay); the likelihood uses the
-#' approximation that the probability of the edge set is the product of those degree-based Bernoulli probabilities.
+#' Each event adds one node. An uncapped Poisson(m) number of attachment attempts
+#' chooses existing targets with replacement using fixed degree-decay weights.
+#' Repeated choices collapse to one edge: the edge indicators are independent
+#' Bernoulli with probabilities \code{-expm1(-m * p)} for normalized target weights
+#' \code{p}. Thus \code{m} is the expected number of attempts, not distinct edges.
 #'
 #' @param time Current event time.
-#' @param params List with \code{beta_edges}, \code{m} (expected edges per event; default 1), and optionally
-#'   \code{beta_overall}, \code{K}, \code{mu}, \code{vertex_categorical}, \code{vertex_categorical_levels}.
-#' @param mark_filtration Observed network up to \code{time}.
-#' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
-#' @param generate_mark If \code{TRUE}, sample K ~ Poisson(m) and then K distinct edges (default \code{FALSE}).
-#' @param generate_density If \code{TRUE} (default), compute the log-density of the mark.
-#' @param new_edge_hash Optional hash of existing edges for fast lookup.
-#' @param truncation Optional integer cap on the number of edges per event.
-#' @param mark_decay Character string controlling how temporal weights decay.
-#'   One of \code{"node_entrance"} (default) or \code{"activity"}.
+#' @param params List with \code{beta_edges}, \code{m} (expected attachment attempts;
+#'   default 1), and optionally \code{beta_overall}, \code{K}, \code{mu},
+#'   \code{vertex_categorical}, \code{vertex_categorical_levels}.
+#' @param mark_filtration Observed network history.
+#' @param mark Optional network state after the update. If omitted, derived from
+#'   the filtration; if it contains no event at \code{time}, evaluate an isolated
+#'   new-node arrival. Generation always starts from the history before \code{time}.
+#' @param generate_mark If \code{TRUE}, sample the equivalent independent
+#'   Bernoulli edge indicators (default \code{FALSE}).
+#' @param generate_density Retained for API compatibility; returned densities are exact.
+#' @param new_edge_hash Optional existing-edge hash (retained for API compatibility).
+#' @param truncation Optional nonnegative integer limiting the eligible old nodes,
+#'   selected by latest entrance or activity; not a cap on Poisson attempts.
+#' @param mark_decay One of \code{"node_entrance"} (default) or \code{"activity"}.
 #' @param ... Additional arguments (currently unused).
 #' @details
+#' Weights are normalized over eligible targets. If every eligible degree is zero,
+#' use uniform weights. With no eligible targets the edge set is empty with
+#' probability one. Zero-edge arrivals are valid because the event adds a node.
 #' The \code{params} list may optionally include:
 #' \describe{
 #'   \item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
 #'   \item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
 #' }
-#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+#' @return List with exact observed/generated densities and density closures.
+#'   \code{edge_probs} contains inclusion probabilities; \code{attachment_probs}
+#'   contains normalized attempt probabilities, indexed by \code{candidate_heads}.
 #' @examples
 #' \donttest{
 #' params <- list(mu = 0.5, beta_overall = 1, K = 0.3, beta_edges = 0.5, m = 1)
 #' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
-#' # Compute mark density for a new node at time 0.6
-#' pmf <- PMF_mark_BA(0.6, params, net)
-#' pmf$log_mark_density
+#' pmf <- PMF_mark_BA(0.6, params, net, generate_mark = TRUE)
+#' pmf$log_mark_sample_density
 #' }
 #' @seealso \code{\link[network]{network}}, \code{\link[network]{add.vertices}}
 #' @rdname PMF_mark_BA
@@ -823,285 +886,139 @@ PMF_mark_BA <- function(time,
                         truncation = NULL,
                         mark_decay = 'node_entrance',
                         ...){
-  # Expected number of edges per event (Poisson rate)
-  m_val <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
-
-  if(is.null(mark)){
-    mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+  mark_decay <- match.arg(mark_decay, c("node_entrance", "activity"))
+  if (!is.null(truncation) &&
+      (length(truncation) != 1L || !is.finite(truncation) ||
+       truncation < 0 || truncation != floor(truncation))) {
+    stop("truncation must be NULL or a nonnegative integer")
+  }
+  m_val <- if (is.null(params$m)) 1 else params$m
+  if (length(m_val) != 1L || !is.finite(m_val) || m_val < 0) {
+    stop("m must be a finite nonnegative expected number of attachment attempts")
+  }
+  if (length(params$beta_edges) != 1L || !is.finite(params$beta_edges) || params$beta_edges < 0) {
+    stop("beta_edges must be finite and nonnegative")
   }
   last_net <- filtration_to_net(mark_filtration, time, equals = FALSE)
-  new_net <- last_net
+  old_nodes <- network.size(last_net)
+  times <- if (mark_decay == "activity") get_latest_times(last_net) else
+    get.vertex.attribute(last_net, "time")
+  if (old_nodes > 0L && (length(times) != old_nodes || any(!is.finite(times)))) {
+    stop("BA history requires finite entrance/activity times for every existing node")
+  }
+  heads <- seq_len(old_nodes)
+  if (!is.null(truncation) && old_nodes > truncation) {
+    heads <- sort(order(times, seq_len(old_nodes), decreasing = TRUE)[seq_len(truncation)])
+  }
+  node_degrees <- if (old_nodes > 0L) sna::degree(last_net) else numeric(0)
+  target_degrees <- node_degrees[heads]
+  ages <- time - times[heads]
 
-  if(last_net %n% 'n' != 0){
-    new_nodes <- mark %n% 'n'
-    old_nodes <- last_net %n% 'n'
-    add.vertices(new_net, nv = new_nodes)
-    set.vertex.attribute(new_net, "time", c(get.vertex.attribute(last_net, "time"), rep(time, new_nodes)))
-  } else {
-    last_net <- NULL
-    new_net <- network(matrix(0, 1, 1), directed = FALSE)
-    set.vertex.attribute(new_net, "time", time)
-    old_nodes <- 0
-    new_nodes <- 1
+  # Shared by simulation, direct evaluation, and cached parameter evaluations.
+  # Center ages before exponentiating to avoid underflow on long histories.
+  attachment_weights <- function(beta, degrees, ages) {
+    if (!length(degrees)) return(numeric(0))
+    positive <- degrees > 0 & is.finite(degrees)
+    if (!any(positive)) return(rep(1 / length(degrees), length(degrees)))
+    log_w <- rep(-Inf, length(degrees))
+    age_shift <- ages[positive] - min(ages[positive])
+    log_w[positive] <- log(degrees[positive]) - beta * age_shift
+    w <- exp(log_w - max(log_w))
+    w / sum(w)
   }
+  environment(attachment_weights) <- baseenv()
+  probs <- attachment_weights(params$beta_edges, target_degrees, ages)
+  edge_probs <- -expm1(-m_val * probs)
 
-  # get the possible edges: new nodes -> old nodes, with optional truncation
-  if (!is.null(truncation) && !is.null(last_net) && old_nodes > truncation) {
-    # Truncate which old nodes are considered as attachment targets
-    if (mark_decay == "activity") {
-      activity_times <- get_latest_times(last_net)
-      # Pick the truncation most recently active old nodes
-      ord <- order(activity_times[seq_len(old_nodes)], seq_len(old_nodes), decreasing = TRUE)
-      eligible_heads <- sort(ord[seq_len(min(truncation, old_nodes))])
-    } else {
-      # node_entrance: take the most recently entered old nodes
-      eligible_heads <- seq(max(1L, old_nodes - truncation + 1L), old_nodes)
+  # Every mark adds exactly one node, including zero-edge arrivals and the seed.
+  new_net <- network.copy(last_net)
+  add.vertices(new_net, 1L)
+  set.vertex.attribute(new_net, "time", c(get.vertex.attribute(last_net, "time"), time))
+  if (generate_mark) {
+    observed_mark <- sample_vertex_attrs(params, last_net, new_net, old_nodes, 1L)
+    selected <- which(stats::rbinom(length(heads), 1L, edge_probs) == 1L)
+    if (length(selected)) {
+      add.edges(observed_mark, rep(old_nodes + 1L, length(selected)), heads[selected],
+                names.eval = "time", vals.eval = rep(time, length(selected)))
     }
+  } else if (!is.null(mark)) {
+    observed_mark <- mark
   } else {
-    eligible_heads <- seq_len(old_nodes)
-  }
-  poss_tails <- ((old_nodes+1) : new_nodes)
-  poss_tails <- poss_tails[poss_tails>0]
-  poss_heads <- eligible_heads[eligible_heads > 0]
-  poss_edges <- expand.grid(poss_tails,poss_heads)
-  poss_edges <- poss_edges[poss_edges[,1] > poss_edges[,2],]
-  tails <- poss_edges[,1]
-  heads <- poss_edges[,2]
-  
-  # only consider edges that were not already in the old network
-  if(!is.null(last_net)){
-    in_old_net <- sapply(seq_along(heads), function(i) {
-      length(get.edgeIDs(last_net, heads[i], tails[i])) != 0
-    })
-    tails <- tails[!in_old_net]
-    heads <- heads[!in_old_net]
-  }
-
-  if(!is.null(last_net) && (last_net %n% 'n' > 2)){
-    times <- get.vertex.attribute(last_net, "time")
-    node_degrees <- degree(last_net)
-    degs <- node_degrees * exp(-params$beta_edges * (time - times))
-    degs[is.na(degs) | is.nan(degs)] <- 0
-    total_deg <- sum(degs)
-    if (total_deg <= 0 || !is.finite(total_deg)) {
-      probs <- rep(1 / length(heads), length(heads))
-    } else {
-      probs <- degs[heads] / total_deg
-    }
-    probs[is.na(probs) | is.nan(probs)] <- 0
-    probs[probs < 0] <- 0
-    probs[probs > 1] <- 1
-    if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
-  } else {
-    node_degrees <- NULL
-    probs <- rep(1, length(heads))
-    times <- numeric(0)  # not used when node_degrees is NULL; avoids missing 'times' in closure env
-  }
-  
-  if(!is.null(mark) && length(probs) !=0 && (last_net %n% 'n' > 2)){
-    if(is.null(new_edge_hash)){
-      in_mark <- sapply(seq_along(heads), function(i) {
-        length(get.edgeIDs(mark, heads[i], tails[i])) != 0
-      })
-    } else {
-      in_mark <- has_edge(heads, tails, new_edge_hash)
-    }
-    K_obs <- sum(in_mark, na.rm = TRUE)
-    log_poisson <- dpois(K_obs, m_val, log = TRUE)
-    p_in <- pmax(probs[in_mark], .Machine$double.eps)
-    p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
-    log_mark_density <- log_poisson + sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
-    observed_categorical <- list()
-    if (!is.null(mark) && (new_nodes - old_nodes) > 0) {
-      vcat_res <- log_categorical_density(params, mark, old_nodes, new_nodes, eps = 1e-10)
-      if (!is.null(vcat_res$log_dens) && is.finite(vcat_res$log_dens)) log_mark_density <- log_mark_density + vcat_res$log_dens
-      observed_categorical <- vcat_res$observed
-    }
-    mark_density <- exp(log_mark_density)
-  } else {
-    in_mark <- rep(1, length(heads))
-    K_obs <- if (length(heads) > 0) sum(in_mark, na.rm = TRUE) else 0
-    log_mark_density <- dpois(K_obs, m_val, log = TRUE)
-    observed_categorical <- list()
-    if (!is.null(mark) && (new_nodes - old_nodes) > 0) {
-      vcat_res <- log_categorical_density(params, mark, old_nodes, new_nodes, eps = 1e-10)
-      if (!is.null(vcat_res$log_dens) && is.finite(vcat_res$log_dens)) log_mark_density <- log_mark_density + vcat_res$log_dens
-      observed_categorical <- vcat_res$observed
-    }
-    mark_density <- exp(log_mark_density)
-  }
-  
-  # Pre-compute level names for vertex categorical (for closure)
-  level_names_by_attr <- list()
-  if (length(observed_categorical) > 0) {
-    for (an in names(observed_categorical)) {
-      level_names_by_attr[[an]] <- vertex_categorical_level_names(params, an, mark)
-    }
+    observed_mark <- filtration_to_net(mark_filtration, time, equals = TRUE)
+    if (network.size(observed_mark) == old_nodes) observed_mark <- new_net
   }
 
-  # 1. Define the lightweight log-density function for BA (includes Poisson(m) for K_obs edges + vertex categorical)
+  # Reject updates outside the support: one new node, preserved old edges, and
+  # only new-to-eligible-old edges. Ignoring an ineligible observed edge would
+  # otherwise assign probability to an update the simulator cannot produce.
+  edge_keys <- function(net) {
+    edges <- as.matrix.network.edgelist(net, names = FALSE)
+    if (!nrow(edges)) return(character(0))
+    paste(pmin(edges[, 1L], edges[, 2L]), pmax(edges[, 1L], edges[, 2L]), sep = "-")
+  }
+  old_keys <- edge_keys(last_net)
+  observed_keys <- edge_keys(observed_mark)
+  candidate_keys <- if (length(heads)) paste(heads, old_nodes + 1L, sep = "-") else character(0)
+  added_keys <- setdiff(observed_keys, old_keys)
+  valid_mark <- network.size(observed_mark) == old_nodes + 1L &&
+    all(old_keys %in% observed_keys) && all(added_keys %in% candidate_keys)
+  in_mark <- candidate_keys %in% added_keys
+  vcat_res <- if (valid_mark) {
+    log_categorical_density(params, observed_mark, old_nodes, old_nodes + 1L, eps = 1e-10)
+  } else list(observed = list())
+  observed_categorical <- vcat_res$observed
+  level_names_by_attr <- lapply(names(observed_categorical), function(an) {
+    vertex_categorical_level_names(params, an, observed_mark)
+  })
+  names(level_names_by_attr) <- names(observed_categorical)
+
   log_density_func_light <- function(params) {
-    m_p <- if (!is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0) params$m else 1
-    log_poisson <- dpois(K_obs, m_p, log = TRUE)
-    if (!is.finite(log_poisson)) return(-1e10)
-    node_dens <- 0
-    if (!is.null(node_degrees)) {
-      degs <- node_degrees * exp(-params$beta_edges * (time - times))
-      degs[is.na(degs) | is.nan(degs)] <- 0
-      total_deg <- sum(degs)
-      if (!is.finite(total_deg) || total_deg <= 0) return(-1e10)
-      probs <- degs[heads] / total_deg
-      probs[is.na(probs) | is.nan(probs)] <- 0
-      probs[probs < 0] <- 0
-      probs[probs > 1] <- 1
-      if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
-      p_in <- pmax(probs[in_mark], .Machine$double.eps)
-      p_out <- pmax(1 - probs[!in_mark], .Machine$double.eps)
-      node_dens <- sum(log(p_in), na.rm = TRUE) + sum(log(p_out), na.rm = TRUE)
-    }
+    m_p <- if (is.null(params$m)) 1 else params$m
+    if (!valid_mark || length(m_p) != 1L || !is.finite(m_p) || m_p < 0 ||
+        length(params$beta_edges) != 1L || !is.finite(params$beta_edges) ||
+        params$beta_edges < 0) return(-Inf)
+    p <- attachment_weights(params$beta_edges, target_degrees, ages)
+    x <- m_p * p
+    # sum(x)=m_p whenever there are eligible targets. No Poisson count factor:
+    # the latent number of attempts was integrated out by Poisson splitting.
+    out <- -sum(x[!in_mark]) + sum(log(-expm1(-x[in_mark])))
     vcat <- params$vertex_categorical
-    if (!is.null(vcat) && is.list(vcat) && length(observed_categorical) > 0) {
-      eps_cl <- 1e-10
+    if (!is.null(vcat) && is.list(vcat) && length(observed_categorical)) {
       for (attr_name in names(observed_categorical)) {
         if (attr_name %in% names(vcat)) {
-          levs_attr <- level_names_by_attr[[attr_name]]
-          if (is.null(levs_attr) && !is.null(params$vertex_categorical_levels) && attr_name %in% names(params$vertex_categorical_levels))
-            levs_attr <- params$vertex_categorical_levels[[attr_name]]
-          if (!is.null(levs_attr)) {
-            p_attr <- expand_vertex_categorical_probs(vcat[[attr_name]], levs_attr, eps = eps_cl)
+          levs <- level_names_by_attr[[attr_name]]
+          if (is.null(levs) && !is.null(params$vertex_categorical_levels))
+            levs <- params$vertex_categorical_levels[[attr_name]]
+          if (!is.null(levs)) {
+            p_attr <- expand_vertex_categorical_probs(vcat[[attr_name]], levs, eps = 1e-10)
             if (!is.null(p_attr)) {
-              obs <- observed_categorical[[attr_name]]
-              idx <- match(obs, names(p_attr))
-              idx[is.na(idx)] <- match("unknown", names(p_attr))
-              idx[is.na(idx)] <- 1L
-              node_dens <- node_dens + sum(log(pmax(p_attr[idx], eps_cl)))
-            }
+              idx <- match(observed_categorical[[attr_name]], names(p_attr))
+              if (anyNA(idx)) return(-Inf)
+              out <- out + sum(log(p_attr[idx]))
+            } else return(-Inf)
           }
         }
       }
     }
-    return(log_poisson + node_dens)
+    out
   }
-
-  # 2. Capture the environment (include K_obs for Poisson term + vertex categorical)
-  environment(log_density_func_light) <- list2env(
-    list(
-      heads = heads,
-      time = time,
-      times = times,
-      node_degrees = node_degrees,
-      in_mark = in_mark,
-      K_obs = K_obs,
-      dpois = stats::dpois,
-      observed_categorical = observed_categorical,
-      level_names_by_attr = level_names_by_attr,
-      expand_vertex_categorical_probs = expand_vertex_categorical_probs
-    ),
-    parent = baseenv()
-  )
-  
-  # 3. Define the wrapper
-  density_func_light <- function(params) {
-    exp(log_density_func_light(params))
-  }
-  
-  # 4. Link wrapper to the log function
-  # CRITICAL: You must include 'log_density_func_light' in the environment!
+  environment(log_density_func_light) <- list2env(list(
+    valid_mark = valid_mark, in_mark = in_mark, ages = ages,
+    target_degrees = target_degrees, attachment_weights = attachment_weights,
+    observed_categorical = observed_categorical, level_names_by_attr = level_names_by_attr,
+    expand_vertex_categorical_probs = expand_vertex_categorical_probs
+  ), parent = baseenv())
+  density_func_light <- function(params) exp(log_density_func_light(params))
   environment(density_func_light) <- list2env(
-    list(log_density_func_light = log_density_func_light), 
-    parent = baseenv()
-  )
+    list(log_density_func_light = log_density_func_light), parent = baseenv())
+  log_mark_density <- log_density_func_light(params)
 
-  if(generate_mark){
-    last_net <- mark
-    times <- get.vertex.attribute(last_net, "time")
-    if (!is.null(last_net) && (last_net %n% 'n') > 1) {
-      mark_sample <- network.copy(last_net)
-      old_nodes <- last_net %n% 'n'
-      new_nodes <- 1
-      mark_sample <- add.vertices(mark_sample, new_nodes)
-      set.vertex.attribute(mark_sample, "time", c((last_net %v% 'time'), rep(time, new_nodes)))
-      mark_sample <- sample_vertex_attrs(params, last_net, mark_sample, old_nodes, new_nodes, eps = 1e-10)
-      new_node_idx <- old_nodes + 1
-
-      if (!is.null(truncation) && old_nodes > truncation) {
-        if (mark_decay == "activity") {
-          activity_times <- get_latest_times(last_net)
-          ord <- order(activity_times[seq_len(old_nodes)], seq_len(old_nodes), decreasing = TRUE)
-          eligible_heads <- sort(ord[seq_len(min(truncation, old_nodes))])
-        } else {
-          eligible_heads <- seq(max(1L, old_nodes - truncation + 1L), old_nodes)
-        }
-      } else {
-        eligible_heads <- seq_len(old_nodes)
-      }
-      degs <- degree(last_net) * exp(-params$beta_edges * (time - times))
-      degs[is.na(degs) | is.nan(degs)] <- 0
-      total_deg <- sum(degs)
-      if (total_deg <= 0 || !is.finite(total_deg)) {
-        probs <- rep(1 / length(eligible_heads), length(eligible_heads))
-      } else {
-        probs <- degs[eligible_heads] / total_deg
-      }
-      probs[is.na(probs) | is.nan(probs)] <- 0
-      probs[probs < 0] <- 0
-      probs[probs > 1] <- 1
-      if (length(probs) > 0 && all(probs == 0)) probs[] <- 1 / length(probs)
-      # Ensure all probs > 0 so sample(..., replace = FALSE, prob = probs) never fails with "too few positive probabilities"
-      eps_p <- max(.Machine$double.eps, 1e-10)
-      probs[probs <= 0 | !is.finite(probs)] <- eps_p
-      probs <- probs / sum(probs)
-
-      K <- rpois(1, m_val)
-      # Join to at most all eligible targets (one node added per event; edges capped by available targets)
-      K <- min(K, length(eligible_heads))
-      if (K > 0 && length(eligible_heads) > 0) {
-        sampled_idx <- sample(length(eligible_heads), size = K, replace = FALSE, prob = probs)
-        heads_to_add <- eligible_heads[sampled_idx]
-        tails_to_add <- rep(new_node_idx, K)
-        add.edges(mark_sample, heads_to_add, tails_to_add)
-        p_chosen <- pmax(probs[sampled_idx], .Machine$double.eps)
-        log_mark_sample_density <- dpois(K, m_val, log = TRUE) + sum(log(p_chosen), na.rm = TRUE)
-      } else {
-        log_mark_sample_density <- dpois(K, m_val, log = TRUE)
-      }
-      mark_sample_density <- exp(log_mark_sample_density)
-    } else {
-      if (is.null(last_net) || (last_net %n% 'n') < 2) {
-        if (is.null(last_net)) {
-          mark_sample <- network(matrix(1), directed = FALSE)
-          set.vertex.attribute(mark_sample, "time", time)
-        } else {
-          mark_sample <- network.copy(last_net)
-        }
-        times <- mark_sample %v% 'time'
-        mark_sample <- add.vertices(mark_sample, 1)
-        if (mark_sample %n% 'n' == 2) {
-          add.edges(mark_sample, 2, 1)
-        }
-        set.vertex.attribute(mark_sample, "time", c(times, time))
-        mark_sample <- sample_vertex_attrs(params, last_net, mark_sample, mark_sample %n% 'n' - 1L, 1L, eps = 1e-10)
-        log_mark_sample_density <- dpois(1, m_val, log = TRUE)
-        mark_sample_density <- exp(log_mark_sample_density)
-      }
-    }
-  } else {
-    mark_sample <- new_net
-    log_mark_sample_density <- 0
-    mark_sample_density <- 1
-  }
-  
-  return(list(
-    mark_density = mark_density,
-    log_mark_density = log_mark_density,
-    density_func = density_func_light,
-    log_density_func = log_density_func_light,
-    edge_probs = probs,
-    # mark sample:
-    mark_sample = mark_sample,
-    mark_sample_density = exp(log_mark_sample_density),
-    log_mark_sample_density = log_mark_sample_density
-  ))
+  list(mark_density = exp(log_mark_density), log_mark_density = log_mark_density,
+       density_func = density_func_light, log_density_func = log_density_func_light,
+       edge_probs = edge_probs, attachment_probs = probs, candidate_heads = heads,
+       mark_sample = if (generate_mark) observed_mark else new_net,
+       mark_sample_density = if (generate_mark) exp(log_mark_density) else 1,
+       log_mark_sample_density = if (generate_mark) log_mark_density else 0)
 }
 
 #' Mark PMF for change statistic (ERGM-style) attachment
@@ -1146,7 +1063,7 @@ sanitize_probs <- function(probs, eps = 1e-10, context = "") {
 #' @param mark Network at current time (to read observed attributes).
 #' @param old_nodes Number of nodes before this event.
 #' @param new_nodes Total number of nodes including new arrivals.
-#' @param eps Small positive value for log floor (default 1e-10).
+#' @param eps Retained for compatibility; exact categorical probabilities are not floored.
 #' @return Scalar log-density contribution.
 #' @noRd
 log_categorical_density <- function(params, mark, old_nodes, new_nodes, eps = 1e-10) {
@@ -1164,10 +1081,8 @@ log_categorical_density <- function(params, mark, old_nodes, new_nodes, eps = 1e
       p <- expand_vertex_categorical_probs(vcat[[attr_name]], level_names, eps = eps)
       if (!is.null(p)) {
         idx <- match(obs_vals, names(p))
-        idx[is.na(idx)] <- match("unknown", names(p))
-        idx[is.na(idx)] <- 1L
-        ld <- ld + sum(log(pmax(p[idx], eps)))
-      }
+        ld <- if (anyNA(idx)) -Inf else ld + sum(log(p[idx]))
+      } else ld <- -Inf
     }
   }
   list(log_dens = ld, observed = observed)
@@ -1339,7 +1254,8 @@ normalize_vertex_categorical_probs <- function(probs, eps = 1e-10) {
 #'
 #' @param p_n1 Named numeric vector of length n-1 (probabilities for non-reference levels).
 #' @param level_names Character vector of all n level names; the last element is the reference level.
-#' @param eps Small positive value used as floor for any probability (default 1e-10).
+#' @param eps Retained for compatibility; probabilities, including exact zeros,
+#'   are not floored or otherwise changed.
 #' @return Named numeric vector of length n summing to 1, or NULL if inputs are invalid.
 #' @examples
 #' expand_vertex_categorical_probs(c(male=0.4, female=0.4), c("male", "female", "unknown"))
@@ -1349,9 +1265,15 @@ expand_vertex_categorical_probs <- function(p_n1, level_names, eps = 1e-10) {
   if (is.null(level_names) || length(level_names) < 2L) return(NULL)
   n <- length(level_names)
   if (length(p_n1) != n - 1L) return(NULL)
+  if (!is.numeric(p_n1) || any(!is.finite(p_n1)) || any(p_n1 < 0) ||
+      sum(p_n1) > 1 || anyNA(level_names) || anyDuplicated(level_names)) return(NULL)
+  if (!is.null(names(p_n1))) {
+    idx <- match(level_names[-n], names(p_n1))
+    if (anyNA(idx) || anyDuplicated(names(p_n1))) return(NULL)
+    p_n1 <- p_n1[idx]
+  }
   p_ref <- 1 - sum(p_n1)
   full <- c(as.numeric(p_n1), p_ref)
-  full <- pmax(full, eps)
   names(full) <- level_names
   full
 }
@@ -1394,6 +1316,8 @@ expected_params_PMF_mark_BA <- function() {
 #'
 #' @param mark_filtration Observed network (filtration).
 #' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).
+#' @param cs_mode Optional explicit CS mode; nonlegacy modes additionally require
+#'   \code{m}. \code{NULL} retains the compatibility parameter requirements.
 #' @param ... Ignored.
 #' @return List with \code{required} and \code{CS_params_length} (NA if cannot be computed).
 #' @examples
@@ -1403,8 +1327,12 @@ expected_params_PMF_mark_BA <- function() {
 #' expected_params_PMF_mark_CS(net, "edges + triangles")
 #' }
 #' @export
-expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, ...) {
+expected_params_PMF_mark_CS <- function(mark_filtration, formula_RHS, cs_mode = NULL, ...) {
   required <- c("node_lambda", "CS_params", "beta_edges")
+  if (!is.null(cs_mode)) {
+    cs_mode <- match.arg(cs_mode, c("joint", "independent", "size_conditional", "legacy"))
+    if (cs_mode != "legacy") required <- c(required, "m")
+  }
   CS_params_length <- NA_integer_
   if (is.null(formula_RHS) || is.null(mark_filtration)) {
     return(list(required = required, CS_params_length = CS_params_length))
@@ -1479,8 +1407,10 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
     return(invisible(TRUE))
   }
   if (identical(PMF_mark, PMF_mark_CS)) {
-    formula_RHS <- list(...)$formula_RHS
-    exp_cs <- expected_params_PMF_mark_CS(mark_filtration, formula_RHS)
+    extras <- list(...)
+    formula_RHS <- extras$formula_RHS
+    exp_cs <- expected_params_PMF_mark_CS(mark_filtration, formula_RHS,
+                                         cs_mode = extras$cs_mode)
     missing <- setdiff(exp_cs$required, names(params))
     if (length(missing) > 0) {
       stop("PMF_mark_CS requires the following parameters: ", paste(missing, collapse = ", "))
@@ -1606,12 +1536,39 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 
 #' Mark probability mass function using Change Statistics (CS/ERNM)
 #'
-#' \code{...} can include \code{return_combined_inputs = TRUE}: then the return list
-#' gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
-#' caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
+#' Two explicit constructions give exact PMFs for simultaneous, unordered edge
+#' additions. Both include Poisson node births and condition the complete
+#' node-and-edge proposal to be nonempty by default.
+#'
+#' In \code{cs_mode = "independent"} (CS-1), each candidate edge has its change
+#' statistics calculated against the same pre-update graph. Its weight is
+#' \eqn{w_e=\exp(-\tau a_e)\operatorname{logit}^{-1}(\theta^T C_e)}.
+#' Normalize the weights to \eqn{p_e}; uncapped Poisson attempts with mean
+#' \code{m} give independent inclusion probabilities \eqn{1-\exp(-m p_e)}
+#' before conditioning the complete update to be nonempty. No subset normalizer
+#' or within-update change of the selection weights is used.
+#'
+#' In \code{cs_mode = "size_conditional"} (CS-2), the actual edge count is
+#' Poisson with parameter \code{m}, conditioned not to exceed the candidate
+#' count \eqn{D}. Given count \eqn{k}, sets receive weights
+#' \eqn{\exp(\theta^T\Delta g(S)-\tau\sum_{e\in S}a_e)}, normalized over
+#' sets of size \eqn{k}. Sequential ERNM toggles calculate the whole-update
+#' statistic; their order is not a mark component. An edge-count coefficient
+#' cancels conditional on \eqn{k} and must be fixed or omitted when fitting.
+#' Likewise, birth-only terms cancel conditional on births. \code{m} is a
+#' truncated-Poisson count parameter, not generally the expected count.
+#'
+#' \code{cs_mode = "joint"} preserves the earlier whole-update exponential
+#' tilt of a collapsed-Poisson reference over all \eqn{2^D} subsets. This is the
+#' model used in the September 21 recovery runs, not CS-1 or CS-2. Its \code{m}
+#' is only a reference attempt mean. With \code{cs_mode = NULL}, supplying
+#' \code{m} selects \code{"joint"}; omitting \code{m} selects the older
+#' \code{"legacy"} compatibility implementation. Choose a mode explicitly
+#' for new studies and use the same mode in simulation and likelihood calls.
 #'
 #' @param time Current event time.
 #' @param params List with \code{node_lambda}, \code{CS_params}, \code{beta_edges},
+#'   \code{m} for all three nonlegacy modes,
 #'   and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.
 #' @param mark_filtration Observed network (filtration) up to \code{time}.
 #' @param mark Optional network state at \code{time}; if \code{NULL}, derived from \code{mark_filtration}.
@@ -1619,25 +1576,49 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' @param generate_density If \code{TRUE} (default), compute the log-density of the mark.
 #' @param new_edge_hash Optional hash of existing edges for fast lookup.
 #' @param formula_RHS Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).
-#' @param truncation Maximum number of nodes to consider for edge candidates (default 1).
+#' @param truncation Maximum candidate node window. Defaults to 4 when
+#'   \code{m} is supplied, and 1 in the legacy model.
 #' @param mark_decay Character string controlling how temporal weights decay.
 #'   One of \code{"node_entrance"} (default) or \code{"activity"}.
 #' @param growth_only Logical; if \code{TRUE}, edges only form when a node enters the network.
 #'   (At least one node in the pair must be a new entrant). Default \code{FALSE}.
 #' @param model Optional pre-built ERNM model object to reuse.
-#' @param max_node_time Optional maximum node time for temporal truncation.
+#' @param max_node_time Last time at which births are possible (default no cutoff).
+#'   With no births, an edge-addition-only window can saturate; simulation stops
+#'   with an error when no nonempty update remains.
+#' @param max_candidates Maximum number of candidate edges for exact enumeration
+#'   in \code{"joint"} and \code{"size_conditional"} modes (default 12, at most
+#'   20). Larger supports error. CS-2 enumerates only sets of the drawn/observed
+#'   size; the independent mode does not use this guard.
+#' @param condition_nonempty Condition the complete node-and-edge update on being
+#'   nonempty in every nonlegacy mode (default TRUE).
+#' @param cs_mode One of \code{"independent"}, \code{"size_conditional"},
+#'   \code{"joint"}, or \code{"legacy"}. \code{NULL} preserves historical
+#'   dispatch: joint with \code{m}, legacy without \code{m}.
 #' @param ... Additional arguments; pass \code{return_combined_inputs = TRUE} to
 #'   include change-statistic inputs in the return list.
 #' @param probs Named numeric vector of vertex categorical probabilities (used by helpers).
 #' @param eps Small positive value for probability clamping (default 1e-10).
-#' @return List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+#' @return List with \code{log_mark_density}, \code{mark_density}, numerical
+#'   cached \code{log_density_func} and \code{density_func}, and optionally
+#'   \code{mark_sample} and its density. For nonlegacy modes,
+#'   \code{mark_change_stats} reports the complete update's statistic change.
+#'   CS-1 returns frozen \code{edge_change_stats}, normalized
+#'   \code{edge_selection_probs}, and \code{reference_edge_probs} before
+#'   nonempty conditioning. Its \code{edge_probs} condition on node births and
+#'   applicable nonempty conditioning. CS-2 \code{edge_probs} condition on both
+#'   realized node and edge counts (see \code{edge_probs_conditioning});
+#'   \code{edge_count_probs} condition on births and applicable nonempty
+#'   conditioning. CS-2 \code{n_mark_states} is the enumerated size-class count.
 #' @examples
 #' \donttest{
-#' params <- list(node_lambda = 0.5, CS_params = c(-5, 0.5), beta_edges = 0.5)
+#' params <- list(node_lambda = 0.5, m = 1.4, CS_params = c(0, 0.5), beta_edges = 0.5)
 #' net <- network::network.initialize(5, directed = FALSE)
 #' network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
-#' # Compute mark density for a new node at time 0.6 with triangles
-#' pmf <- PMF_mark_CS(0.6, params, net, formula_RHS = "edges + triangles", truncation = 30)
+#' # Draw a complete nonempty simultaneous update.
+#' pmf <- PMF_mark_CS(0.6, params, net, generate_mark = TRUE,
+#'                    formula_RHS = "edges + triangles", truncation = 4,
+#'                    cs_mode = "size_conditional")
 #' pmf$log_mark_density
 #' }
 #' @rdname PMF_mark_CS
@@ -1655,8 +1636,29 @@ PMF_mark_CS <- function(time,
                         growth_only = FALSE,
                         model = NULL,
                         max_node_time = NULL,
+                        max_candidates = 12L,
+                        condition_nonempty = TRUE,
+                        cs_mode = NULL,
                         ...
 ){
+  if (is.null(cs_mode)) cs_mode <- if (is.null(params[["m"]])) "legacy" else "joint"
+  cs_mode <- match.arg(cs_mode, c("joint", "independent", "size_conditional", "legacy"))
+  if (cs_mode != "legacy") {
+    if (is.null(params[["m"]])) stop("cs_mode = '", cs_mode, "' requires params$m")
+    if (missing(truncation)) truncation <- 4L
+    args <- list(
+      time = time, params = params, mark_filtration = mark_filtration, mark = mark,
+      generate_mark = generate_mark, formula_RHS = formula_RHS,
+      truncation = truncation, mark_decay = mark_decay, growth_only = growth_only,
+      max_node_time = max_node_time, condition_nonempty = condition_nonempty)
+    if (cs_mode == "independent") return(do.call(.pmf_cs_independent, args))
+    args$max_candidates <- max_candidates
+    backend <- if (cs_mode == "joint") .pmf_cs_joint else .pmf_cs_size_conditional
+    return(do.call(backend, args))
+  }
+  if (!is.null(params[["m"]])) stop("The legacy CS mode requires params$m to be omitted")
+  # Compatibility path without m: independent Bernoulli edge probabilities.
+  # It is not the whole-update interaction model used in the redevelopment.
   if (growth_only && !is.null(formula_RHS)) {
     zero_terms <- c("triangles", "triangle", "gwesp", "gwdsp", "esp", "dsp",
                      "ttriple", "ctriple", "kstar")
@@ -1678,10 +1680,10 @@ PMF_mark_CS <- function(time,
     }
   }
   eps <- 1e-10  # used for probability clamping and safe log (CS safety)
-  # Optional m parameter: when present, number of edges per event ~ Poisson(m)
-  # and CS probabilities act as sampling weights (consistent with BA model).
-  use_m <- !is.null(params$m) && is.numeric(params$m) && length(params$m) == 1L && is.finite(params$m) && params$m > 0
-  m_val <- if (use_m) params$m else NULL
+  # Nonlegacy m-based laws dispatch above. In this compatibility path, never
+  # let R's partial matching interpret the temporal parameter mu as m.
+  use_m <- FALSE
+  m_val <- NULL
 
   if(is.null(mark)){
     mark <- filtration_to_net(mark_filtration, time, equals = TRUE)

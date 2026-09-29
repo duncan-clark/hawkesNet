@@ -21,6 +21,9 @@ PMF_mark_CS(
   growth_only = FALSE,
   model = NULL,
   max_node_time = NULL,
+  max_candidates = 12L,
+  condition_nonempty = TRUE,
+  cs_mode = NULL,
   ...
 )
 }
@@ -32,6 +35,7 @@ PMF_mark_CS(
 \item{time}{Current event time.}
 
 \item{params}{List with \code{node_lambda}, \code{CS_params}, \code{beta_edges},
+\code{m} for all three nonlegacy modes,
 and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
 \item{mark_filtration}{Observed network (filtration) up to \code{time}.}
@@ -46,7 +50,8 @@ and optionally \code{vertex_categorical}, \code{vertex_categorical_levels}.}
 
 \item{formula_RHS}{Character RHS of the ERNM formula (e.g. \code{"edges + triangles"}).}
 
-\item{truncation}{Maximum number of nodes to consider for edge candidates (default 1).}
+\item{truncation}{Maximum candidate node window. Defaults to 4 when
+\code{m} is supplied, and 1 in the legacy model.}
 
 \item{mark_decay}{Character string controlling how temporal weights decay.
 One of \code{"node_entrance"} (default) or \code{"activity"}.}
@@ -56,27 +61,80 @@ One of \code{"node_entrance"} (default) or \code{"activity"}.}
 
 \item{model}{Optional pre-built ERNM model object to reuse.}
 
-\item{max_node_time}{Optional maximum node time for temporal truncation.}
+\item{max_node_time}{Last time at which births are possible (default no cutoff).
+With no births, an edge-addition-only window can saturate; simulation stops
+with an error when no nonempty update remains.}
+
+\item{max_candidates}{Maximum number of candidate edges for exact enumeration
+in \code{"joint"} and \code{"size_conditional"} modes (default 12, at most
+20). Larger supports error. CS-2 enumerates only sets of the drawn/observed
+size; the independent mode does not use this guard.}
+
+\item{condition_nonempty}{Condition the complete node-and-edge update on being
+nonempty in every nonlegacy mode (default TRUE).}
+
+\item{cs_mode}{One of \code{"independent"}, \code{"size_conditional"},
+\code{"joint"}, or \code{"legacy"}. \code{NULL} preserves historical
+dispatch: joint with \code{m}, legacy without \code{m}.}
 
 \item{...}{Additional arguments; pass \code{return_combined_inputs = TRUE} to
 include change-statistic inputs in the return list.}
 }
 \value{
-List with \code{log_mark_density}, \code{log_density_func}, and optionally sampled mark / probabilities.
+List with \code{log_mark_density}, \code{mark_density}, numerical
+  cached \code{log_density_func} and \code{density_func}, and optionally
+  \code{mark_sample} and its density. For nonlegacy modes,
+  \code{mark_change_stats} reports the complete update's statistic change.
+  CS-1 returns frozen \code{edge_change_stats}, normalized
+  \code{edge_selection_probs}, and \code{reference_edge_probs} before
+  nonempty conditioning. Its \code{edge_probs} condition on node births and
+  applicable nonempty conditioning. CS-2 \code{edge_probs} condition on both
+  realized node and edge counts (see \code{edge_probs_conditioning});
+  \code{edge_count_probs} condition on births and applicable nonempty
+  conditioning. CS-2 \code{n_mark_states} is the enumerated size-class count.
 }
 \description{
-\code{...} can include \code{return_combined_inputs = TRUE}: then the return list
-gets \code{combined_inputs} (change_stats, in_mark, diffs, etc.) for this event so the
-caller can build one combined intensity closure (saves closure envs; same data, no memory blow-up).
+Two explicit constructions give exact PMFs for simultaneous, unordered edge
+additions. Both include Poisson node births and condition the complete
+node-and-edge proposal to be nonempty by default.
+}
+\details{
+In \code{cs_mode = "independent"} (CS-1), each candidate edge has its change
+statistics calculated against the same pre-update graph. Its weight is
+\eqn{w_e=\exp(-\tau a_e)\operatorname{logit}^{-1}(\theta^T C_e)}.
+Normalize the weights to \eqn{p_e}; uncapped Poisson attempts with mean
+\code{m} give independent inclusion probabilities \eqn{1-\exp(-m p_e)}
+before conditioning the complete update to be nonempty. No subset normalizer
+or within-update change of the selection weights is used.
+
+In \code{cs_mode = "size_conditional"} (CS-2), the actual edge count is
+Poisson with parameter \code{m}, conditioned not to exceed the candidate
+count \eqn{D}. Given count \eqn{k}, sets receive weights
+\eqn{\exp(\theta^T\Delta g(S)-\tau\sum_{e\in S}a_e)}, normalized over
+sets of size \eqn{k}. Sequential ERNM toggles calculate the whole-update
+statistic; their order is not a mark component. An edge-count coefficient
+cancels conditional on \eqn{k} and must be fixed or omitted when fitting.
+Likewise, birth-only terms cancel conditional on births. \code{m} is a
+truncated-Poisson count parameter, not generally the expected count.
+
+\code{cs_mode = "joint"} preserves the earlier whole-update exponential
+tilt of a collapsed-Poisson reference over all \eqn{2^D} subsets. This is the
+model used in the September 21 recovery runs, not CS-1 or CS-2. Its \code{m}
+is only a reference attempt mean. With \code{cs_mode = NULL}, supplying
+\code{m} selects \code{"joint"}; omitting \code{m} selects the older
+\code{"legacy"} compatibility implementation. Choose a mode explicitly
+for new studies and use the same mode in simulation and likelihood calls.
 }
 \examples{
 normalize_vertex_categorical_probs(c(0.4, 0.4, 0.2))
 \donttest{
-params <- list(node_lambda = 0.5, CS_params = c(-5, 0.5), beta_edges = 0.5)
+params <- list(node_lambda = 0.5, m = 1.4, CS_params = c(0, 0.5), beta_edges = 0.5)
 net <- network::network.initialize(5, directed = FALSE)
 network::set.vertex.attribute(net, "time", seq(0.1, 0.5, length.out = 5))
-# Compute mark density for a new node at time 0.6 with triangles
-pmf <- PMF_mark_CS(0.6, params, net, formula_RHS = "edges + triangles", truncation = 30)
+# Draw a complete nonempty simultaneous update.
+pmf <- PMF_mark_CS(0.6, params, net, generate_mark = TRUE,
+                   formula_RHS = "edges + triangles", truncation = 4,
+                   cs_mode = "size_conditional")
 pmf$log_mark_density
 }
 }

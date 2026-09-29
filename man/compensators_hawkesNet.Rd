@@ -4,7 +4,12 @@
 \alias{compensators_hawkesNet}
 \title{Compensators (integrated intensity) for the Hawkes growth model}
 \usage{
-compensators_hawkesNet(params, time_window, mark_filtration)
+compensators_hawkesNet(
+  params,
+  time_window,
+  mark_filtration,
+  timing = hawkes_timing()
+)
 }
 \arguments{
 \item{params}{List of parameters.}
@@ -12,6 +17,8 @@ compensators_hawkesNet(params, time_window, mark_filtration)
 \item{time_window}{Numeric \code{c(t0, t1)}.}
 
 \item{mark_filtration}{Observed network.}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}.}
 }
 \value{
 Numeric vector of compensator values at each event time.

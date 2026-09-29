@@ -14,6 +14,7 @@ loglik_hawkesNet(
   edge_hash_list = NULL,
   verbose = FALSE,
   intens_funcs = NULL,
+  timing = hawkes_timing(),
   ...
 )
 }
@@ -39,6 +40,9 @@ Required (non-\code{NULL}) whenever \code{mu_vec} is supplied.}
 \item{verbose}{Print timing (default \code{FALSE}).}
 
 \item{intens_funcs}{Precomputed intensity functions (for fitting).}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}. M1/M2 use an exact
+interval compensator and cache structural features for parameter fitting.}
 
 \item{...}{Passed to \code{\link{cond_intensity}} or \code{\link{cond_intensity_inhom}}
 and to \code{PMF_mark} (e.g. \code{truncation}, \code{formula_RHS}, \code{cores},
@@ -66,5 +70,5 @@ ll$loglik
 }
 \seealso{
 \code{\link{fit_hawkesNet}}, \code{\link{prepare_inhomogeneous_background}},
-\code{\link{cond_intensity}}, \code{\link{cond_intensity_inhom}}
+  \code{\link{cond_intensity}}, \code{\link{cond_intensity_inhom}}
 }

@@ -26,7 +26,10 @@ gof(
   esp = 0L,
   mu_multiplier = 5,
   seed_events = 0L,
-  verbose = TRUE
+  verbose = TRUE,
+  cs_mode = NULL,
+  max_candidates = 12L,
+  timing = NULL
 )
 }
 \arguments{
@@ -80,6 +83,15 @@ generates subsequent events conditional on this initial history.
 Recommended for sparse networks where cold-start simulation is difficult.}
 
 \item{verbose}{Print progress messages (default TRUE).}
+
+\item{cs_mode}{Optional CS mark construction, passed unchanged to
+\code{PMF_mark_CS}; use the same construction as in the fitted model.}
+
+\item{max_candidates}{Maximum candidate count for exact CS mark evaluation
+(default 12); use the same support as in fitting.}
+
+\item{timing}{Ground timing specification. NULL uses \code{fit$timing} when
+available, otherwise \code{hawkes_timing()} (M0).}
 }
 \value{
 List with observed and simulated statistics and plots.

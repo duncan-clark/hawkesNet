@@ -44,11 +44,17 @@ test_that("cond_intensity returns a list with result and func", {
   set.seed(42)
   sim <- sim_hawkesNet(params, c(0, 2), PMF_mark_BA, cond_intensity,
                        verbose = FALSE, mu_multiplier = 5, truncation = 10)
-  intens <- cond_intensity(sim$net, 2.5, sim$net, PMF_mark_BA, params, truncation = 10)
+  hypothetical <- network::network.copy(sim$net)
+  network::add.vertices(hypothetical, 1L)
+  network::set.vertex.attribute(hypothetical, "time", c(sim$net %v% "time", 2.5))
+  intens <- cond_intensity(hypothetical, 2.5, sim$net, PMF_mark_BA, params, truncation = 10)
   expect_type(intens, "list")
   expect_true("result" %in% names(intens))
   expect_true("func" %in% names(intens))
   expect_gt(intens$result, 0)
+  q <- PMF_mark_BA(2.5, params, sim$net, mark = hypothetical, truncation = 10)$mark_density
+  ground <- params$mu + params$K * sum(exp(-params$beta_overall * (2.5 - sim$events$t)))
+  expect_equal(intens$result, q * ground)
 })
 
 test_that("cond_intensity_inhom works", {
@@ -56,9 +62,15 @@ test_that("cond_intensity_inhom works", {
   set.seed(42)
   sim <- sim_hawkesNet(params, c(0, 2), PMF_mark_BA, cond_intensity,
                        verbose = FALSE, mu_multiplier = 5, truncation = 10)
-  intens <- cond_intensity_inhom(sim$net, 2.5, sim$net, PMF_mark_BA, params,
+  hypothetical <- network::network.copy(sim$net)
+  network::add.vertices(hypothetical, 1L)
+  network::set.vertex.attribute(hypothetical, "time", c(sim$net %v% "time", 2.5))
+  intens <- cond_intensity_inhom(hypothetical, 2.5, sim$net, PMF_mark_BA, params,
                                   mu_at_t = 0.8, truncation = 10)
   expect_type(intens, "list")
   expect_true("result" %in% names(intens))
   expect_gt(intens$result, 0)
+  q <- PMF_mark_BA(2.5, params, sim$net, mark = hypothetical, truncation = 10)$mark_density
+  ground <- 0.8 + params$K * sum(exp(-params$beta_overall * (2.5 - sim$events$t)))
+  expect_equal(intens$result, q * ground)
 })

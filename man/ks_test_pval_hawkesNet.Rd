@@ -4,7 +4,12 @@
 \alias{ks_test_pval_hawkesNet}
 \title{Kolmogorov-Smirnov test p-value for time rescaling (Hawkes growth model)}
 \usage{
-ks_test_pval_hawkesNet(params, time_window, mark_filtration)
+ks_test_pval_hawkesNet(
+  params,
+  time_window,
+  mark_filtration,
+  timing = hawkes_timing()
+)
 }
 \arguments{
 \item{params}{List of parameters.}
@@ -12,6 +17,8 @@ ks_test_pval_hawkesNet(params, time_window, mark_filtration)
 \item{time_window}{Numeric \code{c(t0, t1)}.}
 
 \item{mark_filtration}{Observed network.}
+
+\item{timing}{Ground model from \code{\link{hawkes_timing}}.}
 }
 \value{
 P-value of the KS test under the null that rescaled times are uniform.
