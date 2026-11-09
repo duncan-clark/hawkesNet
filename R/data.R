@@ -35,5 +35,6 @@ NULL
 #' Time is in seconds; node IDs identify individuals.
 #' @source
 #' Hypertext 2009 conference data; see \code{inst/hypertext_conference/} for usage.
-#' @seealso \code{\link{CollegeMsg}}, \code{inst/hypertext_conference/hypertext_conference.R}
+#' @seealso \code{\link{CollegeMsg}} and the checkout script
+#'   \code{inst/hypertext_conference/hypertext_fits.R}.
 NULL

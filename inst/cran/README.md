@@ -143,10 +143,11 @@ conditional scenario inputs. See `?simulate_cran_joint`.
 
 ## Archived exploratory specifications
 
-The other `refit_*.R`, `forecast_triangle.R` and pilot scripts preserve earlier
-experiments. They include motif preferences and paired-addition channels and
-are **not primary manuscript entry points**. Their saved metadata distinguish
-`legacy`, `reduced`, `pattern_preferences`, `shared_consumer` and `pair_channels`.
+Some paper diagnostics call research scripts directly from the Git checkout.
+Earlier experiments with motif preferences and paired additions can also be
+found in the [pre-cleanup snapshot](https://github.com/duncan-clark/hawkesNet/tree/476f48df57e0389dad8a854c355a7c06241ec80b/inst/cran).
+Their saved metadata distinguish `legacy`, `reduced`, `pattern_preferences`,
+`shared_consumer` and `pair_channels`.
 For addition-pair experiments, `single`, `capped2` and `poisson` are different
 proposal-count laws and require separate fits. The exact unrestricted union
 likelihood may exceed its computation budget; it raises an error without

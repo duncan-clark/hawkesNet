@@ -104,13 +104,15 @@ data does not by itself establish that a model can be simulated indefinitely.
 Use bounded summaries or the manuscript's non-explosion conditions when
 choosing feedback specifications.
 
-The `PMF_mark_CS` modes `joint` and `size_conditional`, RHEM, and the dyadic
-`joint_marked_hawkes` interfaces remain available for earlier studies. Their
-model definitions differ from the primary CRAN specification. Scripts under
-`inst/simulation_study` and the other historical study directories retain
-those earlier designs. The `network_update_model` reference API follows the
-current recovery study's birth/turnover mechanism; it does not bundle its
-100-replicate experiment or archived numerical results.
+Earlier studies use the `PMF_mark_CS` modes `joint` and `size_conditional`,
+RHEM, and the dyadic `joint_marked_hawkes` interfaces. Their reproduction
+scripts are checkout resources under `inst/simulation_study` and the other
+study directories. The installed CRAN workflow consists of the guide and
+`refit_primary.R`. Retired pilots and local development files are available
+in the [pre-cleanup snapshot](https://github.com/duncan-clark/hawkesNet/tree/476f48df57e0389dad8a854c355a7c06241ec80b).
+The `network_update_model` reference API follows the current recovery study's
+birth/turnover mechanism. The full experiment and archived numerical results
+are separate research artifacts.
 
 From the package's parent directory:
 

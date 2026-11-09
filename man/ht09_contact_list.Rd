@@ -22,5 +22,6 @@ Load with:
 }
 }
 \seealso{
-\code{\link{CollegeMsg}}, \code{inst/hypertext_conference/hypertext_conference.R}
+\code{\link{CollegeMsg}} and the checkout script
+  \code{inst/hypertext_conference/hypertext_fits.R}.
 }

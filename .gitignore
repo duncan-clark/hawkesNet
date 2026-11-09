@@ -1,4 +1,5 @@
 .Rproj.user
+*.code-workspace
 .Rhistory
 .DS_Store
 .PNG

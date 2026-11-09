@@ -7,6 +7,7 @@
 * Added calendar timing with separate fast/slow release-type effects and separate initial- and later-topology coefficients, with clipped later changes.
 * Reworked onboarding and small runnable examples. The documentation distinguishes the Poisson-set proposal construction from the historical direct size-conditional CS law and identifies the scope of addition-only growth interfaces.
 * Corrected adaptive thinning for inhomogeneous backgrounds, observation-window KDE normalization, tied-time handling and experimental dyadic score/amount calculations. Added input validation for native CRAN data and explicit macOS/Linux source support.
+* Retired superseded research scripts and local development files. The installed CRAN workflow includes the guide and primary refit script. Research scripts used by paper diagnostics retain their checkout paths.
 
 ## Earlier development work (September 22, 2026)
 
