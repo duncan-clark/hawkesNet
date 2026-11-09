@@ -10,16 +10,16 @@
 \usage{
 cran_update_data(
   path,
-  law = c("PA", "CS-1", "CS-1U", "CS-pair", "TERGM", "CS-pair-triangle",
-    "CS-pair-diamond", "CS-pair-add", "CS-pair-migration-add", "TERGM-logdegree"),
+  law = c("PA", "CS-1", "CS-pair", "TERGM-logdegree", "CS-1U", "CS-pair-triangle",
+    "CS-pair-diamond", "CS-pair-add", "CS-pair-migration-add", "TERGM"),
   weights = c("exponential", "logistic"),
   proposal_means = c("covariate", "constant"),
-  term_specification = c("legacy", "reduced", "pattern_preferences", "shared_consumer",
-    "pair_channels", "motif_free"),
+  term_specification = c("motif_free", "legacy", "reduced", "pattern_preferences",
+    "shared_consumer", "pair_channels"),
   migration_degree = FALSE,
   pair_proposals = NULL,
   pair_max_states = 262144,
-  mixture = c("single", "two_component"),
+  mixture = NULL,
   people = NULL
 )
 
@@ -46,7 +46,10 @@ fit_cran_updates(
 caches (\code{marks}, \code{actor_selection}, \code{cs_popularity_20260924}). The importer
 reads the legacy NPY/NPZ format directly using R and C++; Python is not used.}
 
-\item{law}{One of \code{PA}, \code{CS-1}, \verb{CS-1U}, \code{CS-pair} (also \code{CS-pair-migration}), \code{CS-pair-triangle}, \code{CS-pair-diamond}, \code{CS-pair-add}, \code{CS-pair-migration-add}, \code{TERGM}, or \code{TERGM-logdegree}.}
+\item{law}{\code{PA}, \code{CS-1}, \code{CS-pair} or \code{TERGM-logdegree} for the paper.
+Earlier CRAN diagnostics also use \verb{CS-1U}, \code{CS-pair-triangle},
+\code{CS-pair-diamond}, \code{CS-pair-add}, \code{CS-pair-migration-add} and \code{TERGM}
+with explicit exploratory term specifications.}
 
 \item{weights}{CS proposal weights, exponential by default. Logistic weights
 are retained for reproducing archived fits. Both TERGM variants use direct
@@ -58,7 +61,7 @@ new packages and new majors and log one plus source out-degree. Deletion
 log means include log one plus source out-degree. Existing lines are the
 reference class. The paired-migration proposal mean remains constant.}
 
-\item{term_specification}{\code{motif_free} fixes all motif coefficients to zero
+\item{term_specification}{The default \code{motif_free} fixes motif coefficients to zero
 and is the manuscript specification. It supports PA, exponential CS-1,
 CS-pair and TERGM-logdegree. \code{legacy} reproduces archived fits. \code{reduced}
 fixes cyclic-triple coefficients to zero and, for laws with paired
@@ -99,7 +102,8 @@ default 262144 frontier states per connected component. Exceeding it raises
 an error before fitting; it never drops candidates, bundles or proposals.
 Increasing this budget can require substantial memory and computation.}
 
-\item{mixture}{\code{single} retains the original update law. \code{two_component}
+\item{mixture}{\code{NULL} selects \code{two_component} with \code{motif_free} terms and
+\code{single} for exploratory term specifications. \code{two_component}
 selects one component for a complete update, with component-specific
 release and edit rates and shared target preferences. Both component laws
 are normalized separately, and their exact probabilities are mixed.
@@ -138,14 +142,14 @@ selects births and releasing major lines. Each existing releasing line must
 change at least one edge; a newly born line may have no edges. All changes in
 a recorded bundle are simultaneous. Addition and deletion coefficients,
 including age decay, are separate. The manuscript uses \code{PA}, \code{CS-1},
-\code{CS-pair} and \code{TERGM-logdegree}, with \code{term_specification="motif_free"}
-and \code{mixture="two_component"}. CS-pair proposes migrations jointly;
+\code{CS-pair} and \code{TERGM-logdegree}. The default specification uses motif-free
+weights and a two-component mixture. CS-pair proposes migrations jointly;
 transitive triples, open diamonds and shared-consumer rectangles are
 reserved for goodness-of-fit checks. The CS laws and TERGM also accept
 dated shared-personnel covariates through \code{people}.
 }
 \details{
-Other specifications remain available for reproducing exploratory fits.
-They must be selected explicitly and should not be described as the
-manuscript's primary model. See the installed \code{cran/README.md} guide.
+For fitting the paper models, select \code{law} and supply \code{people} for the
+CS and TERGM laws. See the installed \code{cran/README.md} guide for the cache
+layout and the workflow from fit to forecast.
 }

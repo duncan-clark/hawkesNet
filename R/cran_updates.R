@@ -5,20 +5,23 @@
 #' change at least one edge; a newly born line may have no edges. All changes in
 #' a recorded bundle are simultaneous. Addition and deletion coefficients,
 #' including age decay, are separate. The manuscript uses `PA`, `CS-1`,
-#' `CS-pair` and `TERGM-logdegree`, with `term_specification="motif_free"`
-#' and `mixture="two_component"`. CS-pair proposes migrations jointly;
+#' `CS-pair` and `TERGM-logdegree`. The default specification uses motif-free
+#' weights and a two-component mixture. CS-pair proposes migrations jointly;
 #' transitive triples, open diamonds and shared-consumer rectangles are
 #' reserved for goodness-of-fit checks. The CS laws and TERGM also accept
 #' dated shared-personnel covariates through `people`.
 #'
-#' Other specifications remain available for reproducing exploratory fits.
-#' They must be selected explicitly and should not be described as the
-#' manuscript's primary model. See the installed `cran/README.md` guide.
+#' For fitting the paper models, select `law` and supply `people` for the
+#' CS and TERGM laws. See the installed `cran/README.md` guide for the cache
+#' layout and the workflow from fit to forecast.
 #'
 #' @param path Directory containing the parameter-independent CRAN numerical
 #'   caches (`marks`, `actor_selection`, `cs_popularity_20260924`). The importer
 #'   reads the legacy NPY/NPZ format directly using R and C++; Python is not used.
-#' @param law One of `PA`, `CS-1`, `CS-1U`, `CS-pair` (also `CS-pair-migration`), `CS-pair-triangle`, `CS-pair-diamond`, `CS-pair-add`, `CS-pair-migration-add`, `TERGM`, or `TERGM-logdegree`.
+#' @param law `PA`, `CS-1`, `CS-pair` or `TERGM-logdegree` for the paper.
+#'   Earlier CRAN diagnostics also use `CS-1U`, `CS-pair-triangle`,
+#'   `CS-pair-diamond`, `CS-pair-add`, `CS-pair-migration-add` and `TERGM`
+#'   with explicit exploratory term specifications.
 #' @param weights CS proposal weights, exponential by default. Logistic weights
 #'   are retained for reproducing archived fits. Both TERGM variants use direct
 #'   log odds. TERGM-logdegree replaces out-stars with the CS sender covariates.
@@ -27,7 +30,7 @@
 #'   new packages and new majors and log one plus source out-degree. Deletion
 #'   log means include log one plus source out-degree. Existing lines are the
 #'   reference class. The paired-migration proposal mean remains constant.
-#' @param term_specification `motif_free` fixes all motif coefficients to zero
+#' @param term_specification The default `motif_free` fixes motif coefficients to zero
 #'   and is the manuscript specification. It supports PA, exponential CS-1,
 #'   CS-pair and TERGM-logdegree. `legacy` reproduces archived fits. `reduced`
 #'   fixes cyclic-triple coefficients to zero and, for laws with paired
@@ -64,7 +67,8 @@
 #'   specification and `single` otherwise. Existing rate parameters are reused;
 #'   they must be refitted when changing the count law. All pair candidates and
 #'   weights use the pre-edit graph, and repeated edits are collapsed.
-#' @param mixture `single` retains the original update law. `two_component`
+#' @param mixture `NULL` selects `two_component` with `motif_free` terms and
+#'   `single` for exploratory term specifications. `two_component`
 #'   selects one component for a complete update, with component-specific
 #'   release and edit rates and shared target preferences. Both component laws
 #'   are normalized separately, and their exact probabilities are mixed.
@@ -296,11 +300,24 @@ NULL
 }
 #' @rdname cran_updates
 #' @export
-cran_update_data <- function(path, law=c("PA","CS-1","CS-1U","CS-pair","TERGM","CS-pair-triangle","CS-pair-diamond","CS-pair-add","CS-pair-migration-add","TERGM-logdegree"), weights=c("exponential","logistic"), proposal_means=c("covariate","constant"), term_specification=c("legacy","reduced","pattern_preferences","shared_consumer","pair_channels","motif_free"), migration_degree=FALSE, pair_proposals=NULL, pair_max_states=262144, mixture=c("single","two_component"), people=NULL) {
+cran_update_data <- function(path,
+                             law = c("PA", "CS-1", "CS-pair", "TERGM-logdegree",
+                                     "CS-1U", "CS-pair-triangle", "CS-pair-diamond",
+                                     "CS-pair-add", "CS-pair-migration-add", "TERGM"),
+                             weights = c("exponential", "logistic"),
+                             proposal_means = c("covariate", "constant"),
+                             term_specification = c("motif_free", "legacy", "reduced",
+                                                    "pattern_preferences", "shared_consumer",
+                                                    "pair_channels"),
+                             migration_degree = FALSE, pair_proposals = NULL,
+                             pair_max_states = 262144, mixture = NULL, people = NULL) {
   law<-if(identical(law,"CS-pair-migration"))"CS-pair"else match.arg(law);path<-normalizePath(path,mustWork=TRUE)
   m<-new.env(parent=emptyenv());m$path<-path;m$law<-law;m$pa<-law=="PA";m$undir<-law=="CS-1U"
   m$term_specification <- match.arg(term_specification)
-  m$mixture <- match.arg(mixture)
+  if (is.null(mixture)) {
+    mixture <- if (m$term_specification == "motif_free") "two_component" else "single"
+  }
+  m$mixture <- match.arg(mixture, c("single", "two_component"))
   tergm <- law %in% c("TERGM", "TERGM-logdegree")
   m$weights<-if(m$undir&&missing(weights))"logistic"else match.arg(weights)
   m$exponential<-!m$pa&&!m$undir&&!tergm&&m$weights=="exponential"
@@ -437,8 +454,6 @@ cran_update_data <- function(path, law=c("PA","CS-1","CS-1U","CS-pair","TERGM","
     }
   }
   if(m$term_specification == "motif_free") {
-    if(!law %in% c("PA","CS-1","CS-pair","TERGM-logdegree"))
-      stop("The motif-free specification supports PA, CS-1, CS-pair and TERGM-logdegree")
     .cran_fix_motif_terms(m)
   }
   m$migration_degree <- isTRUE(migration_degree)

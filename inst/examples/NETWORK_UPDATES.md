@@ -1,5 +1,12 @@
 # Complete-update reference workflow
 
+Run the installed example for a short simulation and fit.
+
+```r
+library(hawkesNet)
+source(system.file("examples", "example_network_updates.R", package = "hawkesNet"))
+```
+
 `network_update_model()` specifies a small undirected birth/turnover model.
 At each event it draws Poisson births, chooses an anchor, and makes independent
 Poisson proposals for adding and deleting incident edges. The edge draw is

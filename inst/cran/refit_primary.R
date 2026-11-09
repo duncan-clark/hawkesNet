@@ -8,9 +8,7 @@ output <- args[2]
 dir.create(output,recursive=TRUE,showWarnings=FALSE)
 if(length(list.files(output))) stop("Use an empty output directory to avoid mixing analyses")
 for(law in c("PA","CS-1","CS-pair","TERGM-logdegree")) {
-  data <- cran_update_data(path,law=law,weights="exponential",
-    proposal_means="covariate",term_specification="motif_free",
-    mixture="two_component",people=if(law=="PA")NULL else people)
+  data <- cran_update_data(path, law = law, people = if (law == "PA") NULL else people)
   label <- if(law=="TERGM-logdegree") "TERGM" else law
   for(window in c("train","full")) {
     checkpoint <- file.path(output,paste0(label,"_",window,"_checkpoint.rds"))

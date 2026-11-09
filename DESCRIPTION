@@ -1,6 +1,6 @@
 Package: hawkesNet
 Title: Likelihood and Simulation for Self-Exciting Network Updates
-Version: 0.2.0
+Version: 0.3.0
 Author: Duncan A. Clark
 Maintainer: Duncan A. Clark <dac6@williams.edu>
 Authors@R: 
@@ -10,42 +10,21 @@ Description: Simulates and fits marked point processes whose events are
     laws, Hawkes timing models, and likelihood and simulation diagnostics.
     Includes directed package-dependency models with births, edge additions
     and deletions, paired migrations, shared-person covariates, and finite
-    mixtures, alongside interfaces for undirected network growth.
+    mixtures, alongside reference models for undirected birth and turnover.
 License: MIT + file LICENSE
 URL: https://github.com/duncan-clark/hawkesNet
 BugReports: https://github.com/duncan-clark/hawkesNet/issues
 Encoding: UTF-8
 OS_type: unix
 Roxygen: list(markdown = TRUE)
-Remotes:
-    github::fellstat/ernm,
-    github::duncan-clark/timeNet
 Config/testthat/edition: 3
-Depends: 
-    R (>= 3.5.0),
-    data.table,
-    ernm,
-    hash,
-    network,
-    sna
+Depends: R (>= 3.5.0)
 Imports:
-    graphics,
-    parallel,
     stats,
     utils,
     Rcpp,
     jsonlite
-Suggests:
-    testthat (>= 3.0.0),
-    ggplot2,
-    httr,
-    networkDynamic,
-    ndtv,
-    animation,
-    MASS,
-    numDeriv,
-    RhpcBLASctl,
-    timeNet
+Suggests: testthat (>= 3.0.0)
 LinkingTo: Rcpp
 SystemRequirements: C++17, sqlite3 (optional, for CRAN graph import)
 Config/roxygen2/version: 8.0.0

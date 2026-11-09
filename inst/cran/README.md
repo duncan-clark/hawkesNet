@@ -18,7 +18,7 @@ Counts are free coefficients. Fitted vectors also retain fixed-zero slots
 for compatibility; inspect `parameter_count` and `fixed_parameters` rather
 than using the vector length.
 
-Use `term_specification="motif_free"`, `mixture="two_component"`, exponential
+The defaults are motif-free weights, a two-component mixture, exponential
 CS weights and covariate proposal means. Supply dated personnel to CS,
 CS-pair and TERGM. PA is the baseline without personnel terms.
 
@@ -35,11 +35,7 @@ fitted; these motifs are forward goodness-of-fit targets.
 ```r
 library(hawkesNet)
 people <- readRDS("personnel.rds")
-data <- cran_update_data(
-  "CRAN_CACHE", law = "CS-pair", weights = "exponential",
-  proposal_means = "covariate", term_specification = "motif_free",
-  mixture = "two_component", people = people
-)
+data <- cran_update_data("CRAN_CACHE", law = "CS-pair", people = people)
 fit <- fit_cran_updates(data, window = "train", starts = 2)
 fit$parameter_count
 fit$predictive
@@ -143,11 +139,13 @@ conditional scenario inputs. See `?simulate_cran_joint`.
 
 ## Archived exploratory specifications
 
-Some paper diagnostics call research scripts directly from the Git checkout.
-Earlier experiments with motif preferences and paired additions can also be
-found in the [pre-cleanup snapshot](https://github.com/duncan-clark/hawkesNet/tree/476f48df57e0389dad8a854c355a7c06241ec80b/inst/cran).
-Their saved metadata distinguish `legacy`, `reduced`, `pattern_preferences`,
-`shared_consumer` and `pair_channels`.
+The paper's structural checks call `gof.R` from the Git checkout. Earlier
+experiments with motif preferences and paired additions use the scripts from
+the [archived CRAN checkout](https://github.com/duncan-clark/hawkesNet/tree/1484437a3a491b875de3ad5d48ad4d9af2fbb393/inst/cran).
+
+Saved diagnostic fits distinguish `legacy`, `reduced`, `pattern_preferences`,
+`shared_consumer` and `pair_channels`. These explicit term selections retain
+their single-component default.
 For addition-pair experiments, `single`, `capped2` and `poisson` are different
 proposal-count laws and require separate fits. The exact unrestricted union
 likelihood may exceed its computation budget; it raises an error without

@@ -1,3 +1,9 @@
+# hawkesNet 0.3.0
+
+* The package focuses on the paper's complete-update reference models, grouped Poisson proposals and CRAN application. The archived package revision supports studies that use addition-only growth, older CS mark laws, RHEM, dyadic Hawkes models and standalone event-time tools. See `archive/README.md` for the revision and study locations.
+* `cran_update_data()` defaults to the paper's motif-free two-component models. Explicit exploratory term specifications still default to a single component for historical diagnostics.
+* The only third-party runtime dependencies are Rcpp and jsonlite.
+
 # hawkesNet 0.2.0
 
 * Added a small-network birth/turnover reference API with separate initial- and later-topology coefficients, likelihood fitting and a feedback information check. A generic Poisson-proposal union interface supports arbitrary caller-defined edit groups.

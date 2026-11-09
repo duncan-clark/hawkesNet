@@ -6,48 +6,48 @@
 \alias{hawkesNet-package}
 \title{Likelihood and simulation for self-exciting network updates}
 \description{
-Models complete simultaneous network updates as marks of a point process.
-The update law specifies which changes occur, and the ground intensity
-specifies their timing. A normalized update law makes the compensator an
-integral of the ground intensity alone.
+Models complete updates to a network, including simultaneous births,
+additions and deletions. A Hawkes intensity governs event times and an
+update law gives the probability of the observed edits.
 }
-\section{Interfaces}{
+\section{Small-network reference model}{
 
-\itemize{
-\item \code{\link{network_update_model}} and
-\code{\link{simulate_network_updates}} provide the small-network
-birth/turnover reference model with separate initial- and later-topology
-coefficients. \code{\link{fit_network_updates}} fits its likelihood.
-\item \code{\link{poisson_proposals}} defines an exact union law for
-arbitrary caller-supplied single-edit or grouped Poisson proposals.
-\item \code{\link{sim_hawkesNet}} and \code{\link{fit_hawkesNet}} provide
-addition-only examples using \code{network} histories. Select a mark law
-explicitly; for CS-1 use \code{PMF_mark_CS} with
-\code{cs_mode = "independent"}.
-\item \code{\link{cran_update_data}} and \code{\link{fit_cran_updates}}
-fit complete directed release/dependency updates, including births,
-additions, deletions, paired migrations and shared-person covariates.
-\item \code{\link{cran_timing_data}} and \code{\link{fit_cran_timing}}
-provide the calendar, release-type and topology-dependent timing models.
-\item \code{\link{simulate_cran_updates}} and
-\code{\link{simulate_cran_joint}} generate forward checks at fixed event
-times or with generated event times, respectively.
-}
+Use \code{\link{network_update_model}} to choose the update law and timing
+model, then \code{\link{simulate_network_updates}} to simulate a path or
+\code{\link{network_update_data}} to supply observed updates.
+\code{\link{fit_network_updates}} fits the model by maximum likelihood.
 }
 
-\section{Examples and data}{
+\section{Grouped proposals}{
 
-Short runnable scripts are installed in \code{system.file("examples",
-package = "hawkesNet")}. The CRAN workflow guide is installed in
-\code{system.file("cran", "README.md", package = "hawkesNet")}; its archive
-inputs are external to the package. Historical study scripts and the dyadic
-relational interfaces use different model definitions from the manuscript's
-primary CRAN laws.
+\code{\link{poisson_proposals}} specifies a law on unions of groups of
+edits. \code{\link{sample_update}} draws an update and
+\code{\link{logprob_update}} evaluates its log probability.
+}
+
+\section{CRAN application}{
+
+\code{\link{cran_update_data}} and \code{\link{fit_cran_updates}} fit the
+update law. \code{\link{fit_cran_timing}} fits the event-time model.
+\code{\link{simulate_cran_updates}} generates updates at supplied times
+and \code{\link{simulate_cran_joint}} generates times and updates.
+Find the guide with \code{system.file("cran", "README.md", package =
+"hawkesNet")}. The workflow uses external prepared data.
+}
+
+\section{Example}{
+
+Run \code{source(system.file("examples", "example_network_updates.R",
+package = "hawkesNet"))} for a short simulation and fit.
 }
 
 \seealso{
-\code{\link{hawkes_timing}}, \code{\link{loglik_hawkesNet}},
-\code{\link{loglik_cran_updates}}, \code{\link{loglik_cran_timing}}
+Useful links:
+\itemize{
+  \item \url{https://github.com/duncan-clark/hawkesNet}
+  \item Report bugs at \url{https://github.com/duncan-clark/hawkesNet/issues}
+}
+
 }
 \author{
 \strong{Maintainer}: Duncan Clark \email{dac6@williams.edu}

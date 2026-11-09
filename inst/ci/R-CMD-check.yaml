@@ -2,7 +2,7 @@ name: R-CMD-check
 
 on:
   push:
-    branches: [main, rhem-experimental]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
