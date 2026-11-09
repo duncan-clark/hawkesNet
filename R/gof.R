@@ -681,7 +681,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
   }
   cl_gof <- NULL
   if (use_psock) {
-    message(sprintf("  [GOF] Creating PSOCK cluster (%d workers) at %s", n_workers, format(Sys.time(), "%H:%M:%S")))
+    if (verbose) message(sprintf("  [GOF] Creating PSOCK cluster (%d workers) at %s", n_workers, format(Sys.time(), "%H:%M:%S")))
     # Find package root so workers load dev version (avoids "unused argument" when installed pkg is stale)
     pkg_path <- tryCatch({
       p <- getwd()
@@ -725,8 +725,8 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
       NULL
     })
   }
-  message(sprintf("  [GOF] Memory before simulation: %.1f Mb", gc()[2, 2]))
-  message(sprintf("  [GOF] Starting %d parallel simulations on %d %s at %s",
+  if (verbose) message(sprintf("  [GOF] Memory before simulation: %.1f Mb", gc()[2, 2]))
+  if (verbose) message(sprintf("  [GOF] Starting %d parallel simulations on %d %s at %s",
                   n_sim, n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
   sim_results <- tryCatch({
     if (!is.null(cl_gof)) {
@@ -739,7 +739,7 @@ gof <- function(fit, net_obs, params_init, PMF_mark, cond_intensity, formula_RHS
     message(sprintf("  [GOF] Simulation FAILED: %s", e$message))
     list()
   })
-  message(sprintf("  [GOF] Simulations complete at %s", format(Sys.time(), "%H:%M:%S")))
+  if (verbose) message(sprintf("  [GOF] Simulations complete at %s", format(Sys.time(), "%H:%M:%S")))
   
   if (is.null(sim_results) || length(sim_results) == 0) {
     if (verbose) cat("  No simulation results; returning empty GOF results\n")
@@ -876,7 +876,7 @@ n_esp_bins <- k_esp - esp + 1L
 # the workers are as lean as possible.
 
     if (verbose) cat("    Computing distributional statistics (Degree, ESP, Geodist, nodeMix)...\n")
-    message(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s",
+    if (verbose) message(sprintf("  [GOF] Starting distributional stats (%d nets, %d %s) at %s",
                     length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
     
     # Combined distributional statistics: Degree, ESP, Geodist, nodeMix, and waiting times for degree/ESP
@@ -994,7 +994,7 @@ n_esp_bins <- k_esp - esp + 1L
     }
     
     if (verbose) cat("    Computing waiting times (expensive)...\n")
-    message(sprintf("  [GOF] Starting waiting times (%d nets, %d %s) at %s",
+    if (verbose) message(sprintf("  [GOF] Starting waiting times (%d nets, %d %s) at %s",
                     length(sim_nets), n_workers, if (use_psock) "workers" else "cores", format(Sys.time(), "%H:%M:%S")))
     stat_names_standard <- c("edges", "triangles", "star2", "star3")
     wait_fun <- function(n) {
@@ -1019,7 +1019,7 @@ n_esp_bins <- k_esp - esp + 1L
       NULL
     })
     
-    message(sprintf("  [GOF] Waiting times complete at %s", format(Sys.time(), "%H:%M:%S")))
+    if (verbose) message(sprintf("  [GOF] Waiting times complete at %s", format(Sys.time(), "%H:%M:%S")))
     if (verbose) {
       cat("    Waiting times: done\n")
       cat("  GOF statistics:", round((proc.time() - t_stats)[3], 1), "s\n")

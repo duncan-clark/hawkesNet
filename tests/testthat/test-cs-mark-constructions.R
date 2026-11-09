@@ -57,12 +57,14 @@ test_that("CS-1 freezes single-edge statistics and uses the collapsed product la
     unname(.cs_change_model(h,rhs)$statistics()-before)
   },numeric(4)))
   # All endpoint ages are equal here, so the age factor cancels exactly.
-  weights <- stats::plogis(as.vector(changes %*% params$CS_params))
+  weights <- exp(as.vector(changes %*% params$CS_params))
   r <- -expm1(-params$m*weights/sum(weights))
   expected <- apply(support$states,1,function(on)prod(ifelse(on,r,1-r)))
   observed <- construction_distribution("independent",params,g,support)
   expect_equal(observed,expected,tolerance=1e-11)
   expect_equal(observed[1],exp(-params$m),tolerance=1e-11)
+  shifted<-params;shifted$CS_params[1]<-params$CS_params[1]+10
+  expect_equal(construction_distribution("independent",shifted,g,support),observed,tolerance=1e-11)
   # No single absent edge closes a triangle, although a two-edge update can.
   params$CS_params <- c(0,0,0,0)
   at_zero <- construction_distribution("independent",params,g,support)

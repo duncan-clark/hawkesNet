@@ -1,23 +1,30 @@
-# Minimal working examples
+# Small runnable examples
 
-**Try these first** after installing the package. Short, runnable scripts that simulate one network and fit the model so you can see the workflow in under a few minutes.
-
-Run from the **package root** (directory containing `R/`, `inst/`, `DESCRIPTION`). In R or RStudio:
+After installation, run an example from any working directory:
 
 ```r
-# From package root (e.g. setwd("/path/to/hawkesNet") or open project)
-source("inst/examples/example_BA.R")   # Barabási–Albert (degree-weighted) model
-source("inst/examples/example_CS.R")  # Change-statistic (ERGM-style) model
+library(hawkesNet)
+source(system.file("examples", "example_network_updates.R", package = "hawkesNet"))
 ```
 
-| Script | Model | What it does | Approx. time |
-|--------|--------|----------------|--------------|
-| **example_BA.R** | BA (degree-weighted attachment) | One simulation + one fit; `m` = expected edges per event (Poisson); prints true vs fitted parameters | ~1 min |
-| **example_CS.R** | CS (change statistics / ERGM-style) | One simulation + one fit (K fixed); prints true vs fitted parameters | ~2 min |
+For a source checkout, load that checkout with `pkgload::load_all("hawkesNet", debug = FALSE)`
+and source `hawkesNet/inst/examples/example_network_updates.R`.
 
-For full simulation studies (many replicates, consistency, explosive regime, SLURM), see [inst/simulation_study/README.md](../simulation_study/README.md).
+| Script | What it demonstrates |
+|---|---|
+| `example_network_updates.R` | Births, anchored edge additions/deletions, separate feedback coefficients, and a small fit. Start here. |
+| `example_BA.R` | Preferential-attachment growth, M0 event times and a one-parameter fit. |
+| `example_CS.R` | Explicit CS-1 exponential weights, complete-update simulation and a one-parameter fit. |
+| `example_mark_constructions.R` | A reusable function comparing single-proposal growth laws and the historical direct size-conditional variant. Sourcing defines the function; call it to run. |
+| `example_timing_feedback.R` | Bounded degree feedback on an undirected addition history, same-history timing comparisons and rescaled waits. |
 
-For M0/M1/M2 timing comparisons, run
-`source("inst/examples/example_timing_feedback.R")`. The
-[timing feedback guide](TIMING_FEEDBACK.md) explains the degree and triangle
-amplitude models, exact likelihoods, fitting, residuals and current scope.
+These small examples are interface demonstrations. Their restricted fits are
+not parameter-recovery studies. They do not fetch data or write output files.
+Fitting errors are allowed to surface, and optimizer convergence is reported.
+
+The [complete-update guide](NETWORK_UPDATES.md) covers the reference turnover
+model and generic grouped proposals. The [mark-law guide](MARK_PMF_CONSTRUCTIONS.md) explains candidate support and
+normalization. The [timing guide](TIMING_FEEDBACK.md) gives the scope of the
+single-coefficient growth interface. For directed turnover, paired migrations,
+shared personnel, and the separate initial/later feedback coefficients used
+in the application, see the [CRAN workflow](../cran/README.md).

@@ -106,7 +106,7 @@
   .network_timing_bound(params, timing)
   if (!is.null(seed_times) && (!is.numeric(seed_times) || any(!is.finite(seed_times)) ||
       !isTRUE(all.equal(sort(unique(seed_times)), cache$times, check.attributes = FALSE))))
-    stop("M1/M2 seed_times must match the complete updates recorded in seed_net")
+    stop("seed_times must match the complete updates recorded in seed_net")
   t <- max(c(time_window[1L], cache$times))
   if (t > time_window[2L]) stop("seed history extends beyond the simulation window")
   has_background <- !is.null(inhom_bg)
@@ -115,7 +115,7 @@
     mu_bound <- inhom_bg$mu_fit$mu_bound
     if (is.null(mu_bound)) mu_bound <- inhom_bg$mu_bound
     if (!is.function(mu_fun) || length(mu_bound) != 1L || !is.finite(mu_bound) || mu_bound < 0)
-      stop("M1/M2 inhomogeneous simulation requires mu_fit$mu_fun and a finite nonnegative mu_bound")
+      stop("inhomogeneous simulation requires mu_fit$mu_fun and a finite nonnegative mu_bound")
   } else {
     mu_fun <- function(t) params$mu
     mu_bound <- params$mu
@@ -123,7 +123,7 @@
   events <- densities <- log_densities <- acceptance <- numeric(0)
   while (t < time_window[2L]) {
     n <- length(cache$times)
-    features <- if (timing$model == "M1") cache$birth_features else
+    features <- if (timing$model != "M2") cache$birth_features else
       if (n) cache$features_after[[n]] else numeric(0)
     weights <- .network_timing_alpha(features, params, timing)
     excitation <- params$K * sum(weights * exp(-params$beta_overall * (t - cache$times)))

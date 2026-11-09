@@ -1,4 +1,9 @@
-# Network feedback in event timing
+# Feedback in addition-only network growth
+
+This guide covers the one-coefficient `hawkes_timing` interface for stored
+undirected addition histories. For separate initial- and later-topology
+coefficients, see the [complete-update reference](NETWORK_UPDATES.md) or the
+[CRAN timing interface](../cran/README.md).
 
 `timing = hawkes_timing()` selects M0 by default. Pass the same `timing` object to
 simulation, likelihood, fitting, conditional-intensity evaluation and residual
@@ -96,9 +101,10 @@ each event; residual waiting times are `diff(c(0, compensator))`.
 The code uses **K as exponential-kernel amplitude**, not branching ratio:
 the M0 kernel has integral `K / beta_overall`. M1 adds a mark-specific factor;
 M2 changes old contributions when the graph changes, so the M0 ratio alone is
-not a branching-ratio interpretation for feedback models. Bounded alpha is
-useful for controlling rates but does not, by itself, verify the paper's
-full marked-history contraction assumption.
+not a branching-ratio interpretation for feedback models. With a bounded
+baseline and kernel, these bounded amplitudes guarantee non-explosion by the
+manuscript's bounded-summary result. This does not establish stationarity or
+a stationary distribution for the growing graph.
 
 Homogeneous M1/M2 simulation uses sequential thinning with the exact current
 graph state. Inhomogeneous simulation requires the existing
@@ -111,10 +117,11 @@ both must describe the same baseline and observation window.
 This implementation is a reference computation for **simple undirected
 networks with recorded vertex and edge addition times**. Directed networks,
 loops, parallel edges, edge deletions and edge revisions are outside the
-implemented feedback feature support. A complete-update PMF can be richer
-scientifically, but these feature functions cannot reconstruct unsupported
-changes from the current stored growth filtration. Use an explicit extended
-history representation and additional feature implementation for those models.
+implemented feedback feature support. These feature functions cannot
+reconstruct unsupported changes from the stored growth filtration. For
+undirected births and anchored edge turnover, use `network_update_data()` and
+`network_update_model()` as described in the complete-update guide. The CRAN
+interfaces support the directed release/dependency model.
 
 M2 recalculates old-update importance across observed graph states. Its
 event-history storage/work can be quadratic, and graph feature computation can

@@ -1,4 +1,14 @@
-# Development: September 22, 2026
+# hawkesNet 0.2.0
+
+* Added a small-network birth/turnover reference API with separate initial- and later-topology coefficients, likelihood fitting and a feedback information check. A generic Poisson-proposal union interface supports arbitrary caller-defined edit groups.
+
+* Added the CRAN complete-update likelihood, fitting and forward-simulation interfaces. Release and edit rates can share a two-component update mixture; the paired law sums over single-edit and migration-pair proposal configurations.
+* Added shared maintainer, author and contributor effects to the primary CS and TERGM specifications. The manuscript's transitive-triple, open-diamond and shared-consumer motifs are reserved for goodness-of-fit checks.
+* Added calendar timing with separate fast/slow release-type effects and separate initial- and later-topology coefficients, with clipped later changes.
+* Reworked onboarding and small runnable examples. The documentation distinguishes the Poisson-set proposal construction from the historical direct size-conditional CS law and identifies the scope of addition-only growth interfaces.
+* Corrected adaptive thinning for inhomogeneous backgrounds, observation-window KDE normalization, tied-time handling and experimental dyadic score/amount calculations. Added input validation for native CRAN data and explicit macOS/Linux source support.
+
+## Earlier development work (September 22, 2026)
 
 * Added explicit CS-1 (`cs_mode="independent"`) and CS-2 (`cs_mode="size_conditional"`) mark laws with matched simulation and cached likelihoods. The earlier all-subset tilt remains `cs_mode="joint"`.
 * CS-1 uses frozen logistic single-edge change-statistic weights and exact Poisson collapsing, without subset enumeration. CS-2 draws a truncated-Poisson edge count and enumerates only its size class using whole-update statistics.

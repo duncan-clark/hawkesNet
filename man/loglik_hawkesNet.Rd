@@ -70,5 +70,5 @@ ll$loglik
 }
 \seealso{
 \code{\link{fit_hawkesNet}}, \code{\link{prepare_inhomogeneous_background}},
-  \code{\link{cond_intensity}}, \code{\link{cond_intensity_inhom}}
+\code{\link{cond_intensity}}, \code{\link{cond_intensity_inhom}}
 }

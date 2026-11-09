@@ -11,8 +11,9 @@
 #' @param file Optional character path to save the animation as a video file.
 #' @return A \code{networkDynamic} object (from package \pkg{networkDynamic}).
 #' @details
-#' Requires the suggested packages \pkg{networkDynamic} and \pkg{animation} to be installed.
-#' Install with \code{install.packages(c("networkDynamic", "animation"))}.
+#' Requires \pkg{networkDynamic} and \pkg{ndtv}; saving a video also requires
+#' \pkg{animation}. Install these optional packages with
+#' \code{install.packages(c("networkDynamic", "ndtv", "animation"))}.
 #' The animation displays the network at each event time; if \code{file} is provided,
 #' \code{animation::saveVideo} is used to write a video file.
 #' @examples
@@ -29,6 +30,10 @@ make_network_growth_animation <- function(net_list,
   if (!requireNamespace("networkDynamic", quietly = TRUE)) {
     stop("Package 'networkDynamic' is required for make_network_growth_animation(). ",
          "Install it with install.packages('networkDynamic').")
+  }
+  if (!requireNamespace("ndtv", quietly = TRUE)) {
+    stop("Package 'ndtv' is required for make_network_growth_animation(). ",
+         "Install it with install.packages('ndtv').")
   }
   if (!requireNamespace("animation", quietly = TRUE) && !is.null(file)) {
     stop("Package 'animation' is required to save animation to file. ",

@@ -4,20 +4,58 @@
 \name{hawkesNet-package}
 \alias{hawkesNet}
 \alias{hawkesNet-package}
-\title{hawkesNet: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models}
+\title{Likelihood and simulation for self-exciting network updates}
 \description{
-Provides tools for simulating and fitting Hawkes-process-driven network growth models via maximum likelihood. Supports both homogeneous and inhomogeneous (KDE-estimated) background rates, Barabasi-Albert and change-statistic (ERNM) mark distributions, parallel intensity-cache construction, and goodness-of-fit diagnostics.
+Models complete simultaneous network updates as marks of a point process.
+The update law specifies which changes occur, and the ground intensity
+specifies their timing. A normalized update law makes the compensator an
+integral of the ground intensity alone.
 }
-\seealso{
-Useful links:
+\section{Interfaces}{
+
 \itemize{
-  \item \url{https://github.com/duncan-clark/hawkesNet}
-  \item Report bugs at \url{https://github.com/duncan-clark/hawkesNet/issues}
+\item \code{\link{network_update_model}} and
+\code{\link{simulate_network_updates}} provide the small-network
+birth/turnover reference model with separate initial- and later-topology
+coefficients. \code{\link{fit_network_updates}} fits its likelihood.
+\item \code{\link{poisson_proposals}} defines an exact union law for
+arbitrary caller-supplied single-edit or grouped Poisson proposals.
+\item \code{\link{sim_hawkesNet}} and \code{\link{fit_hawkesNet}} provide
+addition-only examples using \code{network} histories. Select a mark law
+explicitly; for CS-1 use \code{PMF_mark_CS} with
+\code{cs_mode = "independent"}.
+\item \code{\link{cran_update_data}} and \code{\link{fit_cran_updates}}
+fit complete directed release/dependency updates, including births,
+additions, deletions, paired migrations and shared-person covariates.
+\item \code{\link{cran_timing_data}} and \code{\link{fit_cran_timing}}
+provide the calendar, release-type and topology-dependent timing models.
+\item \code{\link{simulate_cran_updates}} and
+\code{\link{simulate_cran_joint}} generate forward checks at fixed event
+times or with generated event times, respectively.
+}
 }
 
+\section{Examples and data}{
+
+Short runnable scripts are installed in \code{system.file("examples",
+package = "hawkesNet")}. The CRAN workflow guide is installed in
+\code{system.file("cran", "README.md", package = "hawkesNet")}; its archive
+inputs are external to the package. Historical study scripts and the dyadic
+relational interfaces use different model definitions from the manuscript's
+primary CRAN laws.
+}
+
+\seealso{
+\code{\link{hawkes_timing}}, \code{\link{loglik_hawkesNet}},
+\code{\link{loglik_cran_updates}}, \code{\link{loglik_cran_timing}}
 }
 \author{
 \strong{Maintainer}: Duncan Clark \email{dac6@williams.edu}
 
+Authors:
+\itemize{
+  \item Duncan Clark \email{dac6@williams.edu}
 }
-\keyword{internal}
+
+}
+\keyword{package}

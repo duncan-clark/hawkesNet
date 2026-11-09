@@ -16,3 +16,6 @@ ethereum_study_results_*/
 *_study_results_*/
 .Rcheck/
 *.tar.gz
+src/*.o
+src/*.so
+src/*.dll

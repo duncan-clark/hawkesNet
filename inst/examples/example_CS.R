@@ -1,75 +1,28 @@
-# Minimal example: Change-statistic (CS) mark model
-# Run from package root: source("inst/examples/example_CS.R")
-# Or in R: setwd("/path/to/hawkesNet"); source("inst/examples/example_CS.R")
-
+# Small CS-1 example: frozen exponential weights and collapsed Poisson proposals.
+# Run with source(system.file("examples", "example_CS.R", package = "hawkesNet"))
 library(hawkesNet)
 
-# Short time window so this finishes in a few minutes
-TIME <- 50
-TRUNCATION <- 100
-params <- list(
-  mu = 10,
-  beta_overall = 2,
-  K = 0.5,
-  beta_edges = 1,
-  node_lambda = 1,
-  CS_params = c(-6.7, 2, 0.1, -0.1)
-)
-formula_RHS <- "edges + triangles() + star(c(2,3))"
-
-cat("Simulating one CS network...\n")
 set.seed(1)
+params <- list(mu = 4, K = 0.25, beta_overall = 1.2,
+               beta_edges = 0.5, m = 1.4, node_lambda = 0.8,
+               CS_params = c(0, 0.6))
+window <- c(0, 5)
 sim <- sim_hawkesNet(
-  params = params,
-  time_window = c(0, TIME),
-  PMF_mark = PMF_mark_CS,
-  cond_intensity = cond_intensity,
-  hashed_edges = TRUE,
-  verbose = FALSE,
-  mu_multiplier = 3,
-  truncation = TRUNCATION,
-  formula_RHS = formula_RHS
+  params, window, PMF_mark_CS, cond_intensity,
+  formula_RHS = "edges + triangles", cs_mode = "independent",
+  truncation = 4L, verbose = FALSE
 )
 
-cat("Number of events:", length(sim$events$t), "\n")
-cat("Network size (vertices):", network.size(sim$net), "\n")
-
-# Fit the model (K fixed for identifiability)
-cat("Fitting CS model...\n")
-params_init <- list(
-  mu = 10,
-  beta_overall = 1,
-  K = 0.5,
-  beta_edges = 1,
-  node_lambda = 1,
-  CS_params = c(-10, 0, 0, 0)
+# The edge-count coefficient cancels from normalized exponential weights.
+# Here it and all parameters except m are fixed for a small interface example.
+initial <- params
+initial$m <- 0.9
+fit <- fit_hawkesNet(
+  initial, window, sim$net, PMF_mark_CS,
+  formula_RHS = "edges + triangles", cs_mode = "independent",
+  truncation = 4L, fixed_params = setdiff(names(params), "m"),
+  method = "L-BFGS-B", maxit = 100, get_hessian = FALSE, verbose = FALSE
 )
-fit <- tryCatch(
-  fit_hawkesNet(
-    params_init = params_init,
-    time_window = c(0, TIME),
-    mark_filtration = sim$net,
-    PMF_mark = PMF_mark_CS,
-    formula_RHS = "edges + triangles + star(c(2,3))",
-    maxit = 500,
-    truncation = TRUNCATION,
-    fixed_params = c("K"),
-    verbose = FALSE
-  ),
-  error = function(e) {
-    cat("Fit failed:", conditionMessage(e), "\n")
-    NULL
-  }
-)
-
-if (!is.null(fit) && length(fit$fit) > 0) {
-  cat("\nTrue vs fitted parameters (K fixed):\n")
-  print(data.frame(
-    param = names(fit$fit$par),
-    true = unlist(params)[names(fit$fit$par)],
-    fitted = fit$fit$par
-  ))
-} else {
-  cat("(Fit did not converge or failed; try increasing maxit or checking the network.)\n")
-}
-cat("\nDone. See inst/simulation_study/ for full studies.\n")
+print(fit$fit_table)
+print(c(events = sim$events$n, truth_m = params$m,
+        estimate_m = fit$params$m, convergence = fit$fit$convergence))

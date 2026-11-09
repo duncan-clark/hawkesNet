@@ -20,7 +20,7 @@ beta_overall, and optional finite feedback_gamma.}
 
 \item{mark_filtration}{Network history (or event data.frame for M0).}
 
-\item{timing}{Specification from [hawkes_timing()].}
+\item{timing}{Specification from \code{\link[=hawkes_timing]{hawkes_timing()}}.}
 
 \item{timing_cache}{Optional internal cache prepared from this exact
 history and timing specification. The caller must rebuild it if the
@@ -33,5 +33,5 @@ Numeric ground intensities, one per query time.
 Uses only updates strictly before each query time. In M2, features of all
 such updates are evaluated in the graph at that left limit. The baseline
 here is the constant params$mu; an externally evaluated background can be
-substituted by adding `mu_at_t - params$mu` to the result.
+substituted by adding \code{mu_at_t - params$mu} to the result.
 }

@@ -46,8 +46,8 @@ selected by latest entrance or activity; not a cap on Poisson attempts.}
 }
 \value{
 List with exact observed/generated densities and density closures.
-  \code{edge_probs} contains inclusion probabilities; \code{attachment_probs}
-  contains normalized attempt probabilities, indexed by \code{candidate_heads}.
+\code{edge_probs} contains inclusion probabilities; \code{attachment_probs}
+contains normalized attempt probabilities, indexed by \code{candidate_heads}.
 }
 \description{
 Each event adds one node. An uncapped Poisson(m) number of attachment attempts
@@ -62,8 +62,8 @@ use uniform weights. With no eligible targets the edge set is empty with
 probability one. Zero-edge arrivals are valid because the event adds a node.
 The \code{params} list may optionally include:
 \describe{
-  \item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
-  \item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
+\item{vertex_categorical}{Named list of multinomial proportions per vertex attribute.}
+\item{vertex_categorical_levels}{Named list of level names per attribute; last level is reference.}
 }
 }
 \examples{

@@ -37,6 +37,8 @@ test_that("CS-1 normalized log weights survive extreme common scores", {
   dist <- .cs_independent_distribution(tab, params)
   expect_true(is.finite(.cs_independent_log_prob(dist, 2L)))
   expect_lt(.cs_independent_log_prob(dist, 2L), -900)
+  tab$changes<-cbind(1,c(0,1));params$CS_params<-c(-1e308,log(3))
+  expect_equal(.cs_independent_distribution(tab,params)$selection_probs,c(.25,.75),tolerance=1e-14)
 })
 
 test_that("CS-1 supports more than twelve candidates without enumeration", {

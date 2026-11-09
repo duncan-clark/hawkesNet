@@ -16,6 +16,11 @@
 #' `alpha = 2 * plogis(feedback_gamma * feature)`.
 #' Either link can be used with either feature. Both links give alpha = 1 at
 #' `feedback_gamma = 0`; the parameter defaults to zero if absent from params.
+#' This compatibility interface has one coefficient. With the exponential
+#' link, its M2 constrains the paper's initial and later-topology coefficients
+#' to the same value, `gamma_B = gamma_Delta = feedback_gamma`. It therefore
+#' cannot separately test later feedback conditional on an estimated initial
+#' effect. The CRAN timing interface uses the paper's separate coefficients.
 #'
 #' M1 and M2 currently support undirected simple network growth, with one
 #' vertex/edge `time` attribute recording each addition. They do not implement

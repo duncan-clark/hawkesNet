@@ -3,7 +3,8 @@
 
 #' Mark probability mass function for the network generation process
 #'
-#' Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi-Albert, Change Statistic Hawkes, and BA-bipartite). 
+#' Calculates the probability mass function (PMF) for network updates or
+#' repeated directed interactions at a given time.
 #'
 #' @references
 #' Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
@@ -11,9 +12,9 @@
 #' @param params Named list. Model parameter values required for the chosen \code{type}:
 #'   - For \code{type = "BA"}: \code{beta_edges} and \code{m} (numeric).
 #'   - For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
-#'   - For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.
+#'   - For \code{type = "RHEM"}: see \code{\link{PMF_mark_RHEM}}.
 #' @param mark_filtration Network or compatible object. The network history (filtration) up to the current time.
-#' @param type Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"BA-bip"}. Default: \code{"BA"}.
+#' @param type Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"RHEM"}. Default: \code{"BA"}.
 #' @param mark Network or NULL. The current mark/network structure. If \code{NULL}, derived from \code{mark_filtration}.
 #' @param generate_mark Logical. If \code{TRUE}, generates a new mark/sample; otherwise computes density for the supplied mark. Default: \code{FALSE}.
 #' @param generate_density Logical. If \code{TRUE}, computes the density for the provided mark. Default: \code{TRUE}.
@@ -36,7 +37,7 @@
 #'   \item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
 #'
 #' @details Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-#' Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}. 
+#' Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "RHEM"}.
 #'
 #' For \code{type = "BA"}, one node arrives and makes a Poisson number of
 #' independent attachment attempts with mean \code{m}. After repeated targets
@@ -94,8 +95,8 @@ PMF_mark <- function(time,
                      max_node_time = 10,
                      ...){
     type <- type[1]
-    if (!(type %in% c("BA", "CS", "BA-bip", "RHEM"))) {
-        stop("type can only be one of `BA` for Barabasi-Albert, `CS` for change statistic Hawkes, `BA-bip` for bipartite Barabasi-Albert, or `RHEM` for repeated edge-hit models.")
+    if (!(type %in% c("BA", "CS", "RHEM"))) {
+        stop("type must be BA, CS, or RHEM; a BA-bip implementation is not available")
     }
     if(type == "BA"){
         pmf <- PMF_mark_BA(time = time, params = params,
@@ -105,11 +106,6 @@ PMF_mark <- function(time,
                            new_edge_hash = new_edge_hash,
                            truncation = truncation, mark_decay = mark_decay, ...)
     }else{
-        if(type == "BA-bip"){
-            pmf <- PMF_mark_BA_bipartite(time, params,  mark_filtration,
-                                      mark, generate_mark, generate_density,
-                                      grad, new_edge_hash, truncation, ...)
-        }else{
             if(type == "CS"){
                 pmf <- PMF_mark_CS(time = time, params = params,
                                    mark_filtration = mark_filtration, mark = mark,
@@ -126,7 +122,6 @@ PMF_mark <- function(time,
                                          grad, formula_RHS = formula_RHS, ...)
                 }
             }
-        }
     }
     return(pmf)
 }
@@ -148,6 +143,13 @@ PMF_mark <- function(time,
 #'   \code{c("intercept", "repetition", "reciprocity")}.
 #' @param weight_col Name of the optional hit-weight column. Default:
 #'   \code{"weight"}.
+#' @param hit_delta Increment used when evaluating a candidate hit's change statistics.
+#' @param rhem_stats_cache Optional environment caching ERNM change statistics.
+#' @param rhem_streaming_threshold Risk-set size above which ERNM log probabilities
+#'   are evaluated in chunks.
+#' @param backend Computation backend: automatic selection, simple built-in
+#'   statistics, ERNM, or the optional timeNet package.
+#' @param timeNet_state Optional precomputed state for the timeNet backend.
 #' @return Named list with the same shape as \code{\link{PMF_mark}}.
 #' @rdname PMF_mark_RHEM
 #' @export
@@ -1403,7 +1405,6 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
     if (length(missing) > 0) {
       stop("PMF_mark_BA requires the following parameters: ", paste(missing, collapse = ", "))
     }
-    message("Mark PMF parameters validated (BA): required parameters present.")
     return(invisible(TRUE))
   }
   if (identical(PMF_mark, PMF_mark_CS)) {
@@ -1420,9 +1421,6 @@ validate_params_for_PMF <- function(params, PMF_mark, mark_filtration = NULL, ..
         stop("PMF_mark_CS: length(CS_params) must be ", exp_cs$CS_params_length,
              " (number of change statistics from formula_RHS), got ", length(params$CS_params))
       }
-      message("Mark PMF parameters validated (CS): required parameters present; length(CS_params) = ", exp_cs$CS_params_length, " matches formula.")
-    } else {
-      message("Mark PMF parameters validated (CS): required parameters present.")
     }
     if (!is.null(params$vertex_categorical)) {
       if (!is.list(params$vertex_categorical)) {
@@ -1536,19 +1534,20 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 
 #' Mark probability mass function using Change Statistics (CS/ERNM)
 #'
-#' Two explicit constructions give exact PMFs for simultaneous, unordered edge
-#' additions. Both include Poisson node births and condition the complete
+#' Explicit constructions give exact PMFs for simultaneous, unordered edge
+#' additions. The nonlegacy modes include Poisson node births and condition the complete
 #' node-and-edge proposal to be nonempty by default.
 #'
 #' In \code{cs_mode = "independent"} (CS-1), each candidate edge has its change
 #' statistics calculated against the same pre-update graph. Its weight is
-#' \eqn{w_e=\exp(-\tau a_e)\operatorname{logit}^{-1}(\theta^T C_e)}.
+#' \eqn{w_e=\exp(\theta^T C_e-\tau a_e)}. Terms constant across
+#' candidates, including an edge-count term, cancel on normalisation.
 #' Normalize the weights to \eqn{p_e}; uncapped Poisson attempts with mean
 #' \code{m} give independent inclusion probabilities \eqn{1-\exp(-m p_e)}
 #' before conditioning the complete update to be nonempty. No subset normalizer
 #' or within-update change of the selection weights is used.
 #'
-#' In \code{cs_mode = "size_conditional"} (CS-2), the actual edge count is
+#' In \code{cs_mode = "size_conditional"}, the actual edge count is
 #' Poisson with parameter \code{m}, conditioned not to exceed the candidate
 #' count \eqn{D}. Given count \eqn{k}, sets receive weights
 #' \eqn{\exp(\theta^T\Delta g(S)-\tau\sum_{e\in S}a_e)}, normalized over
@@ -1557,10 +1556,14 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #' cancels conditional on \eqn{k} and must be fixed or omitted when fitting.
 #' Likewise, birth-only terms cancel conditional on births. \code{m} is a
 #' truncated-Poisson count parameter, not generally the expected count.
+#' This is the direct whole-update variant described in the supplement, not
+#' Construction 2's Poisson stream of proposed edit sets. The CRAN CS-pair
+#' interface implements that stream for migration pairs.
 #'
 #' \code{cs_mode = "joint"} preserves the earlier whole-update exponential
 #' tilt of a collapsed-Poisson reference over all \eqn{2^D} subsets. This is the
-#' model used in the September 21 recovery runs, not CS-1 or CS-2. Its \code{m}
+#' model used in earlier recovery runs, separate from the paper's two
+#' proposal constructions. Its \code{m}
 #' is only a reference attempt mean. With \code{cs_mode = NULL}, supplying
 #' \code{m} selects \code{"joint"}; omitting \code{m} selects the older
 #' \code{"legacy"} compatibility implementation. Choose a mode explicitly
@@ -1588,7 +1591,7 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #'   with an error when no nonempty update remains.
 #' @param max_candidates Maximum number of candidate edges for exact enumeration
 #'   in \code{"joint"} and \code{"size_conditional"} modes (default 12, at most
-#'   20). Larger supports error. CS-2 enumerates only sets of the drawn/observed
+#'   20). Larger supports error. The size-conditional mode enumerates only sets of the drawn/observed
 #'   size; the independent mode does not use this guard.
 #' @param condition_nonempty Condition the complete node-and-edge update on being
 #'   nonempty in every nonlegacy mode (default TRUE).
@@ -1606,10 +1609,10 @@ get_truncated_candidates <- function(net, new_nodes, old_nodes, truncation, mark
 #'   CS-1 returns frozen \code{edge_change_stats}, normalized
 #'   \code{edge_selection_probs}, and \code{reference_edge_probs} before
 #'   nonempty conditioning. Its \code{edge_probs} condition on node births and
-#'   applicable nonempty conditioning. CS-2 \code{edge_probs} condition on both
+#'   applicable nonempty conditioning. Size-conditional \code{edge_probs} condition on both
 #'   realized node and edge counts (see \code{edge_probs_conditioning});
 #'   \code{edge_count_probs} condition on births and applicable nonempty
-#'   conditioning. CS-2 \code{n_mark_states} is the enumerated size-class count.
+#'   conditioning. Its \code{n_mark_states} is the enumerated size-class count.
 #' @examples
 #' \donttest{
 #' params <- list(node_lambda = 0.5, m = 1.4, CS_params = c(0, 0.5), beta_edges = 0.5)

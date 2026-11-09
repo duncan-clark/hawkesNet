@@ -14,16 +14,17 @@
 #' \eqn{w_m=\exp(\gamma^\top \phi_m)} depends on the previous event's value and
 #' dyad features, \eqn{q} is a softmax over directed dyads from decayed
 #' edge/recip/activity/value statistics, and \eqn{f} is a Gaussian density for
-#' \eqn{\log(1+amount)}.
+#' \eqn{\log(1+amount)}, censored at zero. Its law has a probability mass at
+#' zero and a Gaussian density on the positive log-amount scale.
 #'
-#' This is the **joint** target model. The package's existing RHEM + HawkesNet
-#' path is the **factorized** ablation (timing independent of mark values).
+#' This experimental dyadic model is separate from the paper's complete
+#' network-update model. It does not represent simultaneous edit bundles.
 #'
 #' @name joint_marked_hawkes
 NULL
 
 .jmw_as_hits <- function(x) {
-    if (is.null(x) || nrow(x) == 0) {
+    if (is.null(x)) {
         return(data.frame(
             t = numeric(0), i = integer(0), j = integer(0),
             weight = numeric(0), amount = numeric(0),
@@ -37,6 +38,11 @@ NULL
     if (!all(need %in% names(x))) {
         stop("Hits must include columns t, i, j.")
     }
+    if (!is.numeric(x$t) || any(!is.finite(x$t)) || any(x$t < 0) ||
+        anyDuplicated(x$t))
+        stop("Hits must have distinct finite nonnegative event times; tied dyads are not complete updates here.")
+    if (anyNA(x$i) || anyNA(x$j) || any(x$i == x$j))
+        stop("Hits must contain nonmissing, distinct sender and receiver IDs.")
     out <- x[order(x$t, seq_len(nrow(x))), , drop = FALSE]
     if (!("weight" %in% names(out))) {
         out$weight <- if ("amount" %in% names(out)) log1p(pmax(out$amount, 0)) else 1
@@ -44,6 +50,9 @@ NULL
     if (!("amount" %in% names(out))) {
         out$amount <- pmax(expm1(out$weight), 0)
     }
+    if (!is.numeric(out$weight) || any(!is.finite(out$weight)) || any(out$weight < 0) ||
+        !is.numeric(out$amount) || any(!is.finite(out$amount)) || any(out$amount < 0))
+        stop("Hit weights and amounts must be finite nonnegative numeric values.")
     out$log_amount <- log1p(pmax(out$amount, 0))
     rownames(out) <- NULL
     out
@@ -94,6 +103,10 @@ joint_marked_hawkes_default_params <- function(n_events = 100, duration = 1) {
 #' @param beta_edges Edge / activity decay rate.
 #' @export
 JointMarkedState <- function(actors, beta_edges = 1) {
+    if (anyNA(actors) || length(unique(actors)) < 2L)
+        stop("actors must contain at least two nonmissing IDs")
+    if (length(beta_edges) != 1L || !is.finite(beta_edges) || beta_edges < 0)
+        stop("beta_edges must be finite and nonnegative")
     actors <- sort(unique(actors))
     n <- length(actors)
     id <- stats::setNames(seq_len(n), as.character(actors))
@@ -176,9 +189,42 @@ JointMarkedState <- function(actors, beta_edges = 1) {
 }
 
 .jmw_softmax <- function(eta) {
+    exp(.jmw_logsoftmax(eta))
+}
+
+.jmw_logsoftmax <- function(eta) {
+    if (!length(eta) || any(!is.finite(eta))) stop("Dyad scores must be finite on a nonempty risk set")
     eta <- eta - max(eta)
-    p <- exp(eta)
-    p / sum(p)
+    eta - log(sum(exp(eta)))
+}
+
+.jmw_theta <- function(params) {
+    theta <- params$RHEM_params
+    features <- c("intercept", "repetition", "reciprocity",
+                  "sender_activity", "receiver_activity", "edge_value")
+    if (!is.numeric(theta) || !length(theta) || length(theta) > length(features) ||
+        any(!is.finite(theta))) stop("RHEM_params must be a finite vector of dyad coefficients")
+    if (is.null(names(theta))) names(theta) <- features[seq_along(theta)]
+    if (any(!names(theta) %in% features) || anyDuplicated(names(theta)))
+        stop("RHEM_params must have unique supported feature names")
+    theta
+}
+
+.jmw_validate_params <- function(params) {
+    defaults <- list(mu = 1e-3, K = 0, beta_overall = 1, beta_edges = 1, amount_sd = .5)
+    for (name in c("mu", "K", "beta_overall", "beta_edges", "amount_sd")) {
+        value <- params[[name]] %||% defaults[[name]]
+        if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
+            value < 0 || (name == "amount_sd" && value == 0))
+            stop(name, " must be a finite ", if (name == "amount_sd") "positive" else "nonnegative", " scalar")
+    }
+    for (name in c("gamma_value", "gamma_edge", "amount_intercept",
+                   "amount_edge_value", "amount_repetition")) {
+        value <- params[[name]] %||% 0
+        if (!is.numeric(value) || length(value) != 1L || !is.finite(value))
+            stop(name, " must be a finite scalar")
+    }
+    invisible(NULL)
 }
 
 .jmw_mark_excitation_weight <- function(params, stats_prev, log_amount_prev) {
@@ -186,7 +232,9 @@ JointMarkedState <- function(actors, beta_edges = 1) {
     gamma_value <- params$gamma_value %||% 0
     gamma_edge <- params$gamma_edge %||% 0
     rep_stat <- if (!is.null(stats_prev)) stats_prev[["repetition"]] %||% 0 else 0
-    exp(gamma_value * log_amount_prev + gamma_edge * rep_stat)
+    weight <- exp(gamma_value * log_amount_prev + gamma_edge * rep_stat)
+    if (!is.finite(weight)) stop("Mark-dependent excitation is not finite")
+    weight
 }
 
 .jmw_amount_mean <- function(params, stats) {
@@ -196,9 +244,12 @@ JointMarkedState <- function(actors, beta_edges = 1) {
 }
 
 .jmw_amount_logdens <- function(params, log_amount, stats) {
-    sd <- max(params$amount_sd %||% 0.5, 1e-6)
+    sd <- params$amount_sd %||% 0.5
+    if (length(sd) != 1L || !is.finite(sd) || sd <= 0)
+        stop("amount_sd must be finite and positive")
     mu <- .jmw_amount_mean(params, stats)
-    stats::dnorm(log_amount, mean = mu, sd = sd, log = TRUE)
+    if (log_amount == 0) stats::pnorm(0, mean = mu, sd = sd, log.p = TRUE) else
+        stats::dnorm(log_amount, mean = mu, sd = sd, log = TRUE)
 }
 
 #' Build left-continuous joint state just before each event
@@ -223,10 +274,10 @@ JointMarkedState <- function(actors, beta_edges = 1) {
 
 #' Log-likelihood for the joint marked relational Hawkes model (exact dyad set)
 #'
-#' Uses a complete directed risk set. Compensator is approximated by a
-#' left-continuous piecewise-constant ground intensity between events
-#' (exact for the discrete-event marked likelihood contribution at event times;
-#' suitable as the pilot reference).
+#' Uses a complete directed risk set and the exact exponential compensator.
+#' Amount contributions use the mixed law on the log-amount scale: a mass
+#' at zero and a Gaussian density above zero. Events must have distinct times
+#' and lie inside the observation window; this pilot has no prehistory input.
 #'
 #' @param params Parameter list from \code{\link{joint_marked_hawkes_default_params}}.
 #' @param hits Event data frame with \code{t}, \code{i}, \code{j}, and amount/weight.
@@ -245,21 +296,18 @@ loglik_joint_marked_hawkes <- function(params,
     if (is.null(time_window)) {
         time_window <- c(0, max(hits$t, 1))
     }
+    .temporal_validate_data(hits, time_window)
+    .jmw_validate_params(params)
     T1 <- time_window[1]
     T2 <- time_window[2]
     if (nrow(hits) == 0) {
-        return(list(loglik = -params$mu * (T2 - T1),
+        return(list(loglik = -(params$mu %||% 1e-3) * (T2 - T1),
                     mark_loglik = 0, amount_loglik = 0,
-                    ground_loglik = -params$mu * (T2 - T1)))
+                    ground_loglik = -(params$mu %||% 1e-3) * (T2 - T1)))
     }
 
-    theta <- params$RHEM_params
+    theta <- .jmw_theta(params)
     feat <- names(theta)
-    if (is.null(feat) || any(!nzchar(feat))) {
-        feat <- c("intercept", "repetition", "reciprocity",
-                  "sender_activity", "receiver_activity", "edge_value")
-        names(theta) <- feat[seq_along(theta)]
-    }
 
     path <- .jmw_state_path(hits, actors, params$beta_edges %||% 1)
     mark_ll <- 0
@@ -275,12 +323,12 @@ loglik_joint_marked_hawkes <- function(params,
         state <- path[[k]]
         all <- .jmw_all_dyad_stats(state)
         eta <- as.vector(all$stats[, feat, drop = FALSE] %*% as.numeric(theta[feat]))
-        probs <- .jmw_softmax(eta)
+        log_probs <- .jmw_logsoftmax(eta)
         idx <- which(all$risk$i == hits$i[k] & all$risk$j == hits$j[k])
         if (length(idx) != 1) {
             stop("Observed dyad not in risk set.")
         }
-        mark_ll <- mark_ll + log(probs[idx])
+        mark_ll <- mark_ll + log_probs[idx]
         stats_obs <- .jmw_dyad_stats(state, hits$i[k], hits$j[k])
         amount_ll <- amount_ll + .jmw_amount_logdens(params, hits$log_amount[k], stats_obs)
         w_evt[k] <- .jmw_mark_excitation_weight(params, stats_obs, hits$log_amount[k])
@@ -291,7 +339,7 @@ loglik_joint_marked_hawkes <- function(params,
         dt <- t1 - t0
         if (dt <= 0) return(0)
         if (beta > 1e-12) {
-            mu * dt + K * kernel_at_t0 * (1 - exp(-beta * dt)) / beta
+            mu * dt + K * kernel_at_t0 * (-expm1(-beta * dt)) / beta
         } else {
             (mu + K * kernel_at_t0) * dt
         }
@@ -307,8 +355,8 @@ loglik_joint_marked_hawkes <- function(params,
         }
         lam <- mu + K * kernel_cursor
         if (!(is.finite(lam) && lam > 0)) {
-            return(list(loglik = -1e10, mark_loglik = mark_ll,
-                        amount_loglik = amount_ll, ground_loglik = -1e10))
+            return(list(loglik = -Inf, mark_loglik = mark_ll,
+                        amount_loglik = amount_ll, ground_loglik = -Inf))
         }
         ground_ll <- ground_ll + log(lam)
         kernel_cursor <- kernel_cursor + w_evt[k]
@@ -421,7 +469,8 @@ score_joint_marked_hawkes <- function(hits,
     }
     if (is.null(score_idx)) score_idx <- seq_len(nrow(hits))
 
-    theta <- params$RHEM_params
+    .jmw_validate_params(params)
+    theta <- .jmw_theta(params)
     feat <- names(theta)
     path <- .jmw_state_path(hits, actors, params$beta_edges %||% 1)
     kernel_sum <- 0
@@ -434,17 +483,17 @@ score_joint_marked_hawkes <- function(hits,
         state <- path[[k]]
         if (k > 1) {
             dt <- hits$t[k] - hits$t[k - 1]
-            kernel_sum <- kernel_sum * exp(-(params$beta_overall %||% 1) * dt)
-            kernel_sum <- kernel_sum + .jmw_mark_excitation_weight(
+            kernel_sum <- (kernel_sum + .jmw_mark_excitation_weight(
                 params, prev_stats, prev_log_amount
-            )
+            )) * exp(-(params$beta_overall %||% 1) * dt)
         }
         lam <- (params$mu %||% 1e-3) + (params$K %||% 0) * kernel_sum
         all <- .jmw_all_dyad_stats(state)
         eta <- as.vector(all$stats[, feat, drop = FALSE] %*% as.numeric(theta[feat]))
-        probs <- .jmw_softmax(eta)
+        log_probs <- .jmw_logsoftmax(eta)
+        probs <- exp(log_probs)
         idx <- which(all$risk$i == hits$i[k] & all$risk$j == hits$j[k])
-        log_mark <- log(probs[idx])
+        log_mark <- log_probs[idx]
         stats_obs <- .jmw_dyad_stats(state, hits$i[k], hits$j[k])
         log_amount <- .jmw_amount_logdens(params, hits$log_amount[k], stats_obs)
         log_ground <- log(lam)
@@ -481,17 +530,23 @@ score_joint_marked_hawkes <- function(hits,
 #' @param time_window Observation window.
 #' @param actors Actor IDs.
 #' @param max_events Safety cap.
-#' @return List with \code{hits} and \code{actors}.
+#' @return List with \code{hits}, \code{actors}, \code{params},
+#'   \code{complete} (FALSE if the event cap stopped simulation), and the
+#'   actually simulated \code{time_window}. Use that window for likelihoods.
 #' @export
 sim_joint_marked_hawkes <- function(params,
                                     time_window = c(0, 1),
                                     actors = 1:8,
                                     max_events = 500) {
+    .jmw_validate_params(params)
+    .temporal_validate_data(data.frame(t = numeric(0)), time_window)
+    if (length(max_events) != 1L || !is.finite(max_events) || max_events < 1 || max_events != floor(max_events))
+        stop("max_events must be a positive integer")
     actors <- sort(unique(actors))
     state <- JointMarkedState(actors, beta_edges = params$beta_edges %||% 1)
     t <- time_window[1]
     T2 <- time_window[2]
-    theta <- params$RHEM_params
+    theta <- .jmw_theta(params)
     feat <- names(theta)
     kernel_sum <- 0
     t_last_event <- t
@@ -540,9 +595,11 @@ sim_joint_marked_hawkes <- function(params,
         i <- all$risk$i[pick]
         j <- all$risk$j[pick]
         stats_obs <- .jmw_dyad_stats(state, i, j)
-        sd <- max(params$amount_sd %||% 0.5, 1e-6)
+        sd <- params$amount_sd %||% 0.5
+        if (length(sd) != 1L || !is.finite(sd) || sd <= 0)
+            stop("amount_sd must be finite and positive")
         log_amount <- stats::rnorm(1, mean = .jmw_amount_mean(params, stats_obs), sd = sd)
-        log_amount <- max(log_amount, 1e-6)
+        log_amount <- max(log_amount, 0)
         amount <- expm1(log_amount)
         weight <- log_amount
         n_events <- n_events + 1L
@@ -562,7 +619,9 @@ sim_joint_marked_hawkes <- function(params,
     hits <- if (length(rows)) do.call(rbind, rows) else
         data.frame(t = numeric(0), i = integer(0), j = integer(0),
                    weight = numeric(0), amount = numeric(0))
-    list(hits = hits, actors = actors, params = params)
+    complete <- n_events < max_events || t >= T2
+    list(hits = hits, actors = actors, params = params, complete = complete,
+         time_window = c(time_window[1L], if (complete) T2 else t))
 }
 
 #' Benchmark exact joint marked Hawkes likelihood scaling
@@ -596,7 +655,7 @@ benchmark_joint_marked_hawkes <- function(actor_grid = c(10, 20, 40),
                 mem <- NA_real_
                 t0 <- proc.time()[[3]]
                 ll <- tryCatch(
-                    loglik_joint_marked_hawkes(params, hits, actors, c(0, 1)),
+                    loglik_joint_marked_hawkes(params, hits, actors, sim$time_window),
                     error = function(e) NULL
                 )
                 elapsed <- proc.time()[[3]] - t0

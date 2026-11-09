@@ -135,3 +135,21 @@ test_that("the likelihood uses absolute observation endpoints consistently", {
   expect_equal(qs$loglik, q$loglik, tolerance = 1e-11)
   expect_error(loglik_hawkesNet(params, c(0, 2), shifted, PMF_mark_BA), "outside time window")
 })
+test_that("inhomogeneous M0 uses the same certified adaptive thinning as feedback models", {
+  params <- list(mu = 1, K = .2, beta_overall = 2, beta_edges = .1, m = 1)
+  background <- list(mu_fit = list(mu_fun = function(t) rep(2, length(t)), mu_bound = 2))
+  set.seed(76)
+  m0 <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     inhom_bg = background)
+  set.seed(76)
+  m1 <- sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                     timing = hawkes_timing("M1"), inhom_bg = background)
+  expect_equal(m0$events, m1$events)
+  expect_true(all(m0$accept_probs >= 0 & m0$accept_probs <= 1))
+  background$mu_fit$mu_bound <- NULL
+  expect_error(sim_hawkesNet(params, c(0, 3), PMF_mark_BA, cond_intensity,
+                            inhom_bg = background), "mu_bound")
+  fitted <- estimate_mu_kde(c(.1, .3, .6, .7, .9), c(0, 1))
+  expect_equal(fitted$mu_bound, max(fitted$mu_grid))
+  expect_true(all(fitted$mu_fun(seq(-1, 2, length.out = 2000)) <= fitted$mu_bound))
+})

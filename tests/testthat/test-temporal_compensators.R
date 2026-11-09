@@ -19,7 +19,7 @@ test_that("ks_test_pval_temporal returns valid p-value", {
 test_that("compensator_temporal_hawkes works with powerlaw kernel", {
   set.seed(1)
   realiz <- data.frame(t = sort(runif(50, 0, 10)))
-  comp <- compensator_temporal_hawkes(c(1, 0.5, 1.5), realiz, c(0, 10), kernel = "powerlaw")
+  comp <- compensator_temporal_hawkes(c(1, 1.5, 0.5, 1), realiz, c(0, 10), kernel = "powerlaw")
   expect_type(comp, "double")
   expect_length(comp, 50)
 })

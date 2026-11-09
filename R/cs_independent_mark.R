@@ -69,12 +69,12 @@
     return(list(probs = numeric(0), log_probs = numeric(0), rates = numeric(0),
                 selection_probs = numeric(0), log_nonempty = -Inf))
   }
-  score <- as.vector(tab$changes %*% theta)
+  changes <- sweep(tab$changes, 2L, tab$changes[1L, ], "-")
+  score <- as.vector(changes %*% theta)
   if (any(!is.finite(score))) stop("Single-edge structural scores must be finite")
   # Subtracting the common minimum age leaves normalized weights unchanged.
-  # log.p avoids underflow even when all logistic scores are extremely small.
-  log_weights <- -tau * (tab$ages - min(tab$ages)) +
-    stats::plogis(score, log.p = TRUE)
+  # Exponential change-statistic weights; common score shifts cancel exactly.
+  log_weights <- score - tau * (tab$ages - min(tab$ages))
   centered <- log_weights - max(log_weights)
   log_p <- centered - log(sum(exp(centered)))
   log_rates <- log(m) + log_p

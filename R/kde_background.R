@@ -18,7 +18,8 @@ ensure_sorted <- function(t) sort(as.numeric(t))
 #' @param windowT Length-2 vector (t0, t1) defining the observation window. If NULL, uses range(t).
 #' @param bw Bandwidth for density(). If NULL, uses default (Silverman).
 #' @param grid_n Number of grid points for the density / rate estimate
-#' @return List with: mu_fun (function mapping t -> rate), grid, mu_grid, bw, windowT.
+#' @return List with: mu_fun (function mapping t -> rate), grid, mu_grid, bw,
+#'   windowT, and mu_bound, a global bound for the interpolated rate.
 #'         mu_grid is the rate at each grid point (density * n so that integral ≈ n).
 #' @examples
 #' t <- sort(c(rexp(50, 2), runif(20, 0, 10)))
@@ -50,6 +51,7 @@ estimate_mu_kde <- function(t, windowT = NULL, bw = NULL, grid_n = 4096) {
     mu_fun = mu_fun,
     grid = dens$x,
     mu_grid = mu_grid,
+    mu_bound = max(mu_grid),
     bw = bw,
     windowT = windowT,
     n = n

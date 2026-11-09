@@ -1,21 +1,22 @@
 Package: hawkesNet
-Title: Simulate and Fit Maximum Likelihood for Hawkesian Network Growth Models
-Version: 0.1.0
+Title: Likelihood and Simulation for Self-Exciting Network Updates
+Version: 0.2.0
 Author: Duncan A. Clark
 Maintainer: Duncan A. Clark <dac6@williams.edu>
 Authors@R: 
     person("Duncan", "Clark", , "dac6@williams.edu", role = c("aut", "cre"))
-Description: Provides tools for simulating and fitting Hawkes-process-driven
-    network growth models via maximum likelihood.
-    Supports both homogeneous and inhomogeneous (KDE-estimated) background
-    rates, Barabasi-Albert and change-statistic (ERNM) mark distributions,
-    parallel intensity-cache construction, and goodness-of-fit diagnostics.
+Description: Simulates and fits marked point processes whose events are
+    complete network updates. Provides normalized Poisson-proposal update
+    laws, Hawkes timing models, and likelihood and simulation diagnostics.
+    Includes directed package-dependency models with births, edge additions
+    and deletions, paired migrations, shared-person covariates, and finite
+    mixtures, alongside interfaces for undirected network growth.
 License: MIT + file LICENSE
 URL: https://github.com/duncan-clark/hawkesNet
 BugReports: https://github.com/duncan-clark/hawkesNet/issues
 Encoding: UTF-8
+OS_type: unix
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Remotes:
     github::fellstat/ernm,
     github::duncan-clark/timeNet
@@ -31,7 +32,9 @@ Imports:
     graphics,
     parallel,
     stats,
-    utils
+    utils,
+    Rcpp,
+    jsonlite
 Suggests:
     testthat (>= 3.0.0),
     ggplot2,
@@ -42,8 +45,7 @@ Suggests:
     MASS,
     numDeriv,
     RhpcBLASctl,
-    gender,
-    genderdata,
-    bigrquery,
-    jsonlite,
     timeNet
+LinkingTo: Rcpp
+SystemRequirements: C++17, sqlite3 (optional, for CRAN graph import)
+Config/roxygen2/version: 8.0.0

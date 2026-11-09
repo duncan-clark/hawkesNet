@@ -23,8 +23,9 @@ Builds a dynamic network from a list of network snapshots and optional video fil
 This function is central for visualizing how the network grows with Hawkes process events.
 }
 \details{
-Requires the suggested packages \pkg{networkDynamic} and \pkg{animation} to be installed.
-Install with \code{install.packages(c("networkDynamic", "animation"))}.
+Requires \pkg{networkDynamic} and \pkg{ndtv}; saving a video also requires
+\pkg{animation}. Install these optional packages with
+\code{install.packages(c("networkDynamic", "ndtv", "animation"))}.
 The animation displays the network at each event time; if \code{file} is provided,
 \code{animation::saveVideo} is used to write a video file.
 }

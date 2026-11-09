@@ -14,12 +14,14 @@ compensator_temporal_hawkes(
 }
 \arguments{
 \item{params}{Numeric vector of parameters:
-- For "exp": c(gamma, beta, K)
-- For "powerlaw": c(gamma, p, K, c)
+\itemize{
+\item For "exp": c(gamma, beta, K)
+\item For "powerlaw": c(gamma, p, K, c)
 gamma: Total background events (scale of KDE or Uniform mass)
 beta/p: decay parameter
 K: branching ratio
-c: scale parameter for power-law kernel}
+c: scale parameter for power-law kernel
+}}
 
 \item{realiz}{Data frame of event times with column 't'}
 

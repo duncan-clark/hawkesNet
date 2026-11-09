@@ -26,13 +26,15 @@ PMF_mark(
 \item{time}{Numeric. The time at which to evaluate the PMF.}
 
 \item{params}{Named list. Model parameter values required for the chosen \code{type}:
-- For \code{type = "BA"}: \code{beta_edges} and \code{m} (numeric).
-- For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
-- For \code{type = "BA-bip"}: similar to BA, plus any relevant bipartite parameters.}
+\itemize{
+\item For \code{type = "BA"}: \code{beta_edges} and \code{m} (numeric).
+\item For \code{type = "CS"}: \code{beta_edges} (numeric), \code{node_lambda} (numeric), \code{CS_params} (numeric vector of coefficients for \code{formula_RHS}).
+\item For \code{type = "RHEM"}: see \code{\link{PMF_mark_RHEM}}.
+}}
 
 \item{mark_filtration}{Network or compatible object. The network history (filtration) up to the current time.}
 
-\item{type}{Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"BA-bip"}. Default: \code{"BA"}.}
+\item{type}{Character. Model type: one of \code{"BA"}, \code{"CS"}, or \code{"RHEM"}. Default: \code{"BA"}.}
 
 \item{mark}{Network or NULL. The current mark/network structure. If \code{NULL}, derived from \code{mark_filtration}.}
 
@@ -58,21 +60,22 @@ PMF_mark(
 }
 \value{
 Named list containing:
-  \item{mark_density}{Numeric. Density of the provided or generated mark.}
-  \item{log_mark_density}{Numeric. Log-density of the mark.}
-  \item{edge_probs}{Numeric vector. Probabilities for each possible edge.}
-  \item{mark_grad}{Numeric vector. Gradient of the mark density (if \code{grad = TRUE}).}
-  \item{decay_grad}{Numeric vector. Gradient with respect to decay (if \code{grad = TRUE}).}
-  \item{mark_sample}{Network. The sampled mark/network object.}
-  \item{mark_sample_density}{Numeric. Density of the sampled mark.}
-  \item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
+\item{mark_density}{Numeric. Density of the provided or generated mark.}
+\item{log_mark_density}{Numeric. Log-density of the mark.}
+\item{edge_probs}{Numeric vector. Probabilities for each possible edge.}
+\item{mark_grad}{Numeric vector. Gradient of the mark density (if \code{grad = TRUE}).}
+\item{decay_grad}{Numeric vector. Gradient with respect to decay (if \code{grad = TRUE}).}
+\item{mark_sample}{Network. The sampled mark/network object.}
+\item{mark_sample_density}{Numeric. Density of the sampled mark.}
+\item{log_mark_sample_density}{Numeric. Log-density of the sampled mark.}
 }
 \description{
-Calculates the probability mass function (PMF) for marks (network structures) at a given time, supporting multiple network growth models (Barabasi-Albert, Change Statistic Hawkes, and BA-bipartite).
+Calculates the probability mass function (PMF) for network updates or
+repeated directed interactions at a given time.
 }
 \details{
 Computes the mark PMF, \eqn{q(m\vert t,\mathcal{H}_{t})} (see \code{\link{cond_intensity}}).
-Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "BA-bip"}.
+Currently three options: \code{type = "BA"}, \code{type = "CS"}, and \code{type = "RHEM"}.
 
 For \code{type = "BA"}, one node arrives and makes a Poisson number of
 independent attachment attempts with mean \code{m}. After repeated targets
@@ -109,7 +112,7 @@ max_node_time = 1)
 }
 }
 \references{
-Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. *Science*, 286, 509–512. \doi{10.1126/science.286.5439.509}
+Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random networks. \emph{Science}, 286, 509–512. \doi{10.1126/science.286.5439.509}
 }
 \seealso{
 \code{\link{cond_intensity}}

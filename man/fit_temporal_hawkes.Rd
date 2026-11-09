@@ -36,10 +36,17 @@ fit_temporal_hawkes(
 \item{upp}{Optional numeric vector of upper bounds for L-BFGS-B.}
 }
 \value{
-List with \code{par} (fitted parameters) and \code{value} (log-likelihood).
+An \code{optim} result with \code{par} and \code{value}, plus
+\code{hessian}, \code{standard_errors}, \code{boundary} and
+\code{hessian_status}. Boundary or unconverged fits have an NA Hessian
+and no Wald standard errors. Interior fits use central differences that
+remain inside the parameter bounds; standard errors are withheld if the
+observed information is not positive definite and well conditioned.
 }
 \description{
 Fits a Hawkes process with KDE background and specified kernel.
+Default bounds restrict the branching ratio to less than one. Custom bounds
+can relax this restriction for finite observation windows.
 }
 \examples{
 \donttest{

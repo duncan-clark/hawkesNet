@@ -1,4 +1,5 @@
-# Three explicit mark laws: BA-1, CS-1 and CS-2.
+# Addition-only laws: BA-1, CS-1 and the historical direct CS-2 variant.
+# CS-2 here is a whole-update draw, not Construction 2 Poisson-set proposals.
 # Run from the package root after pkgload::load_all(".") or library(hawkesNet).
 # All three use the same normalized-mark simulator and cached likelihood fitter.
 
@@ -31,7 +32,7 @@ run_mark_construction_example <- function(model = c("BA-1", "CS-1", "CS-2"),
 # Example:
 # result <- run_mark_construction_example("CS-2")
 # result$fit$fit_table
-# CS-1 uses logistic single-edge change-statistic weights followed by Poisson
+# CS-1 uses exponential single-edge change-statistic weights followed by Poisson
 # collapsing; m is the attempt mean. CS-2 draws K from Poisson(m) conditioned
 # on K <= D, then weights complete K-edge updates by their whole change.
 # Exact CS-2 work grows as choose(D,K); keep its candidate window modest.

@@ -300,8 +300,9 @@ simulate_normalized_hawkes_homogeneous <- function(params, time_window, PMF_mark
 #'
 #' Uses exact adaptive thinning for a homogeneous Hawkes ground process, then
 #' samples complete normalized network-update marks at the accepted times.
-#' The legacy inhomogeneous path uses a grid-based background envelope and stops
-#' if a bound violation is detected; that grid alone does not certify domination.
+#' Inhomogeneous simulation uses the declared background bound and recomputes
+#' the excitation bound after each accepted event. Built-in KDE backgrounds
+#' supply a bound for their piecewise linear rate automatically.
 #'
 #' @param params List of parameters (\code{mu}, \code{beta_overall}, \code{K}, \code{beta_edges}, and any mark-specific).
 #'   For inhomogeneous background, \code{mu} is ignored and \code{mu_at_t} is used instead.
@@ -311,8 +312,8 @@ simulate_normalized_hawkes_homogeneous <- function(params, time_window, PMF_mark
 #'   If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automatically.
 #' @param hashed_edges If \code{TRUE}, use a hash for edge lookup (default \code{FALSE}).
 #' @param verbose Print progress (default \code{FALSE}).
-#' @param mu_multiplier Legacy inhomogeneous envelope multiplier (default 10).
-#'   Homogeneous adaptive thinning does not use this parameter.
+#' @param mu_multiplier Retained for compatibility; adaptive thinning does not
+#'   use this parameter. Specify a background bound through \code{inhom_bg}.
 #' @param joint_accept Must be \code{FALSE}: normalized marks are sampled after
 #'   ground-event acceptance, without applying their probability a second time.
 #' @param n_mark_sample Must be \code{NULL}; mark importance sampling is not used
@@ -329,6 +330,7 @@ simulate_normalized_hawkes_homogeneous <- function(params, time_window, PMF_mark
 #' @param timing Ground model from \code{\link{hawkes_timing}}. M1/M2 draw each
 #'   complete update before simulating subsequent times. For inhomogeneous M1/M2
 #'   simulation, supply a global background bound in \code{inhom_bg$mu_fit$mu_bound}.
+#'   The same bound is required for an arbitrary inhomogeneous M0 background.
 #' @return List with \code{events}, \code{net}, \code{accept_probs}.
 #' @examples
 #' \donttest{
@@ -380,218 +382,16 @@ sim_hawkesNet <- function(params,
         stop_on_full_network = stop_on_full_network, verbose = verbose, ...))
   }
   
-  # Determine if using inhomogeneous background
-  use_inhom <- !is.null(inhom_bg) && !is.null(inhom_bg$mu_fit) && !is.null(inhom_bg$mu_fit$mu_fun)
-  if (!use_inhom) {
-    out <- simulate_normalized_hawkes_homogeneous(params, time_window, PMF_mark,
-      seed_net = seed_net, seed_times = seed_times,
-      stop_on_full_network = stop_on_full_network, verbose = verbose, ...)
-    out$timing <- timing
-    return(out)
+  if (!is.null(inhom_bg)) {
+    return(.simulate_network_timing(params, time_window, PMF_mark, timing,
+      seed_net = seed_net, seed_times = seed_times, inhom_bg = inhom_bg,
+      stop_on_full_network = stop_on_full_network, verbose = verbose, ...))
   }
-  
-  if (use_inhom) {
-    # Inhomogeneous: get mu_fun and compute max mu for thinning bound
-    mu_fun <- inhom_bg$mu_fit$mu_fun
-    # Evaluate mu_fun on a grid to find maximum for thinning bound
-    t_grid <- seq(time_window[1], time_window[2], length.out = 1000)
-    mu_grid <- pmax(mu_fun(t_grid), 1e-12)
-    mu_max <- max(mu_grid, na.rm = TRUE)
-    if (!is.finite(mu_max) || mu_max <= 0) {
-      mu_max <- params$mu  # Fallback to params$mu if mu_fun fails
-    }
-    lambda <- mu_multiplier * mu_max
-    if (verbose == 1) {
-      cat("Using inhomogeneous background: mu_max =", mu_max, "for thinning bound\n")
-    }
-  } else {
-    # Homogeneous: use constant mu
-    mu <- params$mu
-    lambda <- mu_multiplier * mu
-  }
-  
-  theta <- params$theta
-  beta <- params$beta
-  K <- params$K
-  beta_overall <- params$beta_overall
-
-  # propose points to be thinned:
-  n_bg <- rpois(1, lambda * (time_window[2] - time_window[1]))
-
-  # Pre-allocate buffers to avoid O(n^2) vector append in the while loop
-  event_times_buf <- numeric(n_bg)
-  mark_density_buf <- numeric(n_bg)
-  accept_probs_buf <- numeric(n_bg)
-  n_accepted <- 0L
-  n_proposed <- 0L
-  n_mark_dens <- 0L
-  event_queue <- data.table(time = sort(runif(n_bg, min=time_window[1], max=time_window[2])))
-  # maintain order so no need to sort
-  setkey(event_queue, time)
-  # Initialize the list to store new events
-  new_events_list <- list()
-  list_index <- 1
-  
-  if (!is.null(seed_net)) {
-    current_net <- network.copy(seed_net)
-    t_last_accepted <- if (!is.null(seed_times)) max(seed_times) else time_window[1]
-    
-    # Initialize kernel_R from seed_times
-    kernel_R <- 0
-    if (!is.null(seed_times) && length(seed_times) > 0) {
-      s_times <- sort(seed_times)
-      # kernel_R should be the sum IMMEDIATELY AFTER the last seed event.
-      kernel_R <- 1 # sum after first event
-      if (length(s_times) > 1) {
-        for (i in 2:length(s_times)) {
-          dt <- s_times[i] - s_times[i-1]
-          kernel_R <- kernel_R * exp(-beta_overall * dt) + 1
-        }
-      }
-    }
-    
-    # Filter event_queue to only include points after t_last_accepted
-    event_queue <- event_queue[time > t_last_accepted]
-    n_bg <- nrow(event_queue)
-    
-    # Re-allocate buffers to the new size
-    event_times_buf <- numeric(n_bg)
-    mark_density_buf <- numeric(n_bg)
-    accept_probs_buf <- numeric(n_bg)
-    
-    if (verbose == 1) {
-      cat(sprintf("Conditional simulation: seeded with %d nodes, %d edges, %d events. Starting at t=%.4f\n",
-                  network::network.size(current_net), network::network.edgecount(current_net),
-                  length(seed_times), t_last_accepted))
-    }
-  } else {
-    current_net <- network::network(matrix(1),directed = FALSE)
-    delete.vertices(current_net,1)
-    kernel_R <- 0       # running sum of exp(-beta * (t_last - t_i)) for accepted events
-    t_last_accepted <- time_window[1]  # time of last accepted event (or start)
-  }
-
-  # Optimization: pre-calculate mu_fun values if inhomogeneous
-  if (use_inhom) {
-    # The event_queue times are fixed at start.
-    # Pre-evaluate mu_fun for all proposed points.
-    mu_proposed <- pmax(mu_fun(event_queue$time), 1e-12)
-  }
-
-  while (nrow(event_queue) > 0) {
-    t <- proc.time()
-    current_event <- event_queue[1, ,drop = FALSE]
-    curr_idx <- n_proposed + 1L
-    event_queue <- event_queue[-1, ,drop = FALSE]  # Remove the processed event
-
-    # This retained path is only for the legacy inhomogeneous envelope.
-    dt <- current_event$time - t_last_accepted
-    kernel_sum_at_t <- kernel_R * exp(-beta_overall * dt)
-    intensity <- mu_proposed[curr_idx] + params$K * kernel_sum_at_t
-    accept <- intensity / lambda
-    if (!is.finite(accept) || accept < 0 || accept > 1 + 1e-10)
-      stop("inhomogeneous thinning envelope violated; increase mu_multiplier or supply a certified bound")
-    mark_sample <- PMF_mark(time = current_event$time, params = params,
-                            mark_filtration = current_net, mark = NULL,
-                            generate_mark = TRUE, generate_density = FALSE,
-                            new_edge_hash = NULL,
-                            stop_on_full_network = stop_on_full_network, ...)
-    net <- mark_sample$mark_sample
-    n_proposed <- n_proposed + 1L
-    accept_probs_buf[n_proposed] <- accept
-
-    # if we accept the point add it in
-    if(verbose == 1 && (n_proposed %% 10 == 0)){
-      n_new_nodes <- (net %n% "n") - (if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n')
-      n_new_edges <- network::network.edgecount(net) - (if(is.null(current_net %v% 'n')) 0 else network::network.edgecount(current_net))
-      n_cands <- if(!is.null(mark_sample$edge_probs)) length(mark_sample$edge_probs) else 0
-      cat(sprintf("[Sim] Prop %d: nodes=%d (+%d), new_edges=%d/%d cands, accept_prob=%.4f\n", 
-                  n_proposed, net %n% "n", n_new_nodes, n_new_edges, n_cands, accept))
-    }
-    
-    # verbose=2: report every 100 proposals or 5% of time window
-    if(verbose == 2){
-      should_report <- (n_proposed %% 100 == 0)
-      if(!should_report){
-        # check if we crossed a 5% threshold
-        t_range <- time_window[2] - time_window[1]
-        if(t_range > 0){
-          prev_t_rel <- (t_last_accepted - time_window[1]) / t_range
-          curr_t_rel <- (current_event$time - time_window[1]) / t_range
-          if(floor(curr_t_rel * 20) > floor(prev_t_rel * 20)){
-            should_report <- TRUE
-          }
-        }
-      }
-      if(should_report){
-        cat(sprintf("[Sim] Prop %d | t=%.4f (%.0f%%) | nodes=%d, edges=%d, accepted=%d\n",
-                    n_proposed, current_event$time, 
-                    100 * (current_event$time - time_window[1]) / (time_window[2] - time_window[1]),
-                    net %n% "n", network::network.edgecount(net), n_accepted))
-      }
-    }
-
-    if(runif(1) < accept){
-      if(verbose == 1){
-        cat(sprintf("[Sim] ACCEPTED at t=%.4f (nodes: %d -> %d, edges: %d -> %d)\n",
-                    current_event$time, 
-                    if(is.null(current_net %v% 'n')) 0 else current_net %n% 'n', net %n% 'n',
-                    if(is.null(current_net %v% 'n')) 0 else network::network.edgecount(current_net), network::network.edgecount(net)))
-      }
-      current_net <- net
-      n_accepted <- n_accepted + 1L
-      event_times_buf[n_accepted] <- current_event$time
-      # --- Update O(1) kernel recurrence ---
-      dt_acc <- current_event$time - t_last_accepted
-      kernel_R <- kernel_R * exp(-beta_overall * dt_acc) + 1
-      t_last_accepted <- current_event$time
-      n_mark_dens <- n_mark_dens + 1L
-      mark_density_buf[n_mark_dens] <- mark_sample$mark_sample_density
-    }
-    if(verbose == 1 && (n_proposed %% 10 == 0)){
-      cat(sprintf("[Sim] t=%.4f, iter_time=%.2fs\n", 
-                  current_event$time, (proc.time()-t)[3]))
-    }
-    # Concatenate new events to event_queue only if we have only one event left to go
-    event_queue <- rbindlist(list(event_queue, rbindlist(new_events_list, use.names = TRUE)))
-    new_events_list <- vector("list", length(new_events_list))  # Reset the list
-    list_index <- 1
-  }
-  t1 <- proc.time() - t1
-  message("simulation took ", round(t1[3], 2), " seconds")
-  # Trim pre-allocated buffers to actual size
-  events <- list(
-    n = n_accepted,
-    t = event_times_buf[seq_len(n_accepted)],
-    mark_density = mark_density_buf[seq_len(n_mark_dens)]
-  )
-  accept_probs <- accept_probs_buf[seq_len(n_proposed)]
-  
-  # Diagnostic: warn if thinning bound was violated (accept > 1)
-  max_accept <- if (length(accept_probs) > 0) max(accept_probs, na.rm = TRUE) else 0
-  n_violations <- sum(accept_probs > 1, na.rm = TRUE)
-  if (n_violations > 0) {
-    warning(sprintf(
-      paste0("Thinning bound violated: %d of %d proposals had accept > 1 ",
-             "(max=%.2f). The dominating Poisson measure (lambda=%.1f) is too low. ",
-             "Increase mu_multiplier (currently %.0f) for valid simulation. ",
-             "Accepted %d events from %d proposals."),
-      n_violations, n_proposed, max_accept, lambda, mu_multiplier,
-      n_accepted, n_proposed))
-  }
-  if (verbose >= 1) {
-    cat(sprintf("\n=== Simulation Complete ===\n"))
-    cat(sprintf("  Proposed: %d\n", n_proposed))
-    cat(sprintf("  Accepted: %d\n", n_accepted))
-    cat(sprintf("  Final size: %d nodes, %d edges\n", 
-                current_net %n% 'n', network::network.edgecount(current_net)))
-    cat(sprintf("  Thinning: max_accept_ratio=%.3f, lambda=%.1f\n", max_accept, lambda))
-    cat(sprintf("  Time: %.2f s\n", t1[3]))
-  }
-  
-  return(list(events = events,
-              net = current_net,
-              accept_probs = accept_probs))
+  out <- simulate_normalized_hawkes_homogeneous(params, time_window, PMF_mark,
+    seed_net = seed_net, seed_times = seed_times,
+    stop_on_full_network = stop_on_full_network, verbose = verbose, ...)
+  out$timing <- timing
+  out
 }
 
 #' Log-likelihood for the Hawkes network growth model
@@ -700,9 +500,8 @@ loglik_hawkesNet = function(params,
       shared_model <- createCppModel(as.formula(paste("g0 ~ ", formula_rhs)))
       shared_model$setNetwork(as.BinaryNet(g0))
     }
-    if (use_parallel) message("Intensity cache: using ", cores, " cores")
-    else message("Intensity cache: using 1 core")
-    if (combine_intensity) message("Intensity cache: will combine CS closures into one (saves closure envs)")
+    if (verbose) message("Intensity cache: using ", if (use_parallel) cores else 1L, " core(s)")
+    if (verbose && combine_intensity) message("Intensity cache: will combine CS closures into one (saves closure envs)")
     # Materialise ... into a concrete list so the closure serialises cleanly
     # for PSOCK workers (promises from ... cannot survive serialisation).
     extra_args <- dot_args
@@ -781,7 +580,7 @@ loglik_hawkesNet = function(params,
     }else{
       t1 <- proc.time()
       intens_list <- lapply(seq_along(times), intens_func)
-      message("intens list took ", round((proc.time()-t1)[3],2)," seconds")
+      if (verbose) message("intens list took ", round((proc.time()-t1)[3],2)," seconds")
     }
     intens_vec <- vapply(intens_list, function(x) x$result, numeric(1))
     intens_funcs <- lapply(intens_list, function(x) x$func)
@@ -807,7 +606,7 @@ loglik_hawkesNet = function(params,
         )
         if (!is.null(combined)) {
           intens_funcs <- combined
-          message("Intensity cache: combined ", length(times),
+          if (verbose) message("Intensity cache: combined ", length(times),
                   " closures into 1 (memory: one list of change_stats)")
         }
       }
@@ -903,6 +702,8 @@ loglik_hawkesNet = function(params,
 #' @param method Optimization method: \code{"Nelder-Mead"} (default, derivative-free) or
 #'   \code{"L-BFGS-B"} (gradient-based with box constraints).
 #' @param verbose Print diagnostics to \code{stderr} (default \code{TRUE}).
+#' @param run_sim Simulate from the fitted model after estimation (default FALSE).
+#' @param get_hessian Compute observed-information standard errors (default TRUE).
 #' @param parallel_type Parallelization strategy for intensity cache build:
 #'   \code{"auto"} (default), \code{"psock"}, or \code{"fork"}.
 #' @param mu_vec Optional numeric vector of background rates at each event time.
@@ -1065,18 +866,19 @@ fit_hawkesNet <- function(params_init,
   
   # Validate that params match the mark PMF (required names and, for CS, CS_params length)
   validate_params_for_PMF(params_init_old, PMF_mark, mark_filtration, ...)
-  # CS-2 conditions on the edge count, so its edge coefficient is exactly
-  # absent from the likelihood. Refuse to optimize this flat direction.
+  # Edge counts cancel within a CS-1 exponential selection law and within
+  # each fixed-size CS-2 law. Refuse to optimise these flat directions.
   mark_options <- list(...)
   if (identical(PMF_mark, PMF_mark_CS) &&
-      identical(mark_options$cs_mode, "size_conditional")) {
+      length(mark_options$cs_mode) == 1L &&
+      mark_options$cs_mode %in% c("independent", "size_conditional")) {
     info <- expected_params_PMF_mark_CS(mark_filtration, mark_options$formula_RHS,
                                         cs_mode = "size_conditional")
     edge_index <- which(info$CS_params_names == "edges")
     cs_names <- names(unlist(list(CS_params = params_init_old$CS_params)))
     free_edge <- intersect(cs_names[edge_index], names(flat_par))
     if (length(free_edge)) {
-      stop("CS-2 conditions on edge count: fix ", paste(free_edge, collapse = ", "),
+      stop(if(mark_options$cs_mode=="independent")"CS-1 normalises exponential weights: fix "else"CS-2 conditions on edge count: fix ", paste(free_edge, collapse = ", "),
            " via fixed_params, or omit the edges statistic; its coefficient cancels.")
     }
   }

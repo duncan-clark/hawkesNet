@@ -67,7 +67,7 @@ with an error when no nonempty update remains.}
 
 \item{max_candidates}{Maximum number of candidate edges for exact enumeration
 in \code{"joint"} and \code{"size_conditional"} modes (default 12, at most
-20). Larger supports error. CS-2 enumerates only sets of the drawn/observed
+20). Larger supports error. The size-conditional mode enumerates only sets of the drawn/observed
 size; the independent mode does not use this guard.}
 
 \item{condition_nonempty}{Condition the complete node-and-edge update on being
@@ -82,32 +82,33 @@ include change-statistic inputs in the return list.}
 }
 \value{
 List with \code{log_mark_density}, \code{mark_density}, numerical
-  cached \code{log_density_func} and \code{density_func}, and optionally
-  \code{mark_sample} and its density. For nonlegacy modes,
-  \code{mark_change_stats} reports the complete update's statistic change.
-  CS-1 returns frozen \code{edge_change_stats}, normalized
-  \code{edge_selection_probs}, and \code{reference_edge_probs} before
-  nonempty conditioning. Its \code{edge_probs} condition on node births and
-  applicable nonempty conditioning. CS-2 \code{edge_probs} condition on both
-  realized node and edge counts (see \code{edge_probs_conditioning});
-  \code{edge_count_probs} condition on births and applicable nonempty
-  conditioning. CS-2 \code{n_mark_states} is the enumerated size-class count.
+cached \code{log_density_func} and \code{density_func}, and optionally
+\code{mark_sample} and its density. For nonlegacy modes,
+\code{mark_change_stats} reports the complete update's statistic change.
+CS-1 returns frozen \code{edge_change_stats}, normalized
+\code{edge_selection_probs}, and \code{reference_edge_probs} before
+nonempty conditioning. Its \code{edge_probs} condition on node births and
+applicable nonempty conditioning. Size-conditional \code{edge_probs} condition on both
+realized node and edge counts (see \code{edge_probs_conditioning});
+\code{edge_count_probs} condition on births and applicable nonempty
+conditioning. Its \code{n_mark_states} is the enumerated size-class count.
 }
 \description{
-Two explicit constructions give exact PMFs for simultaneous, unordered edge
-additions. Both include Poisson node births and condition the complete
+Explicit constructions give exact PMFs for simultaneous, unordered edge
+additions. The nonlegacy modes include Poisson node births and condition the complete
 node-and-edge proposal to be nonempty by default.
 }
 \details{
 In \code{cs_mode = "independent"} (CS-1), each candidate edge has its change
 statistics calculated against the same pre-update graph. Its weight is
-\eqn{w_e=\exp(-\tau a_e)\operatorname{logit}^{-1}(\theta^T C_e)}.
+\eqn{w_e=\exp(\theta^T C_e-\tau a_e)}. Terms constant across
+candidates, including an edge-count term, cancel on normalisation.
 Normalize the weights to \eqn{p_e}; uncapped Poisson attempts with mean
 \code{m} give independent inclusion probabilities \eqn{1-\exp(-m p_e)}
 before conditioning the complete update to be nonempty. No subset normalizer
 or within-update change of the selection weights is used.
 
-In \code{cs_mode = "size_conditional"} (CS-2), the actual edge count is
+In \code{cs_mode = "size_conditional"}, the actual edge count is
 Poisson with parameter \code{m}, conditioned not to exceed the candidate
 count \eqn{D}. Given count \eqn{k}, sets receive weights
 \eqn{\exp(\theta^T\Delta g(S)-\tau\sum_{e\in S}a_e)}, normalized over
@@ -116,10 +117,14 @@ statistic; their order is not a mark component. An edge-count coefficient
 cancels conditional on \eqn{k} and must be fixed or omitted when fitting.
 Likewise, birth-only terms cancel conditional on births. \code{m} is a
 truncated-Poisson count parameter, not generally the expected count.
+This is the direct whole-update variant described in the supplement, not
+Construction 2's Poisson stream of proposed edit sets. The CRAN CS-pair
+interface implements that stream for migration pairs.
 
 \code{cs_mode = "joint"} preserves the earlier whole-update exponential
 tilt of a collapsed-Poisson reference over all \eqn{2^D} subsets. This is the
-model used in the September 21 recovery runs, not CS-1 or CS-2. Its \code{m}
+model used in earlier recovery runs, separate from the paper's two
+proposal constructions. Its \code{m}
 is only a reference attempt mean. With \code{cs_mode = NULL}, supplying
 \code{m} selects \code{"joint"}; omitting \code{m} selects the older
 \code{"legacy"} compatibility implementation. Choose a mode explicitly

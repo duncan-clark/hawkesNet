@@ -14,7 +14,7 @@ hawkes_ground_compensator(
 )
 }
 \arguments{
-\item{params, mark_filtration, timing, timing_cache}{See [hawkes_ground_intensity()].}
+\item{params, mark_filtration, timing, timing_cache}{See \code{\link[=hawkes_ground_intensity]{hawkes_ground_intensity()}}.}
 
 \item{time_window}{Two finite numbers giving the observation start and end.}
 

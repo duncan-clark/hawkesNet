@@ -140,3 +140,53 @@ test_that("benchmark_joint_marked_hawkes returns scaling table", {
     expect_equal(nrow(tab), 2)
     expect_true(all(is.finite(tab$seconds)))
 })
+
+test_that("joint event scores agree with direct excitation sums and likelihood", {
+    p <- joint_marked_hawkes_default_params()
+    p$mu <- .7
+    p$K <- .3
+    p$gamma_edge <- 0
+    p$gamma_value <- .4
+    hits <- data.frame(t = c(.1, 1.4, 3), i = c(1, 2, 1), j = c(2, 1, 2),
+                       amount = c(2, 0, 4))
+    weights <- exp(p$gamma_value * log1p(hits$amount))
+    expected <- vapply(seq_len(nrow(hits)), function(k) {
+        prior <- seq_len(k - 1L)
+        p$mu + p$K * sum(weights[prior] *
+                        exp(-p$beta_overall * (hits$t[k] - hits$t[prior])))
+    }, numeric(1))
+    scores <- score_joint_marked_hawkes(hits, params = p, actors = 1:3)
+    expect_equal(scores$log_ground, log(expected))
+    ll <- loglik_joint_marked_hawkes(p, hits, 1:3, c(0, 4))
+    compensator <- 4 * p$mu + p$K / p$beta_overall *
+        sum(weights * (-expm1(-p$beta_overall * (4 - hits$t))))
+    expect_equal(ll$ground_loglik, sum(scores$log_ground) - compensator)
+    expect_equal(ll$amount_loglik, sum(scores$log_amount))
+})
+
+test_that("joint amount law includes its zero mass and is normalized", {
+    p <- joint_marked_hawkes_default_params()
+    p$amount_intercept <- -.5
+    stats <- c(edge_value = 0, repetition = 0)
+    zero_mass <- exp(.jmw_amount_logdens(p, 0, stats))
+    positive_mass <- stats::integrate(function(x)
+        vapply(x, function(z) exp(.jmw_amount_logdens(p, z, stats)), numeric(1)),
+        0, Inf)$value
+    expect_equal(zero_mass + positive_mass, 1)
+    set.seed(81)
+    p$mu <- 150
+    p$K <- 0
+    p$amount_edge_value <- 0
+    p$amount_repetition <- 0
+    sim <- sim_joint_marked_hawkes(p, c(0, 1), 1:3, max_events = 1000)
+    expect_true(sim$complete)
+    expect_equal(sim$time_window, c(0, 1))
+    expect_lt(abs(mean(sim$hits$amount == 0) - zero_mass), .1)
+    set.seed(81)
+    capped <- sim_joint_marked_hawkes(p, c(0, 1), 1:3, max_events = 5)
+    expect_false(capped$complete)
+    expect_equal(capped$time_window[2], max(capped$hits$t))
+    expect_lt(capped$time_window[2], 1)
+    expect_error(loglik_joint_marked_hawkes(p,
+        data.frame(t = c(.1, .1), i = c(1, 2), j = c(2, 1)), 1:3), "distinct")
+})

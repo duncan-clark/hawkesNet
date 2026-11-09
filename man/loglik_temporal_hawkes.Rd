@@ -15,12 +15,14 @@ loglik_temporal_hawkes(
 }
 \arguments{
 \item{params}{Numeric vector of parameters:
-- For "exp": c(gamma, beta, K)
-- For "powerlaw": c(gamma, p, K, c)
+\itemize{
+\item For "exp": c(gamma, beta, K)
+\item For "powerlaw": c(gamma, p, K, c)
 gamma: scale of KDE background
 beta/p: decay parameter
 K: branching ratio
-c: scale parameter for power-law kernel}
+c: scale parameter for power-law kernel
+}}
 
 \item{realiz}{Data frame of event times with column 't'}
 
@@ -28,7 +30,8 @@ c: scale parameter for power-law kernel}
 
 \item{dists}{Pre-computed distance matrices (optional)}
 
-\item{kde_bg}{Pre-computed KDE background (from compute_kde_background)}
+\item{kde_bg}{Optional list with background values \code{mu_vec} in event-row
+order and its window integral \code{total_int}. If NULL, estimate the KDE.}
 
 \item{kernel}{"exp" or "powerlaw"}
 }
@@ -37,6 +40,9 @@ Numeric log-likelihood value
 }
 \description{
 Computes the log-likelihood of a Hawkes process with KDE background.
+The built-in KDE is normalized over the observation window. Times tied on
+the recording grid use the same pre-bin intensity and do not excite one
+another; this convention does not fit an explicit discrete-time model.
 }
 \examples{
 \donttest{

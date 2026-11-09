@@ -71,6 +71,10 @@ inhomogeneous background rate instead of constant \code{params$mu}.}
 \item{integral_bg}{Optional scalar: integral of the background rate over
 the observation window.  Required when \code{mu_vec} is supplied.}
 
+\item{run_sim}{Simulate from the fitted model after estimation (default FALSE).}
+
+\item{get_hessian}{Compute observed-information standard errors (default TRUE).}
+
 \item{timing}{Ground model from \code{\link{hawkes_timing}}. For M1/M2 include
 \code{feedback_gamma} in \code{params_init} to estimate the feedback effect.}
 
@@ -84,15 +88,15 @@ background at new simulated times.
 }
 \value{
 List with:
-  \describe{
-    \item{fit}{Output of \code{\link[stats]{optim}}.}
-    \item{intens_funcs}{Cached intensity closures (can be large; NULL out and \code{gc()} when done).}
-    \item{params_init_old}{Original \code{params_init} (for relist / GOF).}
-    \item{fit_table}{Data frame of parameter estimates and standard errors.}
-    \item{hessian}{Numerical Hessian of the log-likelihood at the MLE. Since we maximize
-      log-likelihood (\code{optim(..., control = list(fnscale = -1))}), this Hessian is typically
-      negative definite at a well-behaved maximum; the observed information is \code{-hessian}.}
-  }
+\describe{
+\item{fit}{Output of \code{\link[stats]{optim}}.}
+\item{intens_funcs}{Cached intensity closures (can be large; NULL out and \code{gc()} when done).}
+\item{params_init_old}{Original \code{params_init} (for relist / GOF).}
+\item{fit_table}{Data frame of parameter estimates and standard errors.}
+\item{hessian}{Numerical Hessian of the log-likelihood at the MLE. Since we maximize
+log-likelihood (\code{optim(..., control = list(fnscale = -1))}), this Hessian is typically
+negative definite at a well-behaved maximum; the observed information is \code{-hessian}.}
+}
 }
 \description{
 Estimates parameters of a Hawkes-driven network growth model via numerical
@@ -114,5 +118,5 @@ fit$fit_table
 }
 \seealso{
 \code{\link{loglik_hawkesNet}}, \code{\link{sim_hawkesNet}},
-  \code{\link{prepare_inhomogeneous_background}}, \code{\link{gof}}
+\code{\link{prepare_inhomogeneous_background}}, \code{\link{gof}}
 }

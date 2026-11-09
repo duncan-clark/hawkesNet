@@ -37,8 +37,8 @@ If \code{inhom_bg} is provided, \code{cond_intensity_inhom} will be used automat
 
 \item{verbose}{Print progress (default \code{FALSE}).}
 
-\item{mu_multiplier}{Legacy inhomogeneous envelope multiplier (default 10).
-Homogeneous adaptive thinning does not use this parameter.}
+\item{mu_multiplier}{Retained for compatibility; adaptive thinning does not
+use this parameter. Specify a background bound through \code{inhom_bg}.}
 
 \item{joint_accept}{Must be \code{FALSE}: normalized marks are sampled after
 ground-event acceptance, without applying their probability a second time.}
@@ -60,7 +60,8 @@ the later of the window start and last seed event.}
 
 \item{timing}{Ground model from \code{\link{hawkes_timing}}. M1/M2 draw each
 complete update before simulating subsequent times. For inhomogeneous M1/M2
-simulation, supply a global background bound in \code{inhom_bg$mu_fit$mu_bound}.}
+simulation, supply a global background bound in \code{inhom_bg$mu_fit$mu_bound}.
+The same bound is required for an arbitrary inhomogeneous M0 background.}
 
 \item{...}{Passed to \code{PMF_mark} or \code{cond_intensity} (e.g. \code{truncation}, \code{formula_RHS}).}
 }
@@ -70,8 +71,9 @@ List with \code{events}, \code{net}, \code{accept_probs}.
 \description{
 Uses exact adaptive thinning for a homogeneous Hawkes ground process, then
 samples complete normalized network-update marks at the accepted times.
-The legacy inhomogeneous path uses a grid-based background envelope and stops
-if a bound violation is detected; that grid alone does not certify domination.
+Inhomogeneous simulation uses the declared background bound and recomputes
+the excitation bound after each accepted event. Built-in KDE backgrounds
+supply a bound for their piecewise linear rate automatically.
 }
 \examples{
 \donttest{

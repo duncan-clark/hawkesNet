@@ -16,7 +16,8 @@ estimate_mu_kde(t, windowT = NULL, bw = NULL, grid_n = 4096)
 \item{grid_n}{Number of grid points for the density / rate estimate}
 }
 \value{
-List with: mu_fun (function mapping t -> rate), grid, mu_grid, bw, windowT.
+List with: mu_fun (function mapping t -> rate), grid, mu_grid, bw,
+windowT, and mu_bound, a global bound for the interpolated rate.
 mu_grid is the rate at each grid point (density * n so that integral ≈ n).
 }
 \description{
